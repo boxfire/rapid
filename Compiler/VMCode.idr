@@ -272,3 +272,32 @@ Show VMDef where
   show (MkVMFun args body) = show args ++ ": \n  " ++ (showSep "\n  " (map show body)) ++ "\n"
   show (MkVMError err) = "Error: " ++ show err
 
+interface ToIR a where
+  toIR : a -> String
+
+ToIR Reg where
+  toIR (Loc i) = "%v" ++ show i
+  toIR RVal = "%rval"
+  toIR Discard = "undef"
+
+
+argIR : Reg -> String
+argIR (Loc i) = "i64 %v" ++ show i
+argIR _ = "undef"
+
+getInstIR : VMInst -> String
+getInstIR (OP RVal "+Int" [r1, r2]) = concat ["%rval = add i64 ", toIR r1, ", ", toIR r2]
+getInstIR (OP RVal "==Int" [r1, r2]) = concat ["%rval1 = icmp eq i64 ", toIR r1, ", ", toIR r2, "\n%rval = zext i1 %rval1 to i64"]
+getInstIR unmatched = ";" ++ (unwords $ lines $ show unmatched)
+
+getFunIR : String -> List Reg -> List VMInst -> String
+getFunIR n args body = "define i64 @" ++ n ++ "(" ++ (showSep ", " (map argIR args)) ++ ") {\n" ++
+                       unlines ([
+                       "entry:"
+                       ] ++ map getInstIR body) ++
+                       "\nret i64 %rval\n}\n"
+
+export
+getVMIR : (String, VMDef) -> String
+getVMIR (n, MkVMFun args body) = getFunIR n args body
+getVMIR _ = ""

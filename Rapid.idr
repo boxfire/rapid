@@ -19,5 +19,10 @@ main = do
   case result of
        Right parsed => do
          putStrLn $ show $ parsed
-         putStrLn $ show $ getVMDefs parsed
+         let vmcode = getVMDefs parsed
+         putStrLn $ show $ vmcode
+         let ir = unlines $ map getVMIR vmcode
+         putStrLn $ ir
+         _ <- writeFile "second.output.ll" ir
+         pure ()
        Left e => putStrLn $ "error" ++ e
