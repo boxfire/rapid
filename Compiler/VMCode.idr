@@ -400,12 +400,14 @@ getInstIR (MKCONSTANT r (MkConstant c)) = do
   -}
 getInstIR unmatched = appendCode $ ";" ++ (unwords $ lines $ show unmatched)
 
+prepareArgCallConv' : List String -> List String
+prepareArgCallConv' (a1::a2::rest) = ["%RuntimePtr %HpArg", a1, "%RuntimePtr %BaseArg", a2, "%RuntimePtr %HpLimArg"] ++ rest
+prepareArgCallConv' _ = idris_crash "impossible"
+
 prepareArgCallConv : List String -> List String
-prepareArgCallConv l = prepareArgCallConv' (l ++ ["i64 %unused1", "i64 %unused2"])
-  where
-  prepareArgCallConv' : List String -> List String
-  prepareArgCallConv' (a1::a2::rest) = ["%RuntimePtr %HpArg", a1, "%RuntimePtr %BaseArg", a2, "%RuntimePtr %HpLimArg"] ++ rest
-  prepareArgCallConv' _ = idris_crash "impossible"
+prepareArgCallConv [] = prepareArgCallConv' (["i64 %unused1", "i64 %unused2"])
+prepareArgCallConv [x] = prepareArgCallConv' ([x, "i64 %unused1"])
+prepareArgCallConv l = prepareArgCallConv' l
 
 funcEntry : String
 funcEntry = "
@@ -435,7 +437,7 @@ funcReturn = "
 getFunIR : String -> List Reg -> List VMInst -> Codegen ()
 getFunIR n args body = do
   fargs <- traverse argIR args
-  appendCode ("define hhvmcc %Return1 @" ++ (safeName n) ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
+  appendCode ("\n\ndefine hhvmcc %Return1 @" ++ (safeName n) ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
   appendCode "entry:"
   appendCode funcEntry
   for body getInstIR
