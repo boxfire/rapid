@@ -2,6 +2,7 @@ module Compiler.VMCode
 
 import Codegen
 import Data.Sexp
+import Utils.Hex
 
 %default covering
 
@@ -14,6 +15,14 @@ showSep s xs = go xs where
   go [] = ""
   go [x] = x
   go (x::rest) = x ++ go' rest
+
+safeName : String -> String
+safeName s = concatMap okchar (unpack s)
+  where
+    okchar : Char -> String
+    okchar c = if isAlphaNum c
+                  then cast c
+                  else "_" ++ asHex (cast {to=Int} c) ++ "_"
 
 public export
 data Name = MkName String
@@ -225,6 +234,24 @@ FromSexp VMInst where
     f <- fromSexp fS
     arg <- fromSexp argS
     pure $ APPLY reg f arg
+  fromSexp (SList ((SAtom "CONSTCASE")::regS::defaultS::altsS)) =
+    (do
+      reg <- fromSexp regS
+      default <- assert_total $ readDefault defaultS
+      pure $ CONSTCASE reg (assert_total $ rights $ map readAlt altsS) default
+      )
+      where
+        readDefault : Sexp -> Either String (Maybe (List VMInst))
+        readDefault (SList [SAtom "nodefault"]) = Right Nothing
+        readDefault (SList [SAtom "default", SList is]) = do
+          insts <- collectFromSexp is
+          pure $ Just insts
+        readDefault _ = Right Nothing --Left "invalid default"
+        readAlt : Sexp -> Either String (Constant, (List VMInst))
+        readAlt (SList [SAtom c, SList is]) = do
+          insts <- collectFromSexp is
+          pure $ (MkConstant c, insts)
+        readAlt _ = Left $ "error in alt"
   fromSexp (SList ((SAtom "CASE")::regS::defaultS::altsS)) =
     (do
       reg <- fromSexp regS
@@ -301,7 +328,7 @@ assignSSA : ToIR a => a -> Codegen String
 assignSSA value = do
   i <- getUnique
   let varname = "%t" ++ show i
-  appendCode (varname ++ " = " ++ (toIR value))
+  appendCode ("  " ++ varname ++ " = " ++ (toIR value))
   pure varname
 
 
@@ -330,26 +357,36 @@ cgMkInt var dst = do
   {-%newmem_addr"++su++" = ptrtoint i64* %newmem"++su++" to i64-}
   {-%newmem_payload_addr"++su++" = add i64 %newmem_addr"++su++", 8-}
 
-unboxInt : String -> String -> Codegen String
-unboxInt src dst = do
+unboxInt : String -> Codegen String
+unboxInt src = do
   su <- show <$> getUnique
-  pure $ "
+  appendCode $ "
   %val.payload" ++ su ++ " = getelementptr i8, i8* " ++ src ++ ", i64 8
-  %val.payload.cast" ++ su ++ " = bitcast i8* %val.payload" ++ su ++ " to i64*
-  " ++ dst ++ " = load i64, i64* %val.payload.cast" ++ su ++ "\n"
+  %val.payload.cast" ++ su ++ " = bitcast i8* %val.payload" ++ su ++ " to i64*"
+  assignSSA $ "load i64, i64* %val.payload.cast" ++ su ++ "\n"
 
 getInstIR : VMInst -> Codegen ()
 getInstIR (OP RVal "+Int" [r1, r2]) = do
-  i1 <- ((++) "%vint") <$> show <$> getUnique
-  i2 <- ((++) "%vint") <$> show <$> getUnique
-  code1 <- unboxInt (toIR r1) i1
-  code2 <- unboxInt (toIR r2) i2
-  vsum <- mkVarName "%intsum"
+  i1 <- unboxInt (toIR r1)
+  i2 <- unboxInt (toIR r2)
+  vsum <- assignSSA $ "add i64 " ++ i1 ++ ", " ++ i2
   result <- cgMkInt vsum "%rval"
-  appendCode $ concat [code1, code2, vsum, " = add i64 ", i1, ", ", i2, result]
+  appendCode result
+  appendCode "  store %ObjPtr %rval, %ObjPtr* %RValVar"
+  {-vsum <- mkVarName "%intsum"-}
+  {-result <- cgMkInt vsum "%rval"-}
+  {-appendCode $ concat [code1, code2, vsum, " = add i64 ", i1, ", ", i2, result]-}
   pure ()
 
-{-getInstIR (OP RVal "==Int" [r1, r2]) = pure $ concat ["%rval1 = icmp eq i64 ", toIR r1, ", ", toIR r2, "\n%rval = zext i1 %rval1 to i64"]-}
+getInstIR (OP r "==Int" [r1, r2]) = do
+  i1 <- unboxInt (toIR r1)
+  i2 <- unboxInt (toIR r2)
+  vsum_i1 <- assignSSA $ "icmp eq i64 " ++ i1 ++ ", " ++ i2
+  vsum_i64 <- assignSSA $ "zext i1 " ++ vsum_i1 ++ " to i64"
+  result <- cgMkInt vsum_i64 (toIR r)
+  appendCode result
+  pure ()
+  {-pure $ concat ["%rval1 = icmp eq i64 ", toIR r1, ", ", toIR r2, "\n%rval = zext i1 %rval1 to i64"]-}
 getInstIR (MKCONSTANT r (MkConstant c)) = do
   s <- cgMkInt c (toIR r)
   appendCode s
@@ -378,6 +415,7 @@ funcEntry = "
   store %RuntimePtr %HpLimArg, %RuntimePtr* %HpLimVar
   %BaseVar = alloca %RuntimePtr
   store %RuntimePtr %BaseArg, %RuntimePtr* %BaseVar
+  %RValVar = alloca %ObjPtr
 "
 
 funcReturn : String
@@ -385,18 +423,19 @@ funcReturn = "
   %FinHp = load %RuntimePtr, %RuntimePtr* %HpVar
   %FinHpLim = load %RuntimePtr, %RuntimePtr* %HpLimVar
   %FinBase = load %RuntimePtr, %RuntimePtr* %BaseVar
+  %FinRVal = load %ObjPtr, %ObjPtr* %RValVar
 
   %ret0 = insertvalue %Return1 undef, %RuntimePtr %FinHp, 0
   %ret1 = insertvalue %Return1 %ret0, %RuntimePtr %FinBase, 1
   %ret2 = insertvalue %Return1 %ret1, %RuntimePtr %FinHpLim, 2
-  %ret3 = insertvalue %Return1 %ret2, %ObjPtr %rval, 3
+  %ret3 = insertvalue %Return1 %ret2, %ObjPtr %FinRVal, 3
   ret %Return1 %ret3
 "
 
 getFunIR : String -> List Reg -> List VMInst -> Codegen ()
 getFunIR n args body = do
   fargs <- traverse argIR args
-  appendCode ("define hhvmcc %Return1 @" ++ n ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
+  appendCode ("define hhvmcc %Return1 @" ++ (safeName n) ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
   appendCode "entry:"
   appendCode funcEntry
   for body getInstIR
