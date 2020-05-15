@@ -21,7 +21,9 @@ main = do
          putStrLn $ show $ parsed
          let vmcode = getVMDefs parsed
          putStrLn $ show $ vmcode
-         let ir = unlines $ map getVMIR vmcode
+         (Right support) <- readFile "support.ll"
+         | Left _ => pure ()
+         let ir = support ++ (unlines $ map getVMIR vmcode)
          putStrLn $ ir
          _ <- writeFile "second.output.ll" ir
          pure ()

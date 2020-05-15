@@ -1,5 +1,6 @@
 module Compiler.VMCode
 
+import Codegen
 import Data.Sexp
 
 %default covering
@@ -281,23 +282,120 @@ ToIR Reg where
   toIR Discard = "undef"
 
 
-argIR : Reg -> String
-argIR (Loc i) = "i64 %v" ++ show i
-argIR _ = "undef"
+argIR : Reg -> Codegen String
+argIR (Loc i) = pure $ "%ObjPtr %v" ++ show i
+argIR _ = pure $ "undef"
 
-getInstIR : VMInst -> String
-getInstIR (OP RVal "+Int" [r1, r2]) = concat ["%rval = add i64 ", toIR r1, ", ", toIR r2]
-getInstIR (OP RVal "==Int" [r1, r2]) = concat ["%rval1 = icmp eq i64 ", toIR r1, ", ", toIR r2, "\n%rval = zext i1 %rval1 to i64"]
-getInstIR unmatched = ";" ++ (unwords $ lines $ show unmatched)
+mkVarName : String -> Codegen String
+mkVarName pfx = do
+  i <- getUnique
+  pure $ (pfx ++ show i)
 
-getFunIR : String -> List Reg -> List VMInst -> String
-getFunIR n args body = "define i64 @" ++ n ++ "(" ++ (showSep ", " (map argIR args)) ++ ") {\n" ++
-                       unlines ([
-                       "entry:"
-                       ] ++ map getInstIR body) ++
-                       "\nret i64 %rval\n}\n"
+assignSSA : String -> Codegen (String, String)
+assignSSA value = do
+  i <- getUnique
+  let varname = "%t" ++ show i
+  pure $ (varname, varname ++ " = " ++ value)
+
+
+cgMkInt : String -> String -> Codegen String
+cgMkInt var dst = do
+  u <- getUnique
+  let su = show u
+  pure $ "
+  %allocreturn"++su++" = call hhvmcc %Return1 @rapid_allocate(%RuntimePtr %HpArg, i64 16, %RuntimePtr %BaseArg, i64 undef, %RuntimePtr %HpLimArg) alwaysinline optsize nounwind
+  %new.Hp."++su++" = extractvalue %Return1 %allocreturn" ++ su ++ ", 0
+  store %RuntimePtr %new.Hp."++su++", %RuntimePtr* %HpVar
+  %new.Base."++su++" = extractvalue %Return1 %allocreturn" ++ su ++ ", 1
+  store %RuntimePtr %new.Base."++su++", %RuntimePtr* %BaseVar
+  %new.HpLim."++su++" = extractvalue %Return1 %allocreturn" ++ su ++ ", 2
+  store %RuntimePtr %new.HpLim."++su++", %RuntimePtr* %HpLimVar
+  %newmem.i8."++su++" = extractvalue %Return1 %allocreturn" ++ su ++ ", 3
+  %newmem"++su++" = bitcast i8* %newmem.i8."++su++" to i64*
+  store i64 1, i64* %newmem"++su++"
+  %newmem_payload"++su++" = getelementptr i64, i64* %newmem" ++ su ++ ", i64 1
+  store i64 "++ var ++", i64* %newmem_payload"++su++"
+  " ++ dst ++ " = bitcast i64* %newmem" ++ su ++ " to %ObjPtr
+
+  "
+  {-store i64 " ++ dst ++ ", i64* %newmem_payload"++su++"-}
+  {-%newmem_addr"++su++" = ptrtoint i64* %newmem"++su++" to i64-}
+  {-%newmem_payload_addr"++su++" = add i64 %newmem_addr"++su++", 8-}
+
+unboxInt : String -> String -> Codegen String
+unboxInt src dst = do
+  su <- show <$> getUnique
+  pure $ "
+  %val.payload" ++ su ++ " = getelementptr i8, i8* " ++ src ++ ", i64 8
+  %val.payload.cast" ++ su ++ " = bitcast i8* %val.payload" ++ su ++ " to i64*
+  " ++ dst ++ " = load i64, i64* %val.payload.cast" ++ su ++ "\n"
+
+getInstIR : VMInst -> Codegen String
+getInstIR (OP RVal "+Int" [r1, r2]) = do
+  i1 <- ((++) "%vint") <$> show <$> getUnique
+  i2 <- ((++) "%vint") <$> show <$> getUnique
+  code1 <- unboxInt (toIR r1) i1
+  code2 <- unboxInt (toIR r2) i2
+  vsum <- mkVarName "%intsum"
+  result <- cgMkInt vsum "%rval"
+  pure $ concat [code1, code2, vsum, " = add i64 ", i1, ", ", i2, result]
+{-getInstIR (OP RVal "==Int" [r1, r2]) = pure $ concat ["%rval1 = icmp eq i64 ", toIR r1, ", ", toIR r2, "\n%rval = zext i1 %rval1 to i64"]-}
+getInstIR (MKCONSTANT r (MkConstant c)) = do
+  s <- cgMkInt c (toIR r)
+  pure s
+  {-
+  pure $ (s ++ 
+      toIR r ++ ".mem = alloca i64*\n" ++
+      "store i64* %newmem" ++ (show 800) ++ ", i64** " ++ toIR r ++ ".mem\n" ++
+      toIR r ++ " = load i64*, i64** " ++ toIR r ++ ".mem\n"
+  )
+  -}
+getInstIR unmatched = pure $ ";" ++ (unwords $ lines $ show unmatched)
+
+prepareArgCallConv : List String -> List String
+prepareArgCallConv l = prepareArgCallConv' (l ++ ["i64 %unused1", "i64 %unused2"])
+  where
+  prepareArgCallConv' : List String -> List String
+  prepareArgCallConv' (a1::a2::rest) = ["%RuntimePtr %HpArg", a1, "%RuntimePtr %BaseArg", a2, "%RuntimePtr %HpLimArg"] ++ rest
+  prepareArgCallConv' _ = idris_crash "impossible"
+
+funcEntry : String
+funcEntry = "
+  %HpVar = alloca %RuntimePtr
+  store %RuntimePtr %HpArg, %RuntimePtr* %HpVar
+  %HpLimVar = alloca %RuntimePtr
+  store %RuntimePtr %HpLimArg, %RuntimePtr* %HpLimVar
+  %BaseVar = alloca %RuntimePtr
+  store %RuntimePtr %BaseArg, %RuntimePtr* %BaseVar
+"
+
+funcReturn : String
+funcReturn = "
+  %FinHp = load %RuntimePtr, %RuntimePtr* %HpVar
+  %FinHpLim = load %RuntimePtr, %RuntimePtr* %HpLimVar
+  %FinBase = load %RuntimePtr, %RuntimePtr* %BaseVar
+
+  %ret0 = insertvalue %Return1 undef, %RuntimePtr %FinHp, 0
+  %ret1 = insertvalue %Return1 %ret0, %RuntimePtr %FinBase, 1
+  %ret2 = insertvalue %Return1 %ret1, %RuntimePtr %FinHpLim, 2
+  %ret3 = insertvalue %Return1 %ret2, %ObjPtr %rval, 3
+  ret %Return1 %ret3
+"
+
+getFunIR : String -> List Reg -> List VMInst -> Codegen String
+getFunIR n args body = do
+  fargs <- traverse argIR args
+  fbody <- traverse getInstIR body
+  pure $
+    "define hhvmcc %Return1 @" ++ n ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {\n" ++
+    unlines ([
+            "entry:",
+            funcEntry
+            ] ++ fbody) ++
+    funcReturn ++
+    "\n\n}\n"
 
 export
 getVMIR : (String, VMDef) -> String
-getVMIR (n, MkVMFun args body) = getFunIR n args body
+getVMIR (n, MkVMFun args body) = runCodegen $ getFunIR n args body
 getVMIR _ = ""
