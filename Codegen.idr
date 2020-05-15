@@ -1,5 +1,11 @@
 module Main
 
+import public Control.Monad.State
+
+export
+data CGBuffer : Type where
+  MkCGBuf : Int -> List String -> CGBuffer
+{-
 export
 data Codegen : Type -> Type where
   MkCodegen : (Int -> (Int, a)) -> Codegen a
@@ -22,16 +28,27 @@ Monad Codegen where
                                                  (MkCodegen f') = f r1 in
                                                  f' i'
 
+-}
+
+public export
+Codegen : Type -> Type
+Codegen = State CGBuffer
+
+emptyCG : CGBuffer
+emptyCG = MkCGBuf 0 []
+
 export
-runCodegen : Codegen a -> a
-runCodegen (MkCodegen f) = snd $ f 0
+appendCode : String -> Codegen ()
+appendCode c = modify $ \(MkCGBuf i l) => (MkCGBuf i (c::l))
 
 export
 getUnique : Codegen Int
-getUnique = MkCodegen $ \i => (i+1, i)
+getUnique = do
+  (MkCGBuf i l) <- get
+  put (MkCGBuf (i+1) l)
+  pure i
 
-idrAlloc : Codegen String
-idrAlloc = do
-  uni <- getUnique
-  uni2 <- getUnique
-  pure $ (show uni2) ++ "%v" ++ (show (the Int uni))
+export
+runCodegen : Codegen () -> String
+runCodegen r = let (MkCGBuf _ ls) = snd $ runState r emptyCG in
+                    unlines $ reverse ls

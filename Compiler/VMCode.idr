@@ -281,6 +281,9 @@ ToIR Reg where
   toIR RVal = "%rval"
   toIR Discard = "undef"
 
+ToIR String where
+  toIR = id
+
 
 argIR : Reg -> Codegen String
 argIR (Loc i) = pure $ "%ObjPtr %v" ++ show i
@@ -291,26 +294,31 @@ mkVarName pfx = do
   i <- getUnique
   pure $ (pfx ++ show i)
 
-assignSSA : String -> Codegen (String, String)
+data Value = MkConst Int
+           | MkExtractValue Value Int
+
+assignSSA : ToIR a => a -> Codegen String
 assignSSA value = do
   i <- getUnique
   let varname = "%t" ++ show i
-  pure $ (varname, varname ++ " = " ++ value)
+  appendCode (varname ++ " = " ++ (toIR value))
+  pure varname
 
 
 cgMkInt : String -> String -> Codegen String
 cgMkInt var dst = do
   u <- getUnique
   let su = show u
+  allocated <- assignSSA "call hhvmcc %Return1 @rapid_allocate(%RuntimePtr %HpArg, i64 16, %RuntimePtr %BaseArg, i64 undef, %RuntimePtr %HpLimArg) alwaysinline optsize nounwind"
+  {-%allocreturn"++su++" = call hhvmcc %Return1 @rapid_allocate(%RuntimePtr %HpArg, i64 16, %RuntimePtr %BaseArg, i64 undef, %RuntimePtr %HpLimArg) alwaysinline optsize nounwind-}
   pure $ "
-  %allocreturn"++su++" = call hhvmcc %Return1 @rapid_allocate(%RuntimePtr %HpArg, i64 16, %RuntimePtr %BaseArg, i64 undef, %RuntimePtr %HpLimArg) alwaysinline optsize nounwind
-  %new.Hp."++su++" = extractvalue %Return1 %allocreturn" ++ su ++ ", 0
+  %new.Hp."++su++" = extractvalue %Return1 " ++ allocated ++ ", 0
   store %RuntimePtr %new.Hp."++su++", %RuntimePtr* %HpVar
-  %new.Base."++su++" = extractvalue %Return1 %allocreturn" ++ su ++ ", 1
+  %new.Base."++su++" = extractvalue %Return1 " ++ allocated ++ ", 1
   store %RuntimePtr %new.Base."++su++", %RuntimePtr* %BaseVar
-  %new.HpLim."++su++" = extractvalue %Return1 %allocreturn" ++ su ++ ", 2
+  %new.HpLim."++su++" = extractvalue %Return1 " ++ allocated ++ ", 2
   store %RuntimePtr %new.HpLim."++su++", %RuntimePtr* %HpLimVar
-  %newmem.i8."++su++" = extractvalue %Return1 %allocreturn" ++ su ++ ", 3
+  %newmem.i8."++su++" = extractvalue %Return1 " ++ allocated ++ ", 3
   %newmem"++su++" = bitcast i8* %newmem.i8."++su++" to i64*
   store i64 1, i64* %newmem"++su++"
   %newmem_payload"++su++" = getelementptr i64, i64* %newmem" ++ su ++ ", i64 1
@@ -330,7 +338,7 @@ unboxInt src dst = do
   %val.payload.cast" ++ su ++ " = bitcast i8* %val.payload" ++ su ++ " to i64*
   " ++ dst ++ " = load i64, i64* %val.payload.cast" ++ su ++ "\n"
 
-getInstIR : VMInst -> Codegen String
+getInstIR : VMInst -> Codegen ()
 getInstIR (OP RVal "+Int" [r1, r2]) = do
   i1 <- ((++) "%vint") <$> show <$> getUnique
   i2 <- ((++) "%vint") <$> show <$> getUnique
@@ -338,11 +346,14 @@ getInstIR (OP RVal "+Int" [r1, r2]) = do
   code2 <- unboxInt (toIR r2) i2
   vsum <- mkVarName "%intsum"
   result <- cgMkInt vsum "%rval"
-  pure $ concat [code1, code2, vsum, " = add i64 ", i1, ", ", i2, result]
+  appendCode $ concat [code1, code2, vsum, " = add i64 ", i1, ", ", i2, result]
+  pure ()
+
 {-getInstIR (OP RVal "==Int" [r1, r2]) = pure $ concat ["%rval1 = icmp eq i64 ", toIR r1, ", ", toIR r2, "\n%rval = zext i1 %rval1 to i64"]-}
 getInstIR (MKCONSTANT r (MkConstant c)) = do
   s <- cgMkInt c (toIR r)
-  pure s
+  appendCode s
+  pure ()
   {-
   pure $ (s ++ 
       toIR r ++ ".mem = alloca i64*\n" ++
@@ -350,7 +361,7 @@ getInstIR (MKCONSTANT r (MkConstant c)) = do
       toIR r ++ " = load i64*, i64** " ++ toIR r ++ ".mem\n"
   )
   -}
-getInstIR unmatched = pure $ ";" ++ (unwords $ lines $ show unmatched)
+getInstIR unmatched = appendCode $ ";" ++ (unwords $ lines $ show unmatched)
 
 prepareArgCallConv : List String -> List String
 prepareArgCallConv l = prepareArgCallConv' (l ++ ["i64 %unused1", "i64 %unused2"])
@@ -382,18 +393,16 @@ funcReturn = "
   ret %Return1 %ret3
 "
 
-getFunIR : String -> List Reg -> List VMInst -> Codegen String
+getFunIR : String -> List Reg -> List VMInst -> Codegen ()
 getFunIR n args body = do
   fargs <- traverse argIR args
-  fbody <- traverse getInstIR body
-  pure $
-    "define hhvmcc %Return1 @" ++ n ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {\n" ++
-    unlines ([
-            "entry:",
-            funcEntry
-            ] ++ fbody) ++
-    funcReturn ++
-    "\n\n}\n"
+  appendCode ("define hhvmcc %Return1 @" ++ n ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
+  appendCode "entry:"
+  appendCode funcEntry
+  for body getInstIR
+  appendCode funcReturn
+  appendCode "\n\n}\n"
+  pure ()
 
 export
 getVMIR : (String, VMDef) -> String
