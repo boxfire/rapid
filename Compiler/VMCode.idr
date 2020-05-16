@@ -6,6 +6,9 @@ import Utils.Hex
 
 %default covering
 
+HEADER_SIZE : String
+HEADER_SIZE = "8"
+
 showSep : String -> List String -> String
 showSep s xs = go xs where
   go' : List String -> String
@@ -197,7 +200,7 @@ ToSexp VMInst where
 
     altToSexp : (Constant, List VMInst) -> Sexp
     altToSexp (c, insts) = SList [toSexp c, SList $ assert_total $ map toSexp insts]
-  toSexp (PROJECT reg val pos) = SList [toSexp reg, toSexp val, SAtom $ show pos]
+  toSexp (PROJECT reg val pos) = SList [SAtom "PROJECT", toSexp reg, toSexp val, SAtom $ show pos]
   toSexp u = SList [SAtom "not-implemented", SAtom ("\"" ++ (assert_total $ show u) ++ "\"")]
   {-toSexp ASSIGN = SList -}
 
@@ -339,8 +342,8 @@ assignSSA value = do
   pure varname
 
 
-cgMkInt : String -> String -> Codegen ()
-cgMkInt var dst = do
+cgMkInt : String -> Codegen String
+cgMkInt var = do
   u <- getUnique
   let su = show u
   allocated <- assignSSA "call hhvmcc %Return1 @rapid_allocate(%RuntimePtr %HpArg, i64 16, %RuntimePtr %BaseArg, i64 undef, %RuntimePtr %HpLimArg) alwaysinline optsize nounwind"
@@ -356,36 +359,63 @@ cgMkInt var dst = do
   %newmem"++su++" = bitcast i8* %newmem.i8."++su++" to i64*
   store i64 1, i64* %newmem"++su++"
   %newmem_payload"++su++" = getelementptr i64, i64* %newmem" ++ su ++ ", i64 1
-  store i64 "++ var ++", i64* %newmem_payload"++su++"
-  " ++ dst ++ " = bitcast i64* %newmem" ++ su ++ " to %ObjPtr
-
-  "
+  store i64 "++ var ++", i64* %newmem_payload"++su
+  assignSSA $ "bitcast i64* %newmem" ++ su ++ " to %ObjPtr"
 
 unboxInt : String -> Codegen String
 unboxInt src = do
   su <- show <$> getUnique
   appendCode $ "
-  %val.payload" ++ su ++ " = getelementptr i8, i8* " ++ src ++ ", i64 8
+  %val" ++ su ++ " = load %ObjPtr, %ObjPtr* " ++ src ++ "Var
+  %val.payload" ++ su ++ " = getelementptr i8, i8* %val" ++ su ++ ", i64 8
   %val.payload.cast" ++ su ++ " = bitcast i8* %val.payload" ++ su ++ " to i64*"
   assignSSA $ "load i64, i64* %val.payload.cast" ++ su ++ "\n"
 
+makeCaseLabel : String -> (Constant, a) -> String
+makeCaseLabel caseId = ( \(MkConstant i,_) => ("i64 " ++ i ++ ", label %" ++ caseId ++ "_is_" ++ i) )
+
 getInstIR : VMInst -> Codegen ()
+getInstIR (DECLARE (Loc i)) = appendCode $ "%v" ++ show i ++ "Var = alloca %ObjPtr"
 getInstIR (OP r "+Int" [r1, r2]) = do
   i1 <- unboxInt (toIR r1)
   i2 <- unboxInt (toIR r2)
   vsum <- assignSSA $ "add i64 " ++ i1 ++ ", " ++ i2
-  cgMkInt vsum (toIR r)
-  when (r == RVal) $ appendCode "  store %ObjPtr %rval, %ObjPtr* %RValVar"
+  obj <- cgMkInt vsum
+  appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 
 getInstIR (OP r "==Int" [r1, r2]) = do
   i1 <- unboxInt (toIR r1)
   i2 <- unboxInt (toIR r2)
   vsum_i1 <- assignSSA $ "icmp eq i64 " ++ i1 ++ ", " ++ i2
   vsum_i64 <- assignSSA $ "zext i1 " ++ vsum_i1 ++ " to i64"
-  cgMkInt vsum_i64 (toIR r)
-  when (r == RVal) $ appendCode "  store %ObjPtr %rval, %ObjPtr* %RValVar"
+  obj <- cgMkInt vsum_i64
+  appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+{-getInstIR (MKCON r tag args) =-}
+  {-obj <- assignSSA ""-}
+  {-appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"-}
 getInstIR (MKCONSTANT r (MkConstant c)) = do
-  cgMkInt c (toIR r)
+  obj <- cgMkInt c
+  appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+getInstIR (CONSTCASE r alts def) =
+  do appendCode ("; CONSTCASE " ++ toIR r)
+     let def' = fromMaybe [] def
+     caseId <- mkVarName "case_"
+     let labelEnd = caseId ++ "_end"
+     scrutinee <- unboxInt (toIR r)
+     appendCode $ "  switch i64 " ++ scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeCaseLabel caseId) alts)) ++ " ]"
+     appendCode $ caseId ++ "_default:"
+     traverse getInstIR def'
+     appendCode $ "br label %" ++ labelEnd
+     traverse (makeCaseAlt caseId) alts
+     appendCode $ labelEnd ++ ":"
+     pure ()
+  where
+    makeCaseAlt : String -> (Constant, List VMInst) -> Codegen ()
+    makeCaseAlt caseId (MkConstant c, is) = do
+      appendCode $ caseId ++ "_is_" ++ c ++ ":"
+      traverse_ getInstIR is
+      appendCode $ "br label %" ++ caseId ++ "_end"
+
 getInstIR unmatched = appendCode $ ";" ++ (unwords $ lines $ show unmatched)
 
 prepareArgCallConv' : List String -> List String
@@ -405,7 +435,7 @@ funcEntry = "
   store %RuntimePtr %HpLimArg, %RuntimePtr* %HpLimVar
   %BaseVar = alloca %RuntimePtr
   store %RuntimePtr %BaseArg, %RuntimePtr* %BaseVar
-  %RValVar = alloca %ObjPtr
+  %rvalVar = alloca %ObjPtr
 "
 
 funcReturn : String
@@ -413,7 +443,7 @@ funcReturn = "
   %FinHp = load %RuntimePtr, %RuntimePtr* %HpVar
   %FinHpLim = load %RuntimePtr, %RuntimePtr* %HpLimVar
   %FinBase = load %RuntimePtr, %RuntimePtr* %BaseVar
-  %FinRVal = load %ObjPtr, %ObjPtr* %RValVar
+  %FinRVal = load %ObjPtr, %ObjPtr* %rvalVar
 
   %ret0 = insertvalue %Return1 undef, %RuntimePtr %FinHp, 0
   %ret1 = insertvalue %Return1 %ret0, %RuntimePtr %FinBase, 1
@@ -424,14 +454,21 @@ funcReturn = "
 
 getFunIR : String -> List Reg -> List VMInst -> Codegen ()
 getFunIR n args body = do
-  fargs <- traverse argIR args
-  appendCode ("\n\ndefine hhvmcc %Return1 @" ++ (safeName n) ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
-  appendCode "entry:"
-  appendCode funcEntry
-  for body getInstIR
-  appendCode funcReturn
-  appendCode "\n\n}\n"
-  pure ()
+    fargs <- traverse argIR args
+    appendCode ("\n\ndefine hhvmcc %Return1 @" ++ (safeName n) ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
+    appendCode "entry:"
+    appendCode funcEntry
+    traverse_ appendCode (map copyArg args)
+    for body getInstIR
+    appendCode funcReturn
+    appendCode "}\n"
+  where
+    copyArg : Reg -> String
+    copyArg (Loc i) = let r = show i in "
+  %v" ++ r ++ "Var = alloca %ObjPtr
+  store %ObjPtr %v" ++ r ++ ", %ObjPtr* %v" ++ r ++ "Var
+"
+    copyArg _ = idris_crash "not an argument"
 
 export
 getVMIR : (String, VMDef) -> String
