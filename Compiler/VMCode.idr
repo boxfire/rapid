@@ -342,25 +342,37 @@ assignSSA value = do
   pure varname
 
 
-cgMkInt : String -> Codegen String
-cgMkInt var = do
-  u <- getUnique
-  let su = show u
-  allocated <- assignSSA "call hhvmcc %Return1 @rapid_allocate(%RuntimePtr %HpArg, i64 16, %RuntimePtr %BaseArg, i64 undef, %RuntimePtr %HpLimArg) alwaysinline optsize nounwind"
-  {-%allocreturn"++su++" = call hhvmcc %Return1 @rapid_allocate(%RuntimePtr %HpArg, i64 16, %RuntimePtr %BaseArg, i64 undef, %RuntimePtr %HpLimArg) alwaysinline optsize nounwind-}
-  appendCode $ "
-  %new.Hp."++su++" = extractvalue %Return1 " ++ allocated ++ ", 0
+heapAllocate : Int -> Codegen String
+heapAllocate size = do
+  su <- show <$> getUnique
+  let totalSize = (cast HEADER_SIZE) + size
+  allocated <- assignSSA $ "call hhvmcc %Return1 @rapid_allocate(%RuntimePtr %HpArg, i64 "++(show totalSize)++", %RuntimePtr %BaseArg, i64 undef, %RuntimePtr %HpLimArg) alwaysinline optsize nounwind"
+  appendCode $ "  %new.Hp."++su++" = extractvalue %Return1 " ++ allocated ++ ", 0
   store %RuntimePtr %new.Hp."++su++", %RuntimePtr* %HpVar
   %new.Base."++su++" = extractvalue %Return1 " ++ allocated ++ ", 1
   store %RuntimePtr %new.Base."++su++", %RuntimePtr* %BaseVar
   %new.HpLim."++su++" = extractvalue %Return1 " ++ allocated ++ ", 2
   store %RuntimePtr %new.HpLim."++su++", %RuntimePtr* %HpLimVar
-  %newmem.i8."++su++" = extractvalue %Return1 " ++ allocated ++ ", 3
-  %newmem"++su++" = bitcast i8* %newmem.i8."++su++" to i64*
-  store i64 1, i64* %newmem"++su++"
-  %newmem_payload"++su++" = getelementptr i64, i64* %newmem" ++ su ++ ", i64 1
-  store i64 "++ var ++", i64* %newmem_payload"++su
-  assignSSA $ "bitcast i64* %newmem" ++ su ++ " to %ObjPtr"
+  %newobj"++su++" = extractvalue %Return1 " ++ allocated ++ ", 3"
+  pure $ "%newobj" ++ su
+
+cgMkInt : String -> Codegen String
+cgMkInt var = do
+  newObj <- heapAllocate 8
+  su <- mkVarName "mkint"
+  appendCode $ "  %"++su++" = bitcast %ObjPtr " ++ newObj ++ " to i64*
+  store i64 4294967296, i64* %"++su++"
+  %"++su++".payloadPtr = getelementptr i64, i64* %" ++ su ++ ", i64 1
+  store i64 "++ var ++", i64* %"++su++".payloadPtr"
+  pure newObj
+
+mkCon : Int -> List Reg -> Codegen String
+mkCon tag [] = do
+  newObj <- heapAllocate 0
+  i64Ptr <- assignSSA $ "bitcast %ObjPtr " ++ newObj ++ " to i64*"
+  appendCode $ "  store i64 " ++ (show tag) ++ ", i64* " ++ i64Ptr
+  pure newObj
+mkCon tag args = idris_crash "con with args not implemented"
 
 unboxInt : String -> Codegen String
 unboxInt src = do
@@ -374,8 +386,11 @@ unboxInt src = do
 makeCaseLabel : String -> (Constant, a) -> String
 makeCaseLabel caseId = ( \(MkConstant i,_) => ("i64 " ++ i ++ ", label %" ++ caseId ++ "_is_" ++ i) )
 
+instrAsComment : VMInst -> String
+instrAsComment i = ";" ++ (unwords $ lines $ show i)
+
 getInstIR : VMInst -> Codegen ()
-getInstIR (DECLARE (Loc i)) = appendCode $ "%v" ++ show i ++ "Var = alloca %ObjPtr"
+getInstIR (DECLARE (Loc i)) = appendCode $ "  %v" ++ show i ++ "Var = alloca %ObjPtr"
 getInstIR (OP r "+Int" [r1, r2]) = do
   i1 <- unboxInt (toIR r1)
   i2 <- unboxInt (toIR r2)
@@ -390,15 +405,14 @@ getInstIR (OP r "==Int" [r1, r2]) = do
   vsum_i64 <- assignSSA $ "zext i1 " ++ vsum_i1 ++ " to i64"
   obj <- cgMkInt vsum_i64
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
-{-getInstIR (MKCON r tag args) =-}
-  {-obj <- assignSSA ""-}
-  {-appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"-}
+getInstIR (MKCON r tag args) = do
+  obj <- mkCon tag args
+  appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 getInstIR (MKCONSTANT r (MkConstant c)) = do
   obj <- cgMkInt c
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 getInstIR (CONSTCASE r alts def) =
-  do appendCode ("; CONSTCASE " ++ toIR r)
-     let def' = fromMaybe [] def
+  do let def' = fromMaybe [] def
      caseId <- mkVarName "case_"
      let labelEnd = caseId ++ "_end"
      scrutinee <- unboxInt (toIR r)
@@ -416,7 +430,8 @@ getInstIR (CONSTCASE r alts def) =
       traverse_ getInstIR is
       appendCode $ "br label %" ++ caseId ++ "_end"
 
-getInstIR unmatched = appendCode $ ";" ++ (unwords $ lines $ show unmatched)
+getInstIR START = pure ()
+getInstIR _ = appendCode "; NOT IMPLEMENTED"
 
 prepareArgCallConv' : List String -> List String
 prepareArgCallConv' (a1::a2::rest) = ["%RuntimePtr %HpArg", a1, "%RuntimePtr %BaseArg", a2, "%RuntimePtr %HpLimArg"] ++ rest
@@ -459,7 +474,7 @@ getFunIR n args body = do
     appendCode "entry:"
     appendCode funcEntry
     traverse_ appendCode (map copyArg args)
-    for body getInstIR
+    for body (\i => appendCode (instrAsComment i) *> getInstIR i)
     appendCode funcReturn
     appendCode "}\n"
   where
