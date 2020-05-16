@@ -24,7 +24,7 @@ main = do
          (Right support) <- readFile "support.ll"
          | Left _ => pure ()
          let ir = support ++ (unlines $ map getVMIR vmcode)
-         putStrLn $ ir
+         {-putStrLn $ ir-}
          _ <- writeFile "second.output.ll" ir
          pure ()
        Left e => putStrLn $ "error" ++ e

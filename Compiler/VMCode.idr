@@ -127,6 +127,13 @@ Show Reg where
   show Discard = "DISCARD"
 
 export
+Eq Reg where
+  RVal == RVal = True
+  Discard == Discard = True
+  (Loc a) == (Loc b) = (a == b)
+  _ == _ = False
+
+export
 Show VMInst where
   show (DECLARE r) = "DECLARE " ++ show r
   show START = "START"
@@ -332,13 +339,13 @@ assignSSA value = do
   pure varname
 
 
-cgMkInt : String -> String -> Codegen String
+cgMkInt : String -> String -> Codegen ()
 cgMkInt var dst = do
   u <- getUnique
   let su = show u
   allocated <- assignSSA "call hhvmcc %Return1 @rapid_allocate(%RuntimePtr %HpArg, i64 16, %RuntimePtr %BaseArg, i64 undef, %RuntimePtr %HpLimArg) alwaysinline optsize nounwind"
   {-%allocreturn"++su++" = call hhvmcc %Return1 @rapid_allocate(%RuntimePtr %HpArg, i64 16, %RuntimePtr %BaseArg, i64 undef, %RuntimePtr %HpLimArg) alwaysinline optsize nounwind-}
-  pure $ "
+  appendCode $ "
   %new.Hp."++su++" = extractvalue %Return1 " ++ allocated ++ ", 0
   store %RuntimePtr %new.Hp."++su++", %RuntimePtr* %HpVar
   %new.Base."++su++" = extractvalue %Return1 " ++ allocated ++ ", 1
@@ -353,9 +360,6 @@ cgMkInt var dst = do
   " ++ dst ++ " = bitcast i64* %newmem" ++ su ++ " to %ObjPtr
 
   "
-  {-store i64 " ++ dst ++ ", i64* %newmem_payload"++su++"-}
-  {-%newmem_addr"++su++" = ptrtoint i64* %newmem"++su++" to i64-}
-  {-%newmem_payload_addr"++su++" = add i64 %newmem_addr"++su++", 8-}
 
 unboxInt : String -> Codegen String
 unboxInt src = do
@@ -366,38 +370,22 @@ unboxInt src = do
   assignSSA $ "load i64, i64* %val.payload.cast" ++ su ++ "\n"
 
 getInstIR : VMInst -> Codegen ()
-getInstIR (OP RVal "+Int" [r1, r2]) = do
+getInstIR (OP r "+Int" [r1, r2]) = do
   i1 <- unboxInt (toIR r1)
   i2 <- unboxInt (toIR r2)
   vsum <- assignSSA $ "add i64 " ++ i1 ++ ", " ++ i2
-  result <- cgMkInt vsum "%rval"
-  appendCode result
-  appendCode "  store %ObjPtr %rval, %ObjPtr* %RValVar"
-  {-vsum <- mkVarName "%intsum"-}
-  {-result <- cgMkInt vsum "%rval"-}
-  {-appendCode $ concat [code1, code2, vsum, " = add i64 ", i1, ", ", i2, result]-}
-  pure ()
+  cgMkInt vsum (toIR r)
+  when (r == RVal) $ appendCode "  store %ObjPtr %rval, %ObjPtr* %RValVar"
 
 getInstIR (OP r "==Int" [r1, r2]) = do
   i1 <- unboxInt (toIR r1)
   i2 <- unboxInt (toIR r2)
   vsum_i1 <- assignSSA $ "icmp eq i64 " ++ i1 ++ ", " ++ i2
   vsum_i64 <- assignSSA $ "zext i1 " ++ vsum_i1 ++ " to i64"
-  result <- cgMkInt vsum_i64 (toIR r)
-  appendCode result
-  pure ()
-  {-pure $ concat ["%rval1 = icmp eq i64 ", toIR r1, ", ", toIR r2, "\n%rval = zext i1 %rval1 to i64"]-}
+  cgMkInt vsum_i64 (toIR r)
+  when (r == RVal) $ appendCode "  store %ObjPtr %rval, %ObjPtr* %RValVar"
 getInstIR (MKCONSTANT r (MkConstant c)) = do
-  s <- cgMkInt c (toIR r)
-  appendCode s
-  pure ()
-  {-
-  pure $ (s ++ 
-      toIR r ++ ".mem = alloca i64*\n" ++
-      "store i64* %newmem" ++ (show 800) ++ ", i64** " ++ toIR r ++ ".mem\n" ++
-      toIR r ++ " = load i64*, i64** " ++ toIR r ++ ".mem\n"
-  )
-  -}
+  cgMkInt c (toIR r)
 getInstIR unmatched = appendCode $ ";" ++ (unwords $ lines $ show unmatched)
 
 prepareArgCallConv' : List String -> List String
