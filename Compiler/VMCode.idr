@@ -366,13 +366,31 @@ cgMkInt var = do
   store i64 "++ var ++", i64* %"++su++".payloadPtr"
   pure newObj
 
+enumerate : List a -> List (Int, a)
+enumerate l = enumerate' 0 l where
+  enumerate' : Int -> List a -> List (Int, a)
+  enumerate' _ [] = []
+  enumerate' i (x::xs) = (i, x)::(enumerate' (i+1) xs)
+
 mkCon : Int -> List Reg -> Codegen String
 mkCon tag [] = do
   newObj <- heapAllocate 0
   i64Ptr <- assignSSA $ "bitcast %ObjPtr " ++ newObj ++ " to i64*"
   appendCode $ "  store i64 " ++ (show tag) ++ ", i64* " ++ i64Ptr
   pure newObj
-mkCon tag args = idris_crash "con with args not implemented"
+mkCon tag args = do
+  newObj <- heapAllocate $ cast (8 * (length args))
+  i64Ptr <- assignSSA $ "bitcast %ObjPtr " ++ newObj ++ " to i64*"
+  appendCode $ "  store i64 " ++ (show tag) ++ ", i64* " ++ i64Ptr
+  payloadPtr <- assignSSA $ "bitcast %ObjPtr " ++ newObj ++ " to %ObjPtr*"
+  let enumArgs = enumerate args
+  for enumArgs (\x => let i = fst x
+                          arg = snd x in do
+                            argptr <- assignSSA $ "getelementptr %ObjPtr, %ObjPtr* " ++ payloadPtr ++ ", i64 " ++ (show (8+i*8))
+                            tmp <- assignSSA $ "load %ObjPtr, %ObjPtr* " ++ (toIR arg) ++ "Var"
+                            appendCode $ "store %ObjPtr " ++ tmp ++ ", %ObjPtr* " ++ argptr
+                          )
+  pure newObj
 
 unboxInt : String -> Codegen String
 unboxInt src = do

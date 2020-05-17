@@ -11,7 +11,10 @@ getVMDefs s = rights $ map fromSexp s
 
 main : IO ()
 main = do
-  (Right input) <- readFile "second.sexp"
+  (_::filename::_) <- getArgs
+  | _ => putStrLn "missing argument"
+  putStrLn $ "reading input from: " ++ filename
+  (Right input) <- readFile filename
   | Left _ => putStrLn "read file error"
   let lexed = lexSexp input
   {-putStrLn $ show lexed-}
@@ -25,6 +28,6 @@ main = do
          | Left _ => pure ()
          let ir = support ++ (unlines $ map getVMIR vmcode)
          {-putStrLn $ ir-}
-         _ <- writeFile "second.output.ll" ir
+         _ <- writeFile (filename ++ ".output.ll") ir
          pure ()
        Left e => putStrLn $ "error" ++ e
