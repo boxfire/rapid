@@ -7,7 +7,7 @@ import Compiler.VMCode
 
 {-getVMDefs : List Sexp -> List (Either String (String, VMDef))-}
 getVMDefs : List Sexp -> List (String, VMDef)
-getVMDefs s = rights $ map fromSexp s
+getVMDefs s = either (\error=>[(error, MkVMError [])]) id $ traverse fromSexp s
 
 main : IO ()
 main = do

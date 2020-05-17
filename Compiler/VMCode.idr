@@ -1,5 +1,7 @@
 module Compiler.VMCode
 
+import Core.TT
+
 import Codegen
 import Data.Sexp
 import Utils.Hex
@@ -71,17 +73,15 @@ FromSexp Reg where
   fromSexp (SAtom s) = Right (Loc $ cast $ assert_total $ strTail s)
   fromSexp s = Left ("invalid reg: " ++ show s)
 
-public export
-data Constant : Type where
-  MkConstant : String -> Constant
-
-Show Constant where
-  show (MkConstant s) = show s
-
 export
 FromSexp Constant where
-  fromSexp (SAtom s) = Right $ MkConstant s
-  fromSexp _ = Left "invalid constant"
+  fromSexp (SList [SAtom "I", SAtom i]) = Right $ I $ cast i
+  fromSexp (SList [SAtom "BI", SAtom i]) = Right $ BI $ cast i
+  fromSexp (SList [SAtom "Str", SAtom s]) = Right $ Str s
+  fromSexp (SList [SAtom "Ch", SAtom c]) = Right $ Ch $ assert_total $ strHead c
+  fromSexp (SList [SAtom "Db", SAtom d]) = Right $ Db $ cast d
+  fromSexp (SList [SAtom "%World"]) = Right $ WorldVal
+  fromSexp s = Left $ "invalid constant: " ++ show s
 
 -- VM instructions - first Reg is where the result goes, unless stated
 -- otherwise.
@@ -205,7 +205,9 @@ ToSexp VMInst where
   {-toSexp ASSIGN = SList -}
 
 collectFromSexp : FromSexp a => List Sexp -> Either String (List a)
-collectFromSexp s = Right $ rights $ map fromSexp s
+{-collectFromSexp s = Right $ rights $ map fromSexp s-}
+{-collectFromSexp s = sequence $ map fromSexp s-}
+collectFromSexp s = traverse fromSexp s
 
 export
 FromSexp VMInst where
@@ -260,7 +262,7 @@ FromSexp VMInst where
         readAlt : Sexp -> Either String (Constant, (List VMInst))
         readAlt (SList [SAtom c, SList is]) = do
           insts <- collectFromSexp is
-          pure $ (MkConstant c, insts)
+          pure $ (I $ cast c, insts)
         readAlt _ = Left $ "error in alt"
   fromSexp (SList ((SAtom "CASE")::regS::defaultS::altsS)) =
     (do
@@ -275,7 +277,11 @@ FromSexp VMInst where
           insts <- collectFromSexp is
           pure $ Just insts
         readDefault _ = Right Nothing --Left "invalid default"
-  fromSexp _ = Left "vminst not impl"
+  fromSexp (SList ((SAtom "EXTPRIM")::regS::(SAtom name)::(SList argsS)::[])) = do
+    reg <- fromSexp regS
+    args <- collectFromSexp argsS
+    pure $ EXTPRIM reg name args
+  fromSexp sexp = Left $ "vminst not impl" ++ show sexp
 
 public export
 ToSexp VMDef where
@@ -402,7 +408,8 @@ unboxInt src = do
   assignSSA $ "load i64, i64* %val.payload.cast" ++ su ++ "\n"
 
 makeCaseLabel : String -> (Constant, a) -> String
-makeCaseLabel caseId = ( \(MkConstant i,_) => ("i64 " ++ i ++ ", label %" ++ caseId ++ "_is_" ++ i) )
+makeCaseLabel caseId (I i,_) = "i64 " ++ show i ++ ", label %" ++ caseId ++ "_is_" ++ show i
+makeCaseLabel caseId (c,_) = "case error: " ++ show c
 
 instrAsComment : VMInst -> String
 instrAsComment i = ";" ++ (unwords $ lines $ show i)
@@ -426,8 +433,8 @@ getInstIR (OP r "==Int" [r1, r2]) = do
 getInstIR (MKCON r tag args) = do
   obj <- mkCon tag args
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
-getInstIR (MKCONSTANT r (MkConstant c)) = do
-  obj <- cgMkInt c
+getInstIR (MKCONSTANT r (I c)) = do
+  obj <- cgMkInt $ show c
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 getInstIR (CONSTCASE r alts def) =
   do let def' = fromMaybe [] def
@@ -443,10 +450,11 @@ getInstIR (CONSTCASE r alts def) =
      pure ()
   where
     makeCaseAlt : String -> (Constant, List VMInst) -> Codegen ()
-    makeCaseAlt caseId (MkConstant c, is) = do
-      appendCode $ caseId ++ "_is_" ++ c ++ ":"
+    makeCaseAlt caseId (I c, is) = do
+      appendCode $ caseId ++ "_is_" ++ (show c) ++ ":"
       traverse_ getInstIR is
       appendCode $ "br label %" ++ caseId ++ "_end"
+    makeCaseAlt _ (c, _) = appendCode $ "ERROR: constcase must be Int, got: " ++ show c
 
 getInstIR START = pure ()
 getInstIR _ = appendCode "; NOT IMPLEMENTED"
