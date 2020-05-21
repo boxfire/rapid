@@ -436,6 +436,10 @@ getInstIR (MKCON r tag args) = do
 getInstIR (MKCONSTANT r (I c)) = do
   obj <- cgMkInt $ show c
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+getInstIR (MKCONSTANT r (Str s)) = do
+  let len = length s
+  cn <- addConstant $ "private unnamed_addr constant [" ++ show len ++ " x i8] c" ++ (show s) ++ ""
+  pure ()
 getInstIR (CONSTCASE r alts def) =
   do let def' = fromMaybe [] def
      caseId <- mkVarName "case_"
