@@ -1,7 +1,7 @@
 all: rapid
 
 rapid:
-	idris -p contrib -o rapid Rapid.idr
+	idris2 -p contrib -o rapid Rapid.idr
 
 linked: rts_entry.o tiny.o
 	gcc -g -o $@ $^
@@ -15,4 +15,4 @@ tiny.o: tiny.cmm
 clean:
 	rm -f tiny.o rts_entry.o linked
 
-.PHONY: all clean rapid
+.PHONY: all build clean rapid
