@@ -8,6 +8,8 @@ import Data.Sexp
 import SexpLexer
 import SexpParser
 import Compiler.VMCode
+import Compiler.VMCodeSexp
+import Compiler.SteamCG
 
 {-getVMDefs : List Sexp -> List (Either String (String, VMDef))-}
 getVMDefs : List Sexp -> List (String, VMDef)
