@@ -1,6 +1,6 @@
 module SexpLexer
 
-{-import Data.Strings-}
+import Data.Strings
 import Text.Lexer
 
 public export

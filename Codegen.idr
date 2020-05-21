@@ -1,6 +1,8 @@
-module Main
+module Codegen
 
 import public Control.Monad.State
+import Data.List
+import Data.Strings
 
 ConstDef : Type
 ConstDef = (String, String)
@@ -39,5 +41,4 @@ addConstant v = do
 export
 runCodegen : Codegen () -> String
 runCodegen r = let (MkCGBuf _ cs ls) = snd $ runState r emptyCG in
-                    unlines $ (map (\(n,v) => n ++ " = " ++ v) $ reverse cs) ++
-                                             reverse ls
+                    unlines $ (map (\(n,v) => n ++ " = " ++ v) $ reverse cs) ++ reverse ls

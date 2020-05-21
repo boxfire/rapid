@@ -2,7 +2,6 @@ module Utils.Hex
 
 import Data.Primitives.Views
 
-export
 hexDigit : Int -> Char
 hexDigit 0 = '0'
 hexDigit 1 = '1'
@@ -20,18 +19,16 @@ hexDigit 12 = 'c'
 hexDigit 13 = 'd'
 hexDigit 14 = 'e'
 hexDigit 15 = 'f'
-hexDigit _ = assert_total ' '
 
 ||| Convert a positive integer into a list of (lower case) hexadecimal characters
 export
 asHex : Int -> String
-asHex n = assert_total $ pack $ asHex' n []
+asHex n = pack $ asHex' n []
   where
-    partial
     asHex' : Int -> List Char -> List Char
     asHex' 0 hex = hex
     asHex' n hex with (n `divides` 16)
-      asHex' (16 * div + rem) hex | DivBy {div} {rem} _ = asHex' div (hexDigit rem :: hex)
+      asHex' (16 * div + rem) hex | DivBy div rem _ = asHex' div (hexDigit rem :: hex)
 
 export
 fromHexDigit : Char -> Maybe Int

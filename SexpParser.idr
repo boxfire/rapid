@@ -10,7 +10,8 @@ Parser : Type -> Type -> Type
 Parser tok a = Grammar tok True a
 
 exact : Token -> Parser Token ()
-exact t = terminal f where
+exact t = terminal (show t) f where
+  f : Token -> Maybe ()
   f x = if x == t then Just () else Nothing
 
 mutual
@@ -23,7 +24,7 @@ mutual
     pure $ SList content
 
   parseSAtom : Parser Token Sexp
-  parseSAtom = terminal isAtom where
+  parseSAtom = terminal "atom" isAtom where
     isAtom : Token -> Maybe Sexp
     isAtom (Atom a) = Just $ SAtom a
     isAtom (QuotedAtom a) = Just $ SAtom a

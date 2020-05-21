@@ -1,7 +1,11 @@
 module Compiler.VMCode
 
-import Core.TT
+import Data.Either
+import Data.List
+import Data.Maybe
+import Data.Strings
 
+import Core.TT
 import Codegen
 import Data.Sexp
 import Utils.Hex
@@ -78,7 +82,7 @@ FromSexp Constant where
   fromSexp (SList [SAtom "I", SAtom i]) = Right $ I $ cast i
   fromSexp (SList [SAtom "BI", SAtom i]) = Right $ BI $ cast i
   fromSexp (SList [SAtom "Str", SAtom s]) = Right $ Str s
-  fromSexp (SList [SAtom "Ch", SAtom c]) = Right $ Ch $ assert_total $ strHead c
+  fromSexp (SList [SAtom "Ch", SAtom c]) = Right $ Ch $ assert_total $ strIndex c 0
   fromSexp (SList [SAtom "Db", SAtom d]) = Right $ Db $ cast d
   fromSexp (SList [SAtom "%World"]) = Right $ WorldVal
   fromSexp s = Left $ "invalid constant: " ++ show s
@@ -226,7 +230,7 @@ FromSexp VMInst where
     reg <- fromSexp regS
     name <- fromSexp nameS
     args <- collectFromSexp argsS
-    pure $ MKCLOSURE reg name (cast missingStr) args
+    pure $ MKCLOSURE reg name (stringToNatOrZ missingStr) args
   fromSexp (SList [SAtom "MKCONSTANT", regS, constS]) = do
     reg <- fromSexp regS
     const <- fromSexp constS
@@ -247,12 +251,10 @@ FromSexp VMInst where
     arg <- fromSexp argS
     pure $ APPLY reg f arg
   fromSexp (SList ((SAtom "CONSTCASE")::regS::defaultS::altsS)) =
-    (do
-      reg <- fromSexp regS
-      default <- assert_total $ readDefault defaultS
-      pure $ CONSTCASE reg (assert_total $ rights $ map readAlt altsS) default
-      )
-      where
+    do reg <- fromSexp regS
+       defaultV <- assert_total $ readDefault defaultS
+       pure $ CONSTCASE reg (assert_total $ rights $ map readAlt altsS) defaultV
+    where
         readDefault : Sexp -> Either String (Maybe (List VMInst))
         readDefault (SList [SAtom "nodefault"]) = Right Nothing
         readDefault (SList [SAtom "default", SList is]) = do
@@ -267,8 +269,8 @@ FromSexp VMInst where
   fromSexp (SList ((SAtom "CASE")::regS::defaultS::altsS)) =
     (do
       reg <- fromSexp regS
-      default <- assert_total $ readDefault defaultS
-      pure $ CASE reg [] default
+      defaultV <- assert_total $ readDefault defaultS
+      pure $ CASE reg [] defaultV
       )
       where
         readDefault : Sexp -> Either String (Maybe (List VMInst))
@@ -366,10 +368,7 @@ cgMkInt : String -> Codegen String
 cgMkInt var = do
   newObj <- heapAllocate 8
   su <- mkVarName "mkint"
-  appendCode $ "  %"++su++" = bitcast %ObjPtr " ++ newObj ++ " to i64*
-  store i64 4294967296, i64* %"++su++"
-  %"++su++".payloadPtr = getelementptr i64, i64* %" ++ su ++ ", i64 1
-  store i64 "++ var ++", i64* %"++su++".payloadPtr"
+  appendCode ("  %"++su++" = bitcast %ObjPtr " ++ newObj ++ " to i64*\n  store i64 4294967296, i64* %"++su++"\n  %"++su++".payloadPtr = getelementptr i64, i64* %" ++ su ++ ", i64 1\n  store i64 "++ var ++", i64* %"++su++".payloadPtr")
   pure newObj
 
 enumerate : List a -> List (Int, a)
@@ -401,10 +400,11 @@ mkCon tag args = do
 unboxInt : String -> Codegen String
 unboxInt src = do
   su <- show <$> getUnique
-  appendCode $ "
-  %val" ++ su ++ " = load %ObjPtr, %ObjPtr* " ++ src ++ "Var
-  %val.payload" ++ su ++ " = getelementptr i8, i8* %val" ++ su ++ ", i64 8
-  %val.payload.cast" ++ su ++ " = bitcast i8* %val.payload" ++ su ++ " to i64*"
+  appendCode $ unlines [
+    "  %val" ++ su ++ " = load %ObjPtr, %ObjPtr* " ++ src ++ "Var",
+    "  %val.payload" ++ su ++ " = getelementptr i8, i8* %val" ++ su ++ ", i64 8",
+    "  %val.payload.cast" ++ su ++ " = bitcast i8* %val.payload" ++ su ++ " to i64*"
+    ]
   assignSSA $ "load i64, i64* %val.payload.cast" ++ su ++ "\n"
 
 makeCaseLabel : String -> (Constant, a) -> String
@@ -509,8 +509,7 @@ getFunIR n args body = do
     appendCode "}\n"
   where
     copyArg : Reg -> String
-    copyArg (Loc i) = let r = show i in "
-  %v" ++ r ++ "Var = alloca %ObjPtr
+    copyArg (Loc i) = let r = show i in "\n  %v" ++ r ++ "Var = alloca %ObjPtr
   store %ObjPtr %v" ++ r ++ ", %ObjPtr* %v" ++ r ++ "Var
 "
     copyArg _ = idris_crash "not an argument"

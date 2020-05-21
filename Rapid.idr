@@ -1,5 +1,9 @@
 module Main
 
+import Data.Strings
+import System
+import System.File
+
 import Data.Sexp
 import SexpLexer
 import SexpParser

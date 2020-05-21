@@ -1,3 +1,5 @@
+module Core.TT
+
 public export
 data Constant
     = I Int
