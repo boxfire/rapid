@@ -131,6 +131,22 @@ makeCaseLabel caseId (c,_) = "case error: " ++ show c
 instrAsComment : VMInst -> String
 instrAsComment i = ";" ++ (unwords $ lines $ show i)
 
+prepareArgCallConv' : List String -> List String
+prepareArgCallConv' (a1::a2::rest) = ["%RuntimePtr %HpArg", a1, "%RuntimePtr %BaseArg", a2, "%RuntimePtr %HpLimArg"] ++ rest
+prepareArgCallConv' _ = idris_crash "impossible"
+
+prepareArgCallConv : List String -> List String
+prepareArgCallConv [] = prepareArgCallConv' (["%ObjPtr %unused1", "%ObjPtr %unused2"])
+prepareArgCallConv [x] = prepareArgCallConv' ([x, "%ObjPtr %unused1"])
+prepareArgCallConv l = prepareArgCallConv' l
+
+prepareArg : Reg -> Codegen String
+prepareArg Discard = pure $ "%ObjPtr undef"
+prepareArg (Loc i) = do
+  tmp <- assignSSA $ "load %ObjPtr, %ObjPtr* %v" ++ (show i) ++ "Var"
+  pure $ "%ObjPtr " ++ tmp
+prepareArg RVal = idris_crash "cannot use rval as call arg"
+
 getInstIR : Int -> VMInst -> Codegen ()
 getInstIR i (DECLARE (Loc r)) = appendCode $ "  %v" ++ show r ++ "Var = alloca %ObjPtr"
 getInstIR i (OP r "+Int" [r1, r2]) = do
@@ -193,17 +209,18 @@ getInstIR i (CONSTCASE r alts def) =
       appendCode $ "br label %" ++ caseId ++ "_end"
     makeCaseAlt _ (c, _) = appendCode $ "ERROR: constcase must be Int, got: " ++ show c
 
+getInstIR i (CALL r tailpos (MkName n) args) =
+  do argsV <- traverse prepareArg args
+     result <- assignSSA $ "call hhvmcc %Return1 @" ++ (safeName n) ++ "(" ++ showSep ", " (prepareArgCallConv argsV) ++ ")"
+     pure ()
+
+getInstIR i (EXTPRIM r n args) =
+  do argsV <- traverse prepareArg args
+     result <- assignSSA $ "call hhvmcc %Return1 @_extprim_" ++ (safeName n) ++ "(" ++ showSep ", " (prepareArgCallConv argsV) ++ ")"
+     pure ()
+
 getInstIR i START = pure ()
 getInstIR i _ = appendCode "; NOT IMPLEMENTED"
-
-prepareArgCallConv' : List String -> List String
-prepareArgCallConv' (a1::a2::rest) = ["%RuntimePtr %HpArg", a1, "%RuntimePtr %BaseArg", a2, "%RuntimePtr %HpLimArg"] ++ rest
-prepareArgCallConv' _ = idris_crash "impossible"
-
-prepareArgCallConv : List String -> List String
-prepareArgCallConv [] = prepareArgCallConv' (["i64 %unused1", "i64 %unused2"])
-prepareArgCallConv [x] = prepareArgCallConv' ([x, "i64 %unused1"])
-prepareArgCallConv l = prepareArgCallConv' l
 
 funcEntry : String
 funcEntry = "
