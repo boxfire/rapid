@@ -19,7 +19,7 @@ void idris_rts_gc(long arg0) {
 int main(int argc, char **argv) {
   Idris_TSO *tso = malloc(sizeof(Idris_TSO));
   tso->nurseryStart = malloc(NURSERY_SIZE);
-  tso->nurseryEnd = (long int)tso->nurseryStart + NURSERY_SIZE;
+  tso->nurseryEnd = (void *)((long int)tso->nurseryStart + NURSERY_SIZE);
 
   return idris_enter(tso, tso->nurseryStart, tso->nurseryEnd);
 }

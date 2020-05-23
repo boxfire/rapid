@@ -144,6 +144,19 @@ prepareArg (Loc i) = do
   pure $ "%ObjPtr " ++ tmp
 prepareArg RVal = idris_crash "cannot use rval as call arg"
 
+asHex2 : Int -> String
+asHex2 c = let s = asHex c in
+               if length s == 1 then "0" ++ s else s
+
+getStringIR : String -> String
+getStringIR s = concatMap okchar (unpack s)
+  where
+    okchar : Char -> String
+    okchar c = if isAlphaNum c
+                  then cast c
+                  else "\\" ++ asHex2 (cast {to=Int} c)
+
+
 getInstIR : Int -> VMInst -> Codegen ()
 getInstIR i (DECLARE (Loc r)) = appendCode $ "  %v" ++ show r ++ "Var = alloca %ObjPtr"
 getInstIR i (OP r "+Int" [r1, r2]) = do
@@ -168,14 +181,15 @@ getInstIR i (MKCONSTANT r (I c)) = do
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 getInstIR i (MKCONSTANT r (Str s)) = do
   let len = length s
-  cn <- addConstant i $ "private unnamed_addr constant [" ++ show len ++ " x i8] c" ++ (show s) ++ ""
+  cn <- addConstant i $ "private unnamed_addr constant [" ++ show len ++ " x i8] c\"" ++ (getStringIR s) ++ "\""
   cn <- assignSSA $ "bitcast [" ++ show len ++ " x i8]* "++cn++" to i8*"
   su <- mkVarName "mkStr"
+  let header = 0x200000000 + len
   newObj <- heapAllocate (cast len)
   appendCode $ unlines [
     "  %"++su++" = bitcast %ObjPtr " ++ newObj ++ " to i64*",
     -- TODO: add string length in bytes to header
-    "  store i64 8589934592, i64* %"++su,
+    "  store i64 " ++ show header ++", i64* %"++su,
     "  %"++su++".payloadPtr = getelementptr i64, i64* %" ++ su ++ ", i64 1",
     "  %"++su++".strPtr = bitcast i64* %" ++ su ++ ".payloadPtr to i8*",
     "  call void @llvm.memcpy.p0i8.p0i8.i32(i8* %" ++ su ++ ".strPtr, i8* "++cn++", i32 " ++show len ++", i1 false)"
@@ -210,8 +224,7 @@ getInstIR i (CALL r tailpos (MkName n) args) =
   do argsV <- traverse prepareArg args
      hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
      hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
-     base <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %BaseVar"
-
+     let base = "%RuntimePtr %BaseArg"
      result <- assignSSA $ "call hhvmcc %Return1 @" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
 
      newHp <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 0"
@@ -226,7 +239,7 @@ getInstIR i (EXTPRIM r n args) =
   do argsV <- traverse prepareArg args
      hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
      hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
-     base <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %BaseVar"
+     let base = "%RuntimePtr %BaseArg"
      result <- assignSSA $ "call hhvmcc %Return1 @_extprim_" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
      pure ()
 
@@ -239,8 +252,6 @@ funcEntry = "
   store %RuntimePtr %HpArg, %RuntimePtr* %HpVar
   %HpLimVar = alloca %RuntimePtr
   store %RuntimePtr %HpLimArg, %RuntimePtr* %HpLimVar
-  %BaseVar = alloca %RuntimePtr
-  store %RuntimePtr %BaseArg, %RuntimePtr* %BaseVar
   %rvalVar = alloca %ObjPtr
 "
 
