@@ -8,6 +8,7 @@ declare ccc void @idris_rts_gc(i64)
 
 %ObjPtr = type i8*
 %RuntimePtr = type i8*
+%FuncPtr = type i8*
 
 %VoidReturn = type {%RuntimePtr, %RuntimePtr, %RuntimePtr}
 %Return1 = type {%RuntimePtr, %RuntimePtr, %ObjPtr}

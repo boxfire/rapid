@@ -26,6 +26,10 @@ showSep s xs = go xs where
   go [x] = x
   go (x::rest) = x ++ go' rest
 
+repeatStr : String -> Nat -> String
+repeatStr s 0 = ""
+repeatStr s (S x) = s ++ repeatStr s x
+
 safeName : String -> String
 safeName s = concatMap okchar (unpack s)
   where
@@ -176,6 +180,18 @@ getInstIR i (OP r "==Int" [r1, r2]) = do
 getInstIR i (MKCON r tag args) = do
   obj <- mkCon tag args
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+
+getInstIR i (MKCLOSURE r (MkName n) missing args@[]) = do
+  let len = length args
+  let totalArgsExpected = missing + len
+  funcPtr <- assignSSA $ "bitcast %Return1 (%RuntimePtr,%RuntimePtr,%RuntimePtr" ++ (repeatStr ", %ObjPtr" totalArgsExpected) ++ ")* @" ++ (safeName n) ++ " to %FuncPtr"
+  su <- mkVarName "mkClosure"
+  let header = 0x300000000 + (totalArgsExpected * 0x10000) + len
+  newObj <- heapAllocate (8 + 8 * (cast len))
+  headerPtr <- assignSSA $ "bitcast %ObjPtr " ++ newObj ++ " to i64*"
+  appendCode $ "  store i64 " ++ show header ++ ", i64* " ++ headerPtr
+  appendCode $ "  store %ObjPtr " ++ newObj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+
 getInstIR i (MKCONSTANT r (I c)) = do
   obj <- cgMkInt $ show c
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
