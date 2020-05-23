@@ -69,15 +69,14 @@ assignSSA value = do
   appendCode ("  " ++ varname ++ " = " ++ (toIR value))
   pure varname
 
-data IRType = I8 | I64 | Pointer IRType
+data IRType = I8 | I64 | FuncPtr | IRObjPtr | Pointer IRType
 
 Show IRType where
   show I8 = "i8"
   show I64 = "i64"
+  show FuncPtr = "%Return1 ()*"
+  show IRObjPtr = "%ObjPtr"
   show (Pointer t) = (show t) ++ "*"
-
-IRObjPtr : IRType
-IRObjPtr = Pointer I8
 
 data IRValue : IRType -> Type where
   ConstI64 : Int -> IRValue I64
@@ -111,7 +110,7 @@ getObjectSlot : String -> Int -> Codegen String
 getObjectSlot obj n = do
   i64ptr <- assignSSA $ "bitcast " ++ obj ++ " to i64*"
   slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
-  slotValue <- load (MkMemValue (Pointer I64) slotPtr)
+  slotValue <- load {t=I64} (MkMemValue (Pointer I64) slotPtr)
   case slotValue of
        (SSA I64 name) => pure name
        _ => idris_crash "error"
@@ -209,6 +208,9 @@ getStringIR s = concatMap okchar (unpack s)
 
 getInstIR : Int -> VMInst -> Codegen ()
 getInstIR i (DECLARE (Loc r)) = appendCode $ "  %v" ++ show r ++ "Var = alloca %ObjPtr"
+getInstIR i (ASSIGN r src) = do
+  value <- assignSSA $ "load %ObjPtr, %ObjPtr* " ++ toIR src ++ "Var"
+  appendCode $ "  store %ObjPtr " ++ value ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 getInstIR i (OP r "+Int" [r1, r2]) = do
   i1 <- unboxInt (toIR r1)
   i2 <- unboxInt (toIR r2)
@@ -239,11 +241,32 @@ getInstIR i (MKCLOSURE r (MkName n) missing args@[]) = do
   appendCode $ "  store %ObjPtr " ++ newObj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 
 getInstIR i (APPLY r fun arg) = do
-  closureObj <- load {t=Pointer I8} (reg2mem fun)
+  closureObj <- load {t=IRObjPtr} (reg2mem fun)
   header <- getObjectSlot (toIR closureObj) 0
   argCount <- assignSSA $ "and i64 65535, " ++ header
-  requiredArgCountShifted <- assignSSA $ "and i64 4294901760, " ++ header
-  requiredArgCount <- assignSSA $ "lshr i64 " ++ requiredArgCountShifted ++ ", 16"
+  missingArgCountShifted <- assignSSA $ "and i64 4294901760, " ++ header
+  missingArgCount <- assignSSA $ "lshr i64 " ++ missingArgCountShifted ++ ", 16"
+  isSaturated <- assignSSA $ "icmp eq i64 1, " ++ missingArgCount
+  labelName <- mkVarName "closure_saturated"
+  appendCode $ "br i1 " ++ isSaturated ++ ", label %" ++ labelName ++ "_yes, label %" ++ labelName ++ "_no"
+  appendCode $ labelName ++ "_yes:"
+  funcPtrI64 <- getObjectSlot (toIR closureObj) 1
+
+  func <- assignSSA $ "inttoptr i64 " ++ funcPtrI64 ++ " to %FuncPtrArgs1"
+  hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
+  hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
+  argValue <- load {t=IRObjPtr} (reg2mem arg)
+  let base = "%RuntimePtr %BaseArg"
+  --result <- assignSSA $ "call hhvmcc %Return1 @" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
+  callRes <- assignSSA $ "call hhvmcc %Return1 " ++ func ++ "(" ++ (showSep ", " (hp::base::hpLim::(toIR argValue)::[])) ++ ")"
+
+  -- TODO: call closure func if more than 1 arg
+  appendCode $ "br label %" ++ labelName ++ "_fin"
+  appendCode $ labelName ++ "_no:"
+  -- TODO: make new closure with +1 arg
+  newClosure <- heapAllocate 8
+  appendCode $ "br label %" ++ labelName ++ "_fin"
+  appendCode $ labelName ++ "_fin:"
   pure ()
 
 getInstIR i (MKCONSTANT r (I c)) = do

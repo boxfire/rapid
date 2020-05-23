@@ -13,6 +13,12 @@ declare ccc void @idris_rts_gc(i64)
 %VoidReturn = type {%RuntimePtr, %RuntimePtr, %RuntimePtr}
 %Return1 = type {%RuntimePtr, %RuntimePtr, %ObjPtr}
 
+;%FuncPtrArgs0 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr)*
+%FuncPtrArgs1 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr)*
+%FuncPtrArgs2 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr)*
+%FuncPtrArgs3 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr)*
+%FuncPtrArgs4 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
+
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind
 
