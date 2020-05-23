@@ -9,6 +9,9 @@ declare ccc void @exit(i64) noreturn
 %VoidReturn = type {%RuntimePtr, %RuntimePtr, %RuntimePtr}
 %Return1 = type {%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr}
 
+declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
+declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind
+
 define private hhvmcc %Return1 @rapid_gc_enter() noinline {
   call ccc void @exit(i64 1) noreturn
   ret %Return1 undef
