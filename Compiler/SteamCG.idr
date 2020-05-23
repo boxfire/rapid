@@ -70,15 +70,13 @@ heapAllocate : Int -> Codegen String
 heapAllocate size = do
   su <- show <$> getUnique
   let totalSize = (cast HEADER_SIZE) + size
-  allocated <- assignSSA $ "call hhvmcc %Return1 @rapid_allocate(%RuntimePtr %HpArg, i64 "++(show totalSize)++", %RuntimePtr %BaseArg, i64 undef, %RuntimePtr %HpLimArg) alwaysinline optsize nounwind"
-  appendCode $ "  %new.Hp."++su++" = extractvalue %Return1 " ++ allocated ++ ", 0
-  store %RuntimePtr %new.Hp."++su++", %RuntimePtr* %HpVar
-  %new.Base."++su++" = extractvalue %Return1 " ++ allocated ++ ", 1
-  store %RuntimePtr %new.Base."++su++", %RuntimePtr* %BaseVar
-  %new.HpLim."++su++" = extractvalue %Return1 " ++ allocated ++ ", 2
-  store %RuntimePtr %new.HpLim."++su++", %RuntimePtr* %HpLimVar
-  %newobj"++su++" = extractvalue %Return1 " ++ allocated ++ ", 3"
-  pure $ "%newobj" ++ su
+  allocated <- assignSSA $ "call hhvmcc %Return1 @rapid_allocate(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, i64 "++(show totalSize)++") alwaysinline optsize nounwind"
+  newHp <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 0"
+  appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpVar"
+  newHpLim <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 1"
+  appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpLimVar"
+  newObj <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 2"
+  pure $ newObj
 
 cgMkInt : String -> Codegen String
 cgMkInt var = do
@@ -132,12 +130,11 @@ instrAsComment : VMInst -> String
 instrAsComment i = ";" ++ (unwords $ lines $ show i)
 
 prepareArgCallConv' : List String -> List String
-prepareArgCallConv' (a1::a2::rest) = ["%RuntimePtr %HpArg", a1, "%RuntimePtr %BaseArg", a2, "%RuntimePtr %HpLimArg"] ++ rest
-prepareArgCallConv' _ = idris_crash "impossible"
+prepareArgCallConv' rest = ["%RuntimePtr %HpArg", "%RuntimePtr %BaseArg", "%RuntimePtr %HpLimArg"] ++ rest
 
 prepareArgCallConv : List String -> List String
-prepareArgCallConv [] = prepareArgCallConv' (["%ObjPtr %unused1", "%ObjPtr %unused2"])
-prepareArgCallConv [x] = prepareArgCallConv' ([x, "%ObjPtr %unused1"])
+--prepareArgCallConv [] = prepareArgCallConv' (["%ObjPtr %unused1", "%ObjPtr %unused2"])
+--prepareArgCallConv [x] = prepareArgCallConv' ([x, "%ObjPtr %unused1"])
 prepareArgCallConv l = prepareArgCallConv' l
 
 prepareArg : Reg -> Codegen String
@@ -211,12 +208,26 @@ getInstIR i (CONSTCASE r alts def) =
 
 getInstIR i (CALL r tailpos (MkName n) args) =
   do argsV <- traverse prepareArg args
-     result <- assignSSA $ "call hhvmcc %Return1 @" ++ (safeName n) ++ "(" ++ showSep ", " (prepareArgCallConv argsV) ++ ")"
+     hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
+     hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
+     base <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %BaseVar"
+
+     result <- assignSSA $ "call hhvmcc %Return1 @" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
+
+     newHp <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 0"
+     appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpVar"
+     newHpLim <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 1"
+     appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpLimVar"
+     returnValue <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 2"
+     appendCode $ "store %ObjPtr " ++ returnValue ++ ", %ObjPtr* " ++ toIR r ++ "Var"
      pure ()
 
 getInstIR i (EXTPRIM r n args) =
   do argsV <- traverse prepareArg args
-     result <- assignSSA $ "call hhvmcc %Return1 @_extprim_" ++ (safeName n) ++ "(" ++ showSep ", " (prepareArgCallConv argsV) ++ ")"
+     hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
+     hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
+     base <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %BaseVar"
+     result <- assignSSA $ "call hhvmcc %Return1 @_extprim_" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
      pure ()
 
 getInstIR i START = pure ()
@@ -237,13 +248,11 @@ funcReturn : String
 funcReturn = "
   %FinHp = load %RuntimePtr, %RuntimePtr* %HpVar
   %FinHpLim = load %RuntimePtr, %RuntimePtr* %HpLimVar
-  %FinBase = load %RuntimePtr, %RuntimePtr* %BaseVar
   %FinRVal = load %ObjPtr, %ObjPtr* %rvalVar
 
-  %ret0 = insertvalue %Return1 undef, %RuntimePtr %FinHp, 0
-  %ret1 = insertvalue %Return1 %ret0, %RuntimePtr %FinBase, 1
-  %ret2 = insertvalue %Return1 %ret1, %RuntimePtr %FinHpLim, 2
-  %ret3 = insertvalue %Return1 %ret2, %ObjPtr %FinRVal, 3
+  %ret1 = insertvalue %Return1 undef, %RuntimePtr %FinHp, 0
+  %ret2 = insertvalue %Return1 %ret1, %RuntimePtr %FinHpLim, 1
+  %ret3 = insertvalue %Return1 %ret2, %ObjPtr %FinRVal, 2
   ret %Return1 %ret3
 "
 

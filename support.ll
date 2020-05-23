@@ -10,7 +10,7 @@ declare ccc void @idris_rts_gc(i64)
 %RuntimePtr = type i8*
 
 %VoidReturn = type {%RuntimePtr, %RuntimePtr, %RuntimePtr}
-%Return1 = type {%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr}
+%Return1 = type {%RuntimePtr, %RuntimePtr, %ObjPtr}
 
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind
@@ -22,7 +22,7 @@ define private hhvm_ccc %Return1 @rapid_gc_enter() noinline {
 
 declare ccc i1 @llvm.expect.i1(i1, i1)
 
-define private hhvmcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, i64 %size, %RuntimePtr %BaseArg, i64 %unused2, %RuntimePtr %HpLimPtrArg) alwaysinline optsize nounwind {
+define private hhvmcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
   %Hp = ptrtoint %RuntimePtr %HpPtrArg to i64
   %HpLim = ptrtoint %RuntimePtr %HpLimPtrArg to i64
 
@@ -35,10 +35,9 @@ define private hhvmcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, i64 %size
 continue:
   %retptr = inttoptr i64 %Hp to i64*
   ;TODO: do it
-  %packed0 = insertvalue %Return1 undef, %RuntimePtr %HpNewPtr, 0
-  %packed1 = insertvalue %Return1 %packed0, %RuntimePtr %BaseArg, 1
-  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 2
-  %packed3 = insertvalue %Return1 %packed2, %RuntimePtr %HpPtrArg, 3
+  %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpNewPtr, 0
+  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 1
+  %packed3 = insertvalue %Return1 %packed2, %RuntimePtr %HpPtrArg, 2
   ret %Return1 %packed3
 gc_enter:
   %gcresult = call hhvm_ccc %Return1 @rapid_gc_enter() noreturn
@@ -46,13 +45,12 @@ gc_enter:
 }
 
 declare ccc i64 @write(i32, i8*, i64)
-define private hhvmcc %Return1 @_extprim_PrimIO_2e_prim_5f__5f_putStr(%RuntimePtr %HpArg, %ObjPtr %t0, %RuntimePtr %BaseArg, %ObjPtr %t1, %RuntimePtr %HpLimArg) {
+define private hhvmcc %Return1 @_extprim_PrimIO_2e_prim_5f__5f_putStr(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %t0, %ObjPtr %unused0) {
   %payloadPtr = getelementptr i8, %ObjPtr %t0, i64 8
 
   call ccc i64 @write(i32 1, i8* %payloadPtr, i64 5)
-  %packed0 = insertvalue %Return1 undef, %RuntimePtr %HpArg, 0
-  %packed1 = insertvalue %Return1 %packed0, %RuntimePtr %BaseArg, 1
-  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimArg, 2
+  %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpArg, 0
+  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimArg, 1
   ;%packed3 = insertvalue %Return1 %packed2, %RuntimePtr %HpPtrArg, 3
   ret %Return1 %packed2
 }
@@ -60,7 +58,7 @@ define private hhvmcc %Return1 @_extprim_PrimIO_2e_prim_5f__5f_putStr(%RuntimePt
 declare ccc i8* @malloc(i64)
 
 define private hhvmcc i64 @idris_enter_stackbridge(i8* %BaseTSO, i8* %heapStart, i8* %heapEnd) {
-  call hhvmcc %Return1 @Main_2e__7b_main_3a_0_7d_(%RuntimePtr %heapStart, %ObjPtr undef, %RuntimePtr %BaseTSO, %ObjPtr undef, %RuntimePtr %heapEnd)
+  call hhvmcc %Return1 @Main_2e__7b_main_3a_0_7d_(%RuntimePtr %heapStart, %RuntimePtr %BaseTSO, %RuntimePtr %heapEnd, %ObjPtr undef)
   ret i64 0
 }
 
