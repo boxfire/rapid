@@ -69,6 +69,52 @@ assignSSA value = do
   appendCode ("  " ++ varname ++ " = " ++ (toIR value))
   pure varname
 
+data IRType = I8 | I64 | Pointer IRType
+
+Show IRType where
+  show I8 = "i8"
+  show I64 = "i64"
+  show (Pointer t) = (show t) ++ "*"
+
+IRObjPtr : IRType
+IRObjPtr = Pointer I8
+
+data IRValue : IRType -> Type where
+  ConstI64 : Int -> IRValue I64
+  SSA : (t : IRType) ->  String -> IRValue t
+
+ToIR (IRValue t) where
+  toIR {t} (SSA t s) = (show t) ++ " " ++ s
+  toIR (ConstI64 i) = (show i)
+
+
+data MemValue : IRType -> Type where
+  MkMemValue : (t : IRType) -> String -> MemValue t
+
+ToIR (MemValue t) where
+  toIR (MkMemValue t n) = (show t) ++ " " ++ n
+
+reg2mem : Reg -> MemValue (Pointer IRObjPtr)
+reg2mem (Loc i) = MkMemValue (Pointer IRObjPtr) ("%v" ++ show i ++ "Var")
+reg2mem RVal = MkMemValue (Pointer IRObjPtr) ("%rvalVar")
+reg2mem _ = MkMemValue (Pointer IRObjPtr) "undef"
+
+load : {auto t : IRType} -> MemValue (Pointer t) -> Codegen (IRValue t)
+load {t} mv = do
+  loaded <- assignSSA $ "load " ++ (show t) ++ ", " ++ (toIR mv)
+  pure $ SSA t loaded
+
+--and : Value -> Value -> CodeGen Value
+--and v1 v1 = toIR v1 ++ toIR v2
+
+getObjectSlot : String -> Int -> Codegen String
+getObjectSlot obj n = do
+  i64ptr <- assignSSA $ "bitcast " ++ obj ++ " to i64*"
+  slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
+  slotValue <- load (MkMemValue (Pointer I64) slotPtr)
+  case slotValue of
+       (SSA I64 name) => pure name
+       _ => idris_crash "error"
 
 heapAllocate : Int -> Codegen String
 heapAllocate size = do
@@ -191,6 +237,14 @@ getInstIR i (MKCLOSURE r (MkName n) missing args@[]) = do
   headerPtr <- assignSSA $ "bitcast %ObjPtr " ++ newObj ++ " to i64*"
   appendCode $ "  store i64 " ++ show header ++ ", i64* " ++ headerPtr
   appendCode $ "  store %ObjPtr " ++ newObj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+
+getInstIR i (APPLY r fun arg) = do
+  closureObj <- load {t=Pointer I8} (reg2mem fun)
+  header <- getObjectSlot (toIR closureObj) 0
+  argCount <- assignSSA $ "and i64 65535, " ++ header
+  requiredArgCountShifted <- assignSSA $ "and i64 4294901760, " ++ header
+  requiredArgCount <- assignSSA $ "lshr i64 " ++ requiredArgCountShifted ++ ", 16"
+  pure ()
 
 getInstIR i (MKCONSTANT r (I c)) = do
   obj <- cgMkInt $ show c
