@@ -15,7 +15,7 @@ declare ccc void @idris_rts_gc(i64)
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind
 
-define private hhvm_ccc %Return1 @rapid_gc_enter() alignstack(16) noinline {
+define private hhvm_ccc %Return1 @rapid_gc_enter() noinline {
   call ccc void @idris_rts_gc(i64 1)
   ret %Return1 undef
 }
@@ -46,7 +46,7 @@ gc_enter:
 }
 
 declare ccc i64 @write(i32, i8*, i64)
-define private hhvmcc %Return1 @_extprim_PrimIO_2e_prim_5f__5f_putStr(%RuntimePtr %HpArg, %ObjPtr %t0, %RuntimePtr %BaseArg, %ObjPtr %t1, %RuntimePtr %HpLimArg) alignstack(16) {
+define private hhvmcc %Return1 @_extprim_PrimIO_2e_prim_5f__5f_putStr(%RuntimePtr %HpArg, %ObjPtr %t0, %RuntimePtr %BaseArg, %ObjPtr %t1, %RuntimePtr %HpLimArg) {
   %payloadPtr = getelementptr i8, %ObjPtr %t0, i64 8
 
   call ccc i64 @write(i32 1, i8* %payloadPtr, i64 5)

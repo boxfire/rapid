@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdlib.h>
 
 const size_t IDRIS_ALIGNMENT = 8;
