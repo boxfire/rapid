@@ -2,7 +2,7 @@
 #include <stdlib.h>
 
 const size_t IDRIS_ALIGNMENT = 8;
-const size_t NURSERY_SIZE = 1024;
+const size_t NURSERY_SIZE = 100*1024*1024;
 
 typedef struct {
   void *nurseryStart;
@@ -10,6 +10,11 @@ typedef struct {
 } Idris_TSO;
 
 extern long idris_enter(void *baseTSO, void *nurseryStart, void *nurseryEnd);
+
+void idris_rts_crash(long arg0) {
+  printf("CRASH called: %ld\n", arg0);
+  exit(3);
+}
 
 void idris_rts_gc(long arg0) {
   puts("GC called\n");

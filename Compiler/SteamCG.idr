@@ -16,6 +16,9 @@ import Utils.Hex
 HEADER_SIZE : String
 HEADER_SIZE = "8"
 
+undefs : List String
+undefs = ["%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef"]
+
 showSep : String -> List String -> String
 showSep s xs = go xs where
   go' : List String -> String
@@ -116,6 +119,13 @@ getObjectSlot obj n = do
   slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
   load {t=I64} (MkMemValue (Pointer I64) slotPtr)
 
+getObjectSlotT : {t : IRType} -> IRValue IRObjPtr -> Int -> Codegen (IRValue t)
+getObjectSlotT obj n = do
+  i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
+  slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
+  slotPtrT <- assignSSA $ "bitcast i64* " ++ slotPtr ++ " to " ++ show t ++ "*"
+  load {t=t} (MkMemValue (Pointer t) slotPtrT)
+
 putObjectSlot : {t : IRType} -> IRValue IRObjPtr -> Int -> IRValue t -> Codegen ()
 putObjectSlot {t} obj n val = do
   i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
@@ -134,6 +144,57 @@ heapAllocate size = do
   appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpLimVar"
   newObj <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 2"
   pure $ newObj
+
+applyClosureHelperFunc : Codegen ()
+applyClosureHelperFunc = do
+  let maxArgs = 7
+
+  --closureObj <- load {t=IRObjPtr} (MkMemValue (Pointer IRObjPtr) "%closureObjArg")
+  let closureObj = SSA IRObjPtr "%closureObjArg"
+  let argValue = SSA IRObjPtr "%argumentObjArg"
+  header <- getObjectSlot closureObj 0
+  argCount <- assignSSA $ "and i64 65535, " ++ showWithoutType header
+  missingArgCountShifted <- assignSSA $ "and i64 4294901760, " ++ showWithoutType header
+  missingArgCount <- assignSSA $ "lshr i64 " ++ missingArgCountShifted ++ ", 16"
+  isSaturated <- assignSSA $ "icmp eq i64 1, " ++ missingArgCount
+  labelName <- mkVarName "closure_saturated"
+  appendCode $ "br i1 " ++ isSaturated ++ ", label %" ++ labelName ++ "_yes, label %" ++ labelName ++ "_no"
+  appendCode $ labelName ++ "_yes:"
+  funcPtrI64 <- getObjectSlot closureObj 1
+  func <- assignSSA $ "inttoptr " ++ (toIR funcPtrI64) ++ " to %FuncPtrArgs" ++ show (maxArgs+1)
+
+  --hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
+  --hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
+  let hp = "%RuntimePtr %HpArg"
+  let base = "%RuntimePtr %BaseArg"
+  let hpLim = "%RuntimePtr %HpLimArg"
+
+  --argValue <- load {t=IRObjPtr} (MkMemValue (Pointer IRObjPtr) "%argumentObjArg")
+
+  applyClosure <- mkVarName "apply_closure_"
+  appendCode $ "  switch i64 " ++ argCount ++ ", label %" ++ applyClosure ++ "_error [\n  " ++
+  (showSep "\n  " $ (flip map) (rangeFromTo 0 maxArgs) (\i => "i64 " ++ show i ++ ", label %" ++ applyClosure ++ "_" ++ show i)) ++
+  "]"
+
+  for_ (rangeFromTo 0 maxArgs) (\i => do
+    let labelName = applyClosure ++ "_" ++ show i
+    appendCode $ labelName ++ ":"
+    storedArgs <- for (rangeFromThenTo 0 1 (i-1)) (\i => do
+                      argItem <- getObjectSlotT {t=IRObjPtr} closureObj (2+i)
+                      pure $ (toIR argItem)
+                      )
+    let argList = [hp, base, hpLim] ++ storedArgs ++ [toIR argValue]
+    --appendCode $ labelName ++ "_do_call:"
+    let undefs = repeatStr ", %ObjPtr undef" (minus (integerToNat $ cast maxArgs) (integerToNat $ cast i)) 
+    callRes <- assignSSA $ "musttail call hhvmcc %Return1 " ++ func ++ "(" ++ (showSep ", " argList) ++ undefs ++ ")"
+    appendCode $ "ret %Return1 " ++ callRes
+    )
+  appendCode $ labelName ++ "_no:"
+  appendCode $ "br label %" ++ applyClosure ++ "_error"
+  appendCode $ applyClosure ++ "_error:"
+  appendCode $ "call ccc void @idris_rts_crash(i64 42)"
+  appendCode $ "ret %Return1 undef"
+
 
 cgMkInt : String -> Codegen String
 cgMkInt var = do
@@ -255,25 +316,17 @@ getInstIR i (MKCLOSURE r (MkName n) missing args) = do
   appendCode $ "  store " ++ toIR newObj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 
 getInstIR i (APPLY r fun arg) = do
-  closureObj <- load {t=IRObjPtr} (reg2mem fun)
-  header <- getObjectSlot closureObj 0
-  argCount <- assignSSA $ "and i64 65535, " ++ showWithoutType header
-  missingArgCountShifted <- assignSSA $ "and i64 4294901760, " ++ showWithoutType header
-  missingArgCount <- assignSSA $ "lshr i64 " ++ missingArgCountShifted ++ ", 16"
-  isSaturated <- assignSSA $ "icmp eq i64 1, " ++ missingArgCount
-  labelName <- mkVarName "closure_saturated"
-  appendCode $ "br i1 " ++ isSaturated ++ ", label %" ++ labelName ++ "_yes, label %" ++ labelName ++ "_no"
-  appendCode $ labelName ++ "_yes:"
-  funcPtrI64 <- getObjectSlot closureObj 1
-
-  func <- assignSSA $ "inttoptr " ++ (toIR funcPtrI64) ++ " to %FuncPtrArgs1"
   hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
   hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
-  argValue <- load {t=IRObjPtr} (reg2mem arg)
   let base = "%RuntimePtr %BaseArg"
-  --result <- assignSSA $ "call hhvmcc %Return1 @" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
-  callRes <- assignSSA $ "call hhvmcc %Return1 " ++ func ++ "(" ++ (showSep ", " (hp::base::hpLim::(toIR argValue)::[])) ++ ")"
 
+  funV <- ((++) "%FuncPtr ") <$> (assignSSA $ "load %FuncPtr, %FuncPtr* " ++ toIR fun ++ "Var")
+  argV <- ((++) "%FuncPtr ") <$> (assignSSA $ "load %FuncPtr, %FuncPtr* " ++ toIR arg ++ "Var")
+
+  appendCode $ "call hhvmcc %Return1 @idris_apply_closure(" ++ showSep ", " [hp, base, hpLim, funV, argV] ++ repeatStr ", %ObjPtr undef" 6  ++ ")"
+  --result <- assignSSA $ "call hhvmcc %Return1 @" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
+
+  labelName <- mkVarName "closure_saturated"
   -- TODO: call closure func if more than 1 arg
   appendCode $ "br label %" ++ labelName ++ "_fin"
   appendCode $ labelName ++ "_no:"
@@ -395,3 +448,7 @@ export
 getVMIR : (Int, (String, VMDef)) -> String
 getVMIR (i, n, MkVMFun args body) = runCodegen $ getFunIR i n args body
 getVMIR _ = ""
+
+export
+closureHelper : String
+closureHelper = "define hhvmcc %Return1 @idris_apply_closure(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %closureObjArg, %ObjPtr %argumentObjArg, i8* %unused0, i8* %unused1, i8* %unused2, i8* %unused3, i8* %unused4, i8* %unused5) {\n" ++ runCodegen applyClosureHelperFunc ++ "\n}"
