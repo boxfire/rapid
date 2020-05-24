@@ -1,7 +1,7 @@
 target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx10.15"
 
-declare ccc void @idris_rts_gc(i64)
+declare ccc void @idris_rts_gc(i8*)
 declare ccc void @idris_rts_crash(i64)
 
 @g_Hp = weak global i64 undef
@@ -31,8 +31,11 @@ declare ccc void @idris_rts_crash(i64)
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind
 
+declare i8* @llvm.frameaddress(i32)
+
 define private hhvm_ccc %Return1 @rapid_gc_enter() noinline {
-  call ccc void @idris_rts_gc(i64 1)
+  %frame = call i8* @llvm.frameaddress(i32 0)
+  call ccc void @idris_rts_gc(i8* %frame)
   ret %Return1 undef
 }
 
