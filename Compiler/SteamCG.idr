@@ -74,7 +74,7 @@ data IRType = I8 | I64 | FuncPtr | IRObjPtr | Pointer IRType
 Show IRType where
   show I8 = "i8"
   show I64 = "i64"
-  show FuncPtr = "%Return1 ()*"
+  show FuncPtr = "%FuncPtr"
   show IRObjPtr = "%ObjPtr"
   show (Pointer t) = (show t) ++ "*"
 
@@ -88,7 +88,7 @@ showWithoutType (ConstI64 i) = show i
 
 ToIR (IRValue t) where
   toIR {t} (SSA t s) = (show t) ++ " " ++ s
-  toIR (ConstI64 i) = (show i)
+  toIR (ConstI64 i) = "i64 " ++ (show i)
 
 
 data MemValue : IRType -> Type where
@@ -112,13 +112,16 @@ load {t} mv = do
 
 getObjectSlot : IRValue IRObjPtr -> Int -> Codegen (IRValue I64)
 getObjectSlot obj n = do
-  i64ptr <- assignSSA $ "bitcast " ++ (toIR obj) ++ " to i64*"
+  i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
   slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
-  slotValue <- load {t=I64} (MkMemValue (Pointer I64) slotPtr)
-  pure slotValue
-  --case slotValue of
-       --(SSA I64 name) => pure name
-       --_ => idris_crash "error"
+  load {t=I64} (MkMemValue (Pointer I64) slotPtr)
+
+putObjectSlot : {t : IRType} -> IRValue IRObjPtr -> Int -> IRValue t -> Codegen ()
+putObjectSlot {t} obj n val = do
+  i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
+  slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
+  slotPtrObj <- assignSSA $ "bitcast i64* " ++ slotPtr ++ " to " ++ show t ++ "*"
+  appendCode $ "  store " ++ toIR val ++ ", " ++ show t ++ " * " ++ slotPtrObj
 
 heapAllocate : Int -> Codegen String
 heapAllocate size = do
@@ -234,16 +237,22 @@ getInstIR i (MKCON r tag args) = do
   obj <- mkCon tag args
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 
-getInstIR i (MKCLOSURE r (MkName n) missing args@[]) = do
+getInstIR i (MKCLOSURE r (MkName n) missing args) = do
   let len = length args
   let totalArgsExpected = missing + len
-  funcPtr <- assignSSA $ "bitcast %Return1 (%RuntimePtr,%RuntimePtr,%RuntimePtr" ++ (repeatStr ", %ObjPtr" totalArgsExpected) ++ ")* @" ++ (safeName n) ++ " to %FuncPtr"
-  su <- mkVarName "mkClosure"
   let header = 0x300000000 + (totalArgsExpected * 0x10000) + len
-  newObj <- heapAllocate (8 + 8 * (cast len))
-  headerPtr <- assignSSA $ "bitcast %ObjPtr " ++ newObj ++ " to i64*"
-  appendCode $ "  store i64 " ++ show header ++ ", i64* " ++ headerPtr
-  appendCode $ "  store %ObjPtr " ++ newObj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+  newObjName <- heapAllocate (8 + 8 * (cast len))
+  let newObj = SSA IRObjPtr newObjName
+  putObjectSlot newObj 0 (ConstI64 $ cast header)
+  funcPtr <- assignSSA $ "bitcast %Return1 (%RuntimePtr,%RuntimePtr,%RuntimePtr" ++ (repeatStr ", %ObjPtr" totalArgsExpected) ++ ")* @" ++ (safeName n) ++ " to %FuncPtr"
+  putObjectSlot newObj 1 (SSA FuncPtr funcPtr)
+  for_ (enumerate args) (\iv => do
+      let (i, arg) = iv
+      argObj <- load {t=IRObjPtr} (reg2mem arg)
+      putObjectSlot newObj (i+2) argObj
+      pure ()
+                              )
+  appendCode $ "  store " ++ toIR newObj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 
 getInstIR i (APPLY r fun arg) = do
   closureObj <- load {t=IRObjPtr} (reg2mem fun)
