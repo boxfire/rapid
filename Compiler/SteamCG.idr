@@ -82,6 +82,10 @@ data IRValue : IRType -> Type where
   ConstI64 : Int -> IRValue I64
   SSA : (t : IRType) ->  String -> IRValue t
 
+showWithoutType : IRValue a -> String
+showWithoutType (SSA _ n) = n
+showWithoutType (ConstI64 i) = show i
+
 ToIR (IRValue t) where
   toIR {t} (SSA t s) = (show t) ++ " " ++ s
   toIR (ConstI64 i) = (show i)
@@ -106,14 +110,15 @@ load {t} mv = do
 --and : Value -> Value -> CodeGen Value
 --and v1 v1 = toIR v1 ++ toIR v2
 
-getObjectSlot : String -> Int -> Codegen String
+getObjectSlot : IRValue IRObjPtr -> Int -> Codegen (IRValue I64)
 getObjectSlot obj n = do
-  i64ptr <- assignSSA $ "bitcast " ++ obj ++ " to i64*"
+  i64ptr <- assignSSA $ "bitcast " ++ (toIR obj) ++ " to i64*"
   slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
   slotValue <- load {t=I64} (MkMemValue (Pointer I64) slotPtr)
-  case slotValue of
-       (SSA I64 name) => pure name
-       _ => idris_crash "error"
+  pure slotValue
+  --case slotValue of
+       --(SSA I64 name) => pure name
+       --_ => idris_crash "error"
 
 heapAllocate : Int -> Codegen String
 heapAllocate size = do
@@ -242,17 +247,17 @@ getInstIR i (MKCLOSURE r (MkName n) missing args@[]) = do
 
 getInstIR i (APPLY r fun arg) = do
   closureObj <- load {t=IRObjPtr} (reg2mem fun)
-  header <- getObjectSlot (toIR closureObj) 0
-  argCount <- assignSSA $ "and i64 65535, " ++ header
-  missingArgCountShifted <- assignSSA $ "and i64 4294901760, " ++ header
+  header <- getObjectSlot closureObj 0
+  argCount <- assignSSA $ "and i64 65535, " ++ showWithoutType header
+  missingArgCountShifted <- assignSSA $ "and i64 4294901760, " ++ showWithoutType header
   missingArgCount <- assignSSA $ "lshr i64 " ++ missingArgCountShifted ++ ", 16"
   isSaturated <- assignSSA $ "icmp eq i64 1, " ++ missingArgCount
   labelName <- mkVarName "closure_saturated"
   appendCode $ "br i1 " ++ isSaturated ++ ", label %" ++ labelName ++ "_yes, label %" ++ labelName ++ "_no"
   appendCode $ labelName ++ "_yes:"
-  funcPtrI64 <- getObjectSlot (toIR closureObj) 1
+  funcPtrI64 <- getObjectSlot closureObj 1
 
-  func <- assignSSA $ "inttoptr i64 " ++ funcPtrI64 ++ " to %FuncPtrArgs1"
+  func <- assignSSA $ "inttoptr " ++ (toIR funcPtrI64) ++ " to %FuncPtrArgs1"
   hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
   hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
   argValue <- load {t=IRObjPtr} (reg2mem arg)
