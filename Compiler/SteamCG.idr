@@ -16,9 +16,6 @@ import Utils.Hex
 HEADER_SIZE : String
 HEADER_SIZE = "8"
 
-undefs : List String
-undefs = ["%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef", "%ObjPtr undef"]
-
 showSep : String -> List String -> String
 showSep s xs = go xs where
   go' : List String -> String
@@ -137,11 +134,16 @@ heapAllocate : Int -> Codegen String
 heapAllocate size = do
   su <- show <$> getUnique
   let totalSize = (cast HEADER_SIZE) + size
-  allocated <- assignSSA $ "call hhvmcc %Return1 @rapid_allocate(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, i64 "++(show totalSize)++") alwaysinline optsize nounwind"
+
+  hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
+  hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
+  let base = "%RuntimePtr %BaseArg"
+
+  allocated <- assignSSA $ "call hhvmcc %Return1 @rapid_allocate(" ++ showSep ", " [hp, base, hpLim] ++ ", i64 "++(show totalSize)++") alwaysinline optsize nounwind"
   newHp <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 0"
   appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpVar"
   newHpLim <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 1"
-  appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpLimVar"
+  appendCode $ "store %RuntimePtr " ++ newHpLim ++ ", %RuntimePtr* %HpLimVar"
   newObj <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 2"
   pure $ newObj
 
@@ -185,7 +187,7 @@ applyClosureHelperFunc = do
                       )
     let argList = [hp, base, hpLim] ++ storedArgs ++ [toIR argValue]
     --appendCode $ labelName ++ "_do_call:"
-    let undefs = repeatStr ", %ObjPtr undef" (minus (integerToNat $ cast maxArgs) (integerToNat $ cast i)) 
+    let undefs = repeatStr ", %ObjPtr undef" (minus (integerToNat $ cast maxArgs) (integerToNat $ cast i))
     callRes <- assignSSA $ "musttail call hhvmcc %Return1 " ++ func ++ "(" ++ (showSep ", " argList) ++ undefs ++ ")"
     appendCode $ "ret %Return1 " ++ callRes
     )
@@ -301,7 +303,7 @@ getInstIR i (MKCON r tag args) = do
 getInstIR i (MKCLOSURE r (MkName n) missing args) = do
   let len = length args
   let totalArgsExpected = missing + len
-  let header = 0x300000000 + (totalArgsExpected * 0x10000) + len
+  let header = 0x300000000 + (missing * 0x10000) + len
   newObjName <- heapAllocate (8 + 8 * (cast len))
   let newObj = SSA IRObjPtr newObjName
   putObjectSlot newObj 0 (ConstI64 $ cast header)
@@ -323,17 +325,15 @@ getInstIR i (APPLY r fun arg) = do
   funV <- ((++) "%FuncPtr ") <$> (assignSSA $ "load %FuncPtr, %FuncPtr* " ++ toIR fun ++ "Var")
   argV <- ((++) "%FuncPtr ") <$> (assignSSA $ "load %FuncPtr, %FuncPtr* " ++ toIR arg ++ "Var")
 
-  appendCode $ "call hhvmcc %Return1 @idris_apply_closure(" ++ showSep ", " [hp, base, hpLim, funV, argV] ++ repeatStr ", %ObjPtr undef" 6  ++ ")"
-  --result <- assignSSA $ "call hhvmcc %Return1 @" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
+  result <- assignSSA $ "call hhvmcc %Return1 @idris_apply_closure(" ++ showSep ", " [hp, base, hpLim, funV, argV] ++ repeatStr ", %ObjPtr undef" 6  ++ ")"
 
-  labelName <- mkVarName "closure_saturated"
-  -- TODO: call closure func if more than 1 arg
-  appendCode $ "br label %" ++ labelName ++ "_fin"
-  appendCode $ labelName ++ "_no:"
-  -- TODO: make new closure with +1 arg
-  newClosure <- heapAllocate 8
-  appendCode $ "br label %" ++ labelName ++ "_fin"
-  appendCode $ labelName ++ "_fin:"
+  newHp <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 0"
+  appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpVar"
+  newHpLim <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 1"
+  appendCode $ "store %RuntimePtr " ++ newHpLim ++ ", %RuntimePtr* %HpLimVar"
+  returnValue <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 2"
+  appendCode $ "store %ObjPtr " ++ returnValue ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+
   pure ()
 
 getInstIR i (MKCONSTANT r (I c)) = do
@@ -390,7 +390,7 @@ getInstIR i (CALL r tailpos (MkName n) args) =
      newHp <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 0"
      appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpVar"
      newHpLim <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 1"
-     appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpLimVar"
+     appendCode $ "store %RuntimePtr " ++ newHpLim ++ ", %RuntimePtr* %HpLimVar"
      returnValue <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 2"
      appendCode $ "store %ObjPtr " ++ returnValue ++ ", %ObjPtr* " ++ toIR r ++ "Var"
      pure ()

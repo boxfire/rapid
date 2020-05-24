@@ -38,7 +38,7 @@ define private hhvm_ccc %Return1 @rapid_gc_enter() noinline {
 
 declare ccc i1 @llvm.expect.i1(i1, i1)
 
-define private hhvmcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
+define external hhvmcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
   %Hp = ptrtoint %RuntimePtr %HpPtrArg to i64
   %HpLim = ptrtoint %RuntimePtr %HpLimPtrArg to i64
 
