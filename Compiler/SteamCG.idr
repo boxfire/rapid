@@ -11,7 +11,7 @@ import Core.TT
 import Data.Sexp
 import Utils.Hex
 
-%default covering
+%default partial
 
 HEADER_SIZE : String
 HEADER_SIZE = "8"

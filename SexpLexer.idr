@@ -3,6 +3,8 @@ module SexpLexer
 import Data.Strings
 import Text.Lexer
 
+%default partial
+
 public export
 data Token = LParen
            | RParen
