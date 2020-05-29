@@ -1,0 +1,6 @@
+package rapid
+
+depends = idris2, contrib
+
+main = Frontend.Rapid
+executable = rapid2-fe

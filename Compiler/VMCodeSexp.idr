@@ -4,6 +4,7 @@ import Data.Either
 import Data.List
 import Data.Maybe
 import Data.Strings
+import Data.Vect
 
 import Codegen
 import Compiler.VMCode
@@ -17,7 +18,11 @@ ToSexp String where
 
 export
 ToSexp Name where
-  toSexp (MkName n) = SAtom ("\"" ++ (show n) ++ "\"")
+  toSexp n = SAtom ("\"" ++ (fullShow n) ++ "\"") where
+    fullShow : Name -> String
+    fullShow (DN _ n) = fullShow n
+    fullShow (NS ns n) = showSep "." (reverse ns) ++ "." ++ fullShow n
+    fullShow n = show n
 
 ToSexp Reg where
   toSexp RVal = SAtom "RVAL"
@@ -48,8 +53,9 @@ ToSexp VMInst where
                            Nothing => SList [SAtom "nodefault"]
                            Just insts => SList [SAtom "default", SList $ assert_total $ map toSexp insts]
 
-    altToSexp : (Int, List VMInst) -> Sexp
-    altToSexp (i, insts) = SList [SAtom $ show i, SList $ assert_total $ map toSexp insts]
+    altToSexp : (Either Int Name, List VMInst) -> Sexp
+    altToSexp (Left i, insts) = SList [SAtom $ show i, SList $ assert_total $ map toSexp insts]
+    altToSexp (Right n, insts) = SList [toSexp n, SList $ assert_total $ map toSexp insts]
   toSexp (CONSTCASE reg alts def) = SList ([SAtom "CONSTCASE", toSexp reg, defaultCase def] ++ (map altToSexp alts)) where
     defaultCase : Maybe (List VMInst) -> Sexp
     defaultCase def = case def of
@@ -65,7 +71,7 @@ ToSexp VMInst where
 
 export
 FromSexp Name where
-  fromSexp (SAtom s) = Right $ MkName s
+  fromSexp (SAtom s) = Right $ (UN s)
   fromSexp _ = Left $ "not a name"
 
 export
@@ -80,6 +86,11 @@ FromSexp Reg where
   fromSexp (SAtom "") = Left "invalid reg: \"\""
   fromSexp (SAtom s) = Right (Loc $ cast $ assert_total $ strTail s)
   fromSexp s = Left ("invalid reg: " ++ show s)
+
+export
+FromSexp Int where
+  fromSexp (SAtom s) = maybeToEither ("invalid integer: " ++ show s) $ parseInteger s
+  fromSexp s = Left $ "invalid integer: " ++ (show s)
 
 export
 FromSexp Constant where
@@ -106,7 +117,7 @@ FromSexp VMInst where
     pure $ ASSIGN pd ps
   fromSexp (SList [SAtom "MKCON", regS, SAtom tagS, SList argsS]) = do
     reg <- fromSexp regS
-    let tag = cast tagS
+    let tag = Just $ cast tagS
     args <- collectFromSexp argsS
     pure $ MKCON reg tag args
   fromSexp (SList [SAtom "MKCLOSURE", regS, nameS, SAtom missingStr, SList argsS]) = do
@@ -127,7 +138,10 @@ FromSexp VMInst where
   fromSexp (SList ((SAtom "OP")::regS::(SAtom name)::argsS)) = do
     reg <- fromSexp regS
     args <- collectFromSexp argsS
-    pure $ OP reg name args
+    case (name, args) of
+         ("AddInt", [a,b]) => pure $ OP reg (Add IntType) [a,b]
+         (op, _) => Left $ "invalid op: " ++ op
+    --pure $ OP reg name args
   fromSexp (SList [SAtom "APPLY", regS, fS, argS]) = do
     reg <- fromSexp regS
     f <- fromSexp fS
@@ -162,10 +176,10 @@ FromSexp VMInst where
           insts <- collectFromSexp is
           pure $ Just insts
         readDefault _ = Right Nothing --Left "invalid default"
-  fromSexp (SList ((SAtom "EXTPRIM")::regS::(SAtom name)::(SList argsS)::[])) = do
+  fromSexp (SList ((SAtom "EXTPRIM")::regS::nameS::(SList argsS)::[])) = do
     reg <- fromSexp regS
     args <- collectFromSexp argsS
-    pure $ EXTPRIM reg name args
+    pure $ EXTPRIM reg !(fromSexp nameS) args
   fromSexp sexp = Left $ "vminst not impl" ++ show sexp
 
 public export
@@ -174,7 +188,7 @@ ToSexp VMDef where
   toSexp (MkVMError insts) = SList $ [SAtom "error", SList $ map toSexp insts]
 
 public export
-ToSexp (String, VMDef) where
+ToSexp (Name, VMDef) where
   toSexp (n, (MkVMFun args insts)) = SList $ [SAtom "defun", toSexp n, SList $ map (\i => SAtom $ "v" ++ show i) args, SList $ map toSexp insts]
   toSexp (n, (MkVMError insts)) = SList $ [SAtom "deferr", toSexp n, SList $ map toSexp insts]
 
