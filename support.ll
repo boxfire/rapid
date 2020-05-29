@@ -85,7 +85,20 @@ define private hhvmcc i64 @idris_enter_stackbridge(i8* %BaseTSO, i8* %heapStart,
   ret i64 0
 }
 
-define external ccc i64 @idris_enter(i8* %BaseTSO, i8* %heapStart, i8* %heapEnd) {
-  call hhvmcc i64 @idris_enter_stackbridge(%RuntimePtr %BaseTSO, %RuntimePtr %heapStart, %RuntimePtr %heapEnd)
+%Idris_TSO.struct = type {
+  i8*, ; nurseryStart
+  i8*, ; nurseryNext
+  i8*  ; nurseryEnd
+}
+
+define external ccc i64 @idris_enter(%Idris_TSO.struct* %BaseTSO) {
+  %heapStartPtr = getelementptr inbounds %Idris_TSO.struct, %Idris_TSO.struct* %BaseTSO, i32 0, i32 1
+  %heapStart = load %RuntimePtr, %RuntimePtr* %heapStartPtr
+
+  %heapEndPtr = getelementptr inbounds %Idris_TSO.struct, %Idris_TSO.struct* %BaseTSO, i32 0, i32 2
+  %heapEnd = load %RuntimePtr, %RuntimePtr* %heapEndPtr
+
+  %BaseTSO.raw = bitcast %Idris_TSO.struct* %BaseTSO to %RuntimePtr
+  call hhvmcc i64 @idris_enter_stackbridge(%RuntimePtr %BaseTSO.raw, %RuntimePtr %heapStart, %RuntimePtr %heapEnd)
   ret i64 0
 }
