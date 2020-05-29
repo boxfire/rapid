@@ -41,7 +41,18 @@ define private hhvm_ccc %Return1 @rapid_gc_enter() noinline {
 
 declare ccc i1 @llvm.expect.i1(i1, i1)
 
+declare ccc %ObjPtr @GC_malloc(i64)
+
 define external hhvmcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
+  %addr = call ccc %ObjPtr @GC_malloc(i64 %size)
+
+  %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpPtrArg, 0
+  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 1
+  %packed3 = insertvalue %Return1 %packed2, %RuntimePtr %addr, 2
+  ret %Return1 %packed3
+}
+
+define external hhvmcc %Return1 @rapid_allocate_fast (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
   %Hp = ptrtoint %RuntimePtr %HpPtrArg to i64
   %HpLim = ptrtoint %RuntimePtr %HpLimPtrArg to i64
 
