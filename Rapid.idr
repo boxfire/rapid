@@ -27,9 +27,9 @@ main = do
   let result = (lexed >>= parseSexp)
   case result of
        Right parsed => do
-         putStrLn $ show $ parsed
+         --putStrLn $ show $ parsed
          let vmcode = getVMDefs parsed
-         putStrLn $ show $ vmcode
+         --putStrLn $ show $ vmcode
          (Right support) <- readFile "support.ll"
          | Left _ => pure ()
          let support = ""
