@@ -64,7 +64,7 @@ gc_enter:
 }
 
 declare ccc i64 @write(i32, i8*, i64)
-define private hhvmcc %Return1 @_extprim_PrimIO_2e_prim_5f__5f_putStr(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %t0, %ObjPtr %unused0) {
+define private hhvmcc %Return1 @PrimIO_2e_prim_5f__5f_putStr(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %t0, %ObjPtr %unused0) {
   %payloadPtr = getelementptr i8, %ObjPtr %t0, i64 8
   %sizePtr = bitcast %ObjPtr %t0 to i32*
   %size32 = load i32, i32* %sizePtr

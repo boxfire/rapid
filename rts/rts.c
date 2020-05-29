@@ -2,7 +2,7 @@
 #include <stdlib.h>
 
 const size_t IDRIS_ALIGNMENT = 8;
-const size_t NURSERY_SIZE = 32;
+const size_t NURSERY_SIZE = 1024;
 
 typedef struct {
   void *nurseryStart;
