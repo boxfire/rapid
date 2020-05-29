@@ -8,7 +8,7 @@ root=$PWD
 fdir="$(dirname "$1")"
 fbase="$(basename "$1")"
 
-(cd "$fdir" && "$root/build/exec/rapid2-fe" "${fbase}" > "${fbase}.sexp")
+(cd "$fdir" && "$root/build/exec/rapid2-fe" "${fbase}")
 ./build/exec/rapid2-cg "${1}.sexp"
 cat support.ll "${1}.sexp.output.ll" | llc -o "${1}.s"
 

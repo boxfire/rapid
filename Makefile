@@ -1,7 +1,8 @@
 all: rapid
 
 rapid:
-	idris2 -p contrib -o rapid Rapid.idr
+	idris2 --build rapid-cg.ipkg
+	idris2 --build rapid-fe.ipkg
 
 linked: rts_entry.o tiny.o
 	gcc -g -o $@ $^
@@ -15,4 +16,7 @@ tiny.o: tiny.cmm
 clean:
 	rm -f tiny.o rts_entry.o linked
 
-.PHONY: all build clean rapid
+clean-samples:
+	rm -rf samples/*.sexp samples/*.ll samples/*.s samples/*.native* samples/build
+
+.PHONY: all clean clean-samples rapid

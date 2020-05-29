@@ -33,7 +33,7 @@ main = do
          (Right support) <- readFile "support.ll"
          | Left _ => pure ()
          let support = ""
-         let ir = support ++ closureHelper ++ (unlines $ map getVMIR $ enumerate vmcode)
+         let ir = support ++ closureHelper ++ (fastAppend $ map getVMIR $ enumerate vmcode)
          {-putStrLn $ ir-}
          _ <- writeFile (filename ++ ".output.ll") ir
          pure ()

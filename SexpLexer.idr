@@ -41,7 +41,7 @@ atom : Lexer
 atom = some ident <+> many space
 
 quotedAtom : Lexer
-quotedAtom = is '"' <+> some (pred (\x => x /= '"')) <+> is '"' <+> many space
+quotedAtom = is '"' <+> many (pred (\x => x /= '"')) <+> is '"' <+> many space
 
 removeQuotes : String -> String
 removeQuotes = assert_total . reverse . strTail . reverse . strTail

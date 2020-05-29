@@ -16,6 +16,15 @@ public export
 ToSexp String where
   toSexp n = SAtom ("\"" ++ (show n) ++ "\"")
 
+ToSexp (Maybe Int) where
+  toSexp (Just i) = SList [SAtom "Just", SAtom $ show i]
+  toSexp (Nothing) = SList [SAtom "Nothing"]
+
+FromSexp (Maybe Int) where
+  fromSexp (SList [SAtom "Just", SAtom s]) = maybeToEither "invalid maybe int" $ map Just $ parseInteger s
+  fromSexp (SList [SAtom "Nothing"]) = Right Nothing
+  fromSexp s = Left $ "invalid maybe int: " ++ show s
+
 export
 ToSexp Name where
   toSexp n = SAtom ("\"" ++ (fullShow n) ++ "\"") where
@@ -47,7 +56,7 @@ ToSexp VMInst where
   toSexp (DECLARE r) = SList [SAtom "DECLARE", toSexp r]
   toSexp START = SList [SAtom "START"]
   toSexp (ASSIGN d s) = shelper "ASSIGN" [d, s]
-  toSexp (MKCON reg tag args) = SList $ [SAtom "MKCON", toSexp reg, SAtom $ show tag, SList $ map toSexp args]
+  toSexp (MKCON reg tag args) = SList $ [SAtom "MKCON", toSexp reg, toSexp tag, SList $ map toSexp args]
   toSexp (MKCLOSURE reg n missing args) = SList $ [SAtom "MKCLOSURE", toSexp reg, toSexp n, SAtom $ show missing, SList (map toSexp args)]
   toSexp (MKCONSTANT reg const) = SList $ [SAtom "MKCONSTANT", toSexp reg, toSexp const]
   toSexp (CALL reg isTail n args) = SList $ [SAtom "CALL", toSexp reg, SAtom $ show isTail, toSexp n, SList $ map toSexp args]
@@ -116,9 +125,9 @@ FromSexp VMInst where
     pd <- fromSexp d
     ps <- fromSexp s
     pure $ ASSIGN pd ps
-  fromSexp (SList [SAtom "MKCON", regS, SAtom tagS, SList argsS]) = do
+  fromSexp (SList [SAtom "MKCON", regS, tagS, SList argsS]) = do
     reg <- fromSexp regS
-    let tag = Just $ cast tagS
+    tag <- fromSexp tagS
     args <- collectFromSexp argsS
     pure $ MKCON reg tag args
   fromSexp (SList [SAtom "MKCLOSURE", regS, nameS, SAtom missingStr, SList argsS]) = do
@@ -140,11 +149,18 @@ FromSexp VMInst where
     reg <- fromSexp regS
     args <- collectFromSexp argsS
     case (name, args) of
-         ("AddInt", [a,b]) => pure $ OP reg (Add IntType) [a,b]
          ("+Integer", [a,b]) => pure $ OP reg (Add IntegerType) [a,b]
          ("-Integer", [a,b]) => pure $ OP reg (Sub IntegerType) [a,b]
          ("*Integer", [a,b]) => pure $ OP reg (Mul IntegerType) [a,b]
+         ("==Integer", [a,b]) => pure $ OP reg (EQ IntegerType) [a,b]
          ("<=Integer", [a,b]) => pure $ OP reg (LTE IntegerType) [a,b]
+         (">=Integer", [a,b]) => pure $ OP reg (GTE IntegerType) [a,b]
+         (">Integer", [a,b]) => pure $ OP reg (GT IntegerType) [a,b]
+         ("<Integer", [a,b]) => pure $ OP reg (LT IntegerType) [a,b]
+         ("==Char", [a,b]) => pure $ OP reg (EQ CharType) [a,b]
+         ("cast-Integer-String", [i]) => pure $ OP reg (Cast IntegerType StringType) [i]
+         ("++", [a,b]) => pure $ OP reg (StrAppend) [a,b]
+         ("op_strhead", [s]) => pure $ OP reg (StrHead) [s]
          (op, _) => Left $ "invalid op: " ++ op
     --pure $ OP reg name args
   fromSexp (SList [SAtom "APPLY", regS, fS, argS]) = do
