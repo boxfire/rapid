@@ -4,10 +4,12 @@ import Data.Either
 import Data.List
 import Data.Maybe
 import Data.Strings
+import Data.Vect
 
-import Codegen
 import Compiler.VMCode
 import Core.TT
+
+import Codegen
 import Data.Sexp
 import Utils.Hex
 
@@ -16,22 +18,35 @@ import Utils.Hex
 HEADER_SIZE : String
 HEADER_SIZE = "8"
 
-showSep : String -> List String -> String
-showSep s xs = go xs where
-  go' : List String -> String
-  go' xs = concat $ map ((++) s) xs
+--showSep : String -> List String -> String
+--showSep s xs = go xs where
+  --go' : List String -> String
+  --go' xs = concat $ map ((++) s) xs
 
-  go : List String -> String
-  go [] = ""
-  go [x] = x
-  go (x::rest) = x ++ go' rest
+  --go : List String -> String
+  --go [] = ""
+  --go [x] = x
+  --go (x::rest) = x ++ go' rest
 
 repeatStr : String -> Nat -> String
 repeatStr s 0 = ""
 repeatStr s (S x) = s ++ repeatStr s x
 
-safeName : String -> String
-safeName s = concatMap okchar (unpack s)
+fullShow : Name -> String
+fullShow (DN _ n) = fullShow n
+fullShow (NS ns n) = showSep "." (reverse ns) ++ "." ++ fullShow n
+fullShow n = show n
+
+safeName : Name -> String
+safeName s = concatMap okchar (unpack $ fullShow s)
+  where
+    okchar : Char -> String
+    okchar c = if isAlphaNum c
+                  then cast c
+                  else "_" ++ asHex (cast {to=Int} c) ++ "_"
+
+safeName' : String -> String
+safeName' s = concatMap okchar (unpack s)
   where
     okchar : Char -> String
     okchar c = if isAlphaNum c
@@ -282,25 +297,25 @@ getInstIR i (DECLARE (Loc r)) = appendCode $ "  %v" ++ show r ++ "Var = alloca %
 getInstIR i (ASSIGN r src) = do
   value <- assignSSA $ "load %ObjPtr, %ObjPtr* " ++ toIR src ++ "Var"
   appendCode $ "  store %ObjPtr " ++ value ++ ", %ObjPtr* " ++ toIR r ++ "Var"
-getInstIR i (OP r "+Int" [r1, r2]) = do
+getInstIR i (OP r (Add IntType) [r1, r2]) = do
   i1 <- unboxInt (toIR r1)
   i2 <- unboxInt (toIR r2)
   vsum <- assignSSA $ "add i64 " ++ i1 ++ ", " ++ i2
   obj <- cgMkInt vsum
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 
-getInstIR i (OP r "==Int" [r1, r2]) = do
+getInstIR i (OP r (EQ IntType) [r1, r2]) = do
   i1 <- unboxInt (toIR r1)
   i2 <- unboxInt (toIR r2)
   vsum_i1 <- assignSSA $ "icmp eq i64 " ++ i1 ++ ", " ++ i2
   vsum_i64 <- assignSSA $ "zext i1 " ++ vsum_i1 ++ " to i64"
   obj <- cgMkInt vsum_i64
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
-getInstIR i (MKCON r tag args) = do
+getInstIR i (MKCON r (Just tag) args) = do
   obj <- mkCon tag args
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 
-getInstIR i (MKCLOSURE r (MkName n) missing args) = do
+getInstIR i (MKCLOSURE r n missing args) = do
   let len = length args
   let totalArgsExpected = missing + len
   let header = 0x300000000 + (missing * 0x10000) + len
@@ -380,7 +395,7 @@ getInstIR i (CONSTCASE r alts def) =
       appendCode $ "br label %" ++ caseId ++ "_end"
     makeCaseAlt _ (c, _) = appendCode $ "ERROR: constcase must be Int, got: " ++ show c
 
-getInstIR i (CALL r tailpos (MkName n) args) =
+getInstIR i (CALL r tailpos n args) =
   do argsV <- traverse prepareArg args
      hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
      hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
@@ -430,7 +445,7 @@ funcReturn = "
 getFunIR : Int -> String -> List Reg -> List VMInst -> Codegen ()
 getFunIR i n args body = do
     fargs <- traverse argIR args
-    appendCode ("\n\ndefine hhvmcc %Return1 @" ++ (safeName n) ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
+    appendCode ("\n\ndefine hhvmcc %Return1 @" ++ (safeName' n) ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
     appendCode "entry:"
     appendCode funcEntry
     traverse_ appendCode (map copyArg args)
@@ -446,7 +461,7 @@ getFunIR i n args body = do
 
 export
 getVMIR : (Int, (String, VMDef)) -> String
-getVMIR (i, n, MkVMFun args body) = runCodegen $ getFunIR i n args body
+getVMIR (i, n, MkVMFun args body) = runCodegen $ getFunIR i n (map Loc args) body
 getVMIR _ = ""
 
 export

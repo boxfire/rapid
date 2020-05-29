@@ -1,0 +1,6 @@
+package rapidcg
+
+depends = idris2, contrib
+
+main = Rapid
+executable = rapid2-cg

@@ -34,7 +34,13 @@ shelper s xs = SList ([SAtom s] ++ map toSexp xs)
 
 public export
 ToSexp Constant where
-  toSexp c = SAtom $ show c
+  toSexp (I i)    = SList [SAtom "I", SAtom $ show i]
+  toSexp (BI i)   = SList [SAtom "BI", SAtom $ show i]
+  toSexp (Str s)  = SList [SAtom "Str", SAtom $ show s]
+  toSexp (Ch c)   = SList [SAtom "Ch", SAtom $ show c]
+  toSexp (Db d)   = SList [SAtom "Db", SAtom $ show d]
+  toSexp WorldVal = SList [SAtom "%World"]
+  toSexp u        = SList [SAtom "not-implemented", SAtom $ show u]
 
 public export
 ToSexp VMInst where
@@ -88,11 +94,6 @@ FromSexp Reg where
   fromSexp s = Left ("invalid reg: " ++ show s)
 
 export
-FromSexp Int where
-  fromSexp (SAtom s) = maybeToEither ("invalid integer: " ++ show s) $ parseInteger s
-  fromSexp s = Left $ "invalid integer: " ++ (show s)
-
-export
 FromSexp Constant where
   fromSexp (SList [SAtom "I", SAtom i]) = Right $ I $ cast i
   fromSexp (SList [SAtom "BI", SAtom i]) = Right $ BI $ cast i
@@ -140,6 +141,10 @@ FromSexp VMInst where
     args <- collectFromSexp argsS
     case (name, args) of
          ("AddInt", [a,b]) => pure $ OP reg (Add IntType) [a,b]
+         ("+Integer", [a,b]) => pure $ OP reg (Add IntegerType) [a,b]
+         ("-Integer", [a,b]) => pure $ OP reg (Sub IntegerType) [a,b]
+         ("*Integer", [a,b]) => pure $ OP reg (Mul IntegerType) [a,b]
+         ("<=Integer", [a,b]) => pure $ OP reg (LTE IntegerType) [a,b]
          (op, _) => Left $ "invalid op: " ++ op
     --pure $ OP reg name args
   fromSexp (SList [SAtom "APPLY", regS, fS, argS]) = do
@@ -202,10 +207,14 @@ ToSexp (Name, VMDef) where
   {-fromSexp s = let mapped = map fromSexp s in-}
                    {-?fmmm-}
 
+getArg : Sexp -> Either String Int
+getArg (SAtom s) = maybeToEither "invalid int" $ parseInteger $ assert_total $ strTail s
+getArg x = Left "invalid ARG"
+
 export
 FromSexp (String, VMDef) where
   fromSexp (SList [SAtom "defun", SAtom n, SList args, SList insts]) = do
-    fArgs <- collectFromSexp args
+    fArgs <- traverse getArg args
     fInsts <- collectFromSexp insts
     pure (n, MkVMFun fArgs fInsts)
   fromSexp _ = Left "invalid vmdef"
