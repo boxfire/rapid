@@ -49,3 +49,6 @@ Opaque Data:
     HEADER (4bytes type `<<` 32, 2bytes argsMissing `<<` 16, 2bytes argsStored)
     FUNCPTR (8bytes, no gc)
     ARGS [repeat argsStored] * 8 bytes -> ObjPtr (yes gc)
+
+  ObjTyp : 4 == Char
+    HEADER: (MSB 4 Bytes ObjType, LSB 4 Bytes Unicode Codepoint)

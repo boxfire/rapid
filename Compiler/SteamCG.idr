@@ -18,6 +18,21 @@ import Utils.Hex
 HEADER_SIZE : String
 HEADER_SIZE = "8"
 
+OBJECT_TYPE_ID_CON_NO_ARGS : Int
+OBJECT_TYPE_ID_CON_NO_ARGS = 0
+
+OBJECT_TYPE_ID_INT : Int
+OBJECT_TYPE_ID_INT = 1
+
+OBJECT_TYPE_ID_STR : Int
+OBJECT_TYPE_ID_STR = 2
+
+OBJECT_TYPE_ID_CLOSURE : Int
+OBJECT_TYPE_ID_CLOSURE = 3
+
+OBJECT_TYPE_ID_CHAR : Int
+OBJECT_TYPE_ID_CHAR = 4
+
 --showSep : String -> List String -> String
 --showSep s xs = go xs where
   --go' : List String -> String
@@ -84,9 +99,10 @@ assignSSA value = do
   appendCode ("  " ++ varname ++ " = " ++ (toIR value))
   pure varname
 
-data IRType = I8 | I64 | FuncPtr | IRObjPtr | Pointer IRType
+data IRType = I1 | I8 | I64 | FuncPtr | IRObjPtr | Pointer IRType
 
 Show IRType where
+  show I1 = "i1"
   show I8 = "i8"
   show I64 = "i64"
   show FuncPtr = "%FuncPtr"
@@ -117,10 +133,20 @@ reg2mem (Loc i) = MkMemValue (Pointer IRObjPtr) ("%v" ++ show i ++ "Var")
 reg2mem RVal = MkMemValue (Pointer IRObjPtr) ("%rvalVar")
 reg2mem _ = MkMemValue (Pointer IRObjPtr) "undef"
 
-load : {auto t : IRType} -> MemValue (Pointer t) -> Codegen (IRValue t)
+reg2val : Reg -> IRValue (Pointer IRObjPtr)
+reg2val (Loc i) = SSA (Pointer IRObjPtr) ("%v" ++ show i ++ "Var")
+reg2val RVal = SSA (Pointer IRObjPtr) ("%rvalVar")
+reg2val _ = SSA (Pointer IRObjPtr) "undef"
+
+load : {auto t : IRType} -> IRValue (Pointer t) -> Codegen (IRValue t)
 load {t} mv = do
   loaded <- assignSSA $ "load " ++ (show t) ++ ", " ++ (toIR mv)
   pure $ SSA t loaded
+
+icmp : {t : IRType} -> String -> IRValue t -> IRValue t -> Codegen (IRValue I1)
+icmp {t} cond a b = do
+  compare <- assignSSA $ "icmp " ++ cond ++ " " ++ (show t) ++ " " ++ showWithoutType a ++ ", " ++ showWithoutType b
+  pure $ SSA I1 compare
 
 --and : Value -> Value -> CodeGen Value
 --and v1 v1 = toIR v1 ++ toIR v2
@@ -129,14 +155,14 @@ getObjectSlot : IRValue IRObjPtr -> Int -> Codegen (IRValue I64)
 getObjectSlot obj n = do
   i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
   slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
-  load {t=I64} (MkMemValue (Pointer I64) slotPtr)
+  load {t=I64} (SSA (Pointer I64) slotPtr)
 
 getObjectSlotT : {t : IRType} -> IRValue IRObjPtr -> Int -> Codegen (IRValue t)
 getObjectSlotT obj n = do
   i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
   slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
   slotPtrT <- assignSSA $ "bitcast i64* " ++ slotPtr ++ " to " ++ show t ++ "*"
-  load {t=t} (MkMemValue (Pointer t) slotPtrT)
+  load {t=t} (SSA (Pointer t) slotPtrT)
 
 putObjectSlot : {t : IRType} -> IRValue IRObjPtr -> Int -> IRValue t -> Codegen ()
 putObjectSlot {t} obj n val = do
@@ -212,12 +238,14 @@ applyClosureHelperFunc = do
   appendCode $ "call ccc void @idris_rts_crash(i64 42)"
   appendCode $ "ret %Return1 undef"
 
+header : Int -> Integer
+header i = (cast i) `prim__shl_Integer` 32
 
 cgMkInt : String -> Codegen String
 cgMkInt var = do
   newObj <- heapAllocate 8
   su <- mkVarName "mkint"
-  appendCode ("  %"++su++" = bitcast %ObjPtr " ++ newObj ++ " to i64*\n  store i64 4294967296, i64* %"++su++"\n  %"++su++".payloadPtr = getelementptr i64, i64* %" ++ su ++ ", i64 1\n  store i64 "++ var ++", i64* %"++su++".payloadPtr")
+  appendCode ("  %"++su++" = bitcast %ObjPtr " ++ newObj ++ " to i64*\n  store i64 " ++ (show $ header OBJECT_TYPE_ID_INT) ++ ", i64* %"++su++"\n  %"++su++".payloadPtr = getelementptr i64, i64* %" ++ su ++ ", i64 1\n  store i64 "++ var ++", i64* %"++su++".payloadPtr")
   pure newObj
 
 export
@@ -332,10 +360,52 @@ getInstIR i (OP r (Mul IntegerType) [r1, r2]) = do
   obj <- cgMkInt vsum
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 
+getInstIR i (OP r (EQ CharType) [r1, r2]) = do
+  -- Two Chars are equal, when their headers are equal
+  o1 <- load (reg2val r1)
+  o2 <- load (reg2val r2)
+  i1 <- getObjectSlotT {t=I64} o1 0
+  i2 <- getObjectSlotT {t=I64} o2 0
+  cmp_i1 <- icmp "eq" i1 i2
+  cmp_i64 <- assignSSA $ "zext " ++ toIR cmp_i1 ++ " to i64"
+  obj <- cgMkInt cmp_i64
+  appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 getInstIR i (OP r (EQ IntType) [r1, r2]) = do
   i1 <- unboxInt (toIR r1)
   i2 <- unboxInt (toIR r2)
   vsum_i1 <- assignSSA $ "icmp eq i64 " ++ i1 ++ ", " ++ i2
+  vsum_i64 <- assignSSA $ "zext i1 " ++ vsum_i1 ++ " to i64"
+  obj <- cgMkInt vsum_i64
+  appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+getInstIR i (OP r (EQ IntegerType) [r1, r2]) = do
+  -- FIXME: we treat Integers as bounded Ints -> should use GMP
+  i1 <- unboxInt (toIR r1)
+  i2 <- unboxInt (toIR r2)
+  vsum_i1 <- assignSSA $ "icmp eq i64 " ++ i1 ++ ", " ++ i2
+  vsum_i64 <- assignSSA $ "zext i1 " ++ vsum_i1 ++ " to i64"
+  obj <- cgMkInt vsum_i64
+  appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+getInstIR i (OP r (GT IntegerType) [r1, r2]) = do
+  -- FIXME: we treat Integers as bounded Ints -> should use GMP
+  i1 <- unboxInt (toIR r1)
+  i2 <- unboxInt (toIR r2)
+  vsum_i1 <- assignSSA $ "icmp sgt i64 " ++ i1 ++ ", " ++ i2
+  vsum_i64 <- assignSSA $ "zext i1 " ++ vsum_i1 ++ " to i64"
+  obj <- cgMkInt vsum_i64
+  appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+getInstIR i (OP r (GTE IntegerType) [r1, r2]) = do
+  -- FIXME: we treat Integers as bounded Ints -> should use GMP
+  i1 <- unboxInt (toIR r1)
+  i2 <- unboxInt (toIR r2)
+  vsum_i1 <- assignSSA $ "icmp sge i64 " ++ i1 ++ ", " ++ i2
+  vsum_i64 <- assignSSA $ "zext i1 " ++ vsum_i1 ++ " to i64"
+  obj <- cgMkInt vsum_i64
+  appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+getInstIR i (OP r (LT IntegerType) [r1, r2]) = do
+  -- FIXME: we treat Integers as bounded Ints -> should use GMP
+  i1 <- unboxInt (toIR r1)
+  i2 <- unboxInt (toIR r2)
+  vsum_i1 <- assignSSA $ "icmp slt i64 " ++ i1 ++ ", " ++ i2
   vsum_i64 <- assignSSA $ "zext i1 " ++ vsum_i1 ++ " to i64"
   obj <- cgMkInt vsum_i64
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
@@ -363,7 +433,7 @@ getInstIR i (MKCLOSURE r n missing args) = do
   putObjectSlot newObj 1 (SSA FuncPtr funcPtr)
   for_ (enumerate args) (\iv => do
       let (i, arg) = iv
-      argObj <- load {t=IRObjPtr} (reg2mem arg)
+      argObj <- load {t=IRObjPtr} (reg2val arg)
       putObjectSlot newObj (i+2) argObj
       pure ()
                               )
