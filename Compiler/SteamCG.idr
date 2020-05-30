@@ -303,6 +303,34 @@ getInstIR i (OP r (Add IntType) [r1, r2]) = do
   vsum <- assignSSA $ "add i64 " ++ i1 ++ ", " ++ i2
   obj <- cgMkInt vsum
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+getInstIR i (OP r (Sub IntType) [r1, r2]) = do
+  i1 <- unboxInt (toIR r1)
+  i2 <- unboxInt (toIR r2)
+  vsum <- assignSSA $ "sub i64 " ++ i1 ++ ", " ++ i2
+  obj <- cgMkInt vsum
+  appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+
+getInstIR i (OP r (Add IntegerType) [r1, r2]) = do
+  -- FIXME: we treat Integers as bounded Ints -> should use GMP
+  i1 <- unboxInt (toIR r1)
+  i2 <- unboxInt (toIR r2)
+  vsum <- assignSSA $ "add i64 " ++ i1 ++ ", " ++ i2
+  obj <- cgMkInt vsum
+  appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+getInstIR i (OP r (Sub IntegerType) [r1, r2]) = do
+  -- FIXME: we treat Integers as bounded Ints -> should use GMP
+  i1 <- unboxInt (toIR r1)
+  i2 <- unboxInt (toIR r2)
+  vsum <- assignSSA $ "sub i64 " ++ i1 ++ ", " ++ i2
+  obj <- cgMkInt vsum
+  appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+getInstIR i (OP r (Mul IntegerType) [r1, r2]) = do
+  -- FIXME: we treat Integers as bounded Ints -> should use GMP
+  i1 <- unboxInt (toIR r1)
+  i2 <- unboxInt (toIR r2)
+  vsum <- assignSSA $ "mul i64 " ++ i1 ++ ", " ++ i2
+  obj <- cgMkInt vsum
+  appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 
 getInstIR i (OP r (EQ IntType) [r1, r2]) = do
   i1 <- unboxInt (toIR r1)
@@ -311,6 +339,15 @@ getInstIR i (OP r (EQ IntType) [r1, r2]) = do
   vsum_i64 <- assignSSA $ "zext i1 " ++ vsum_i1 ++ " to i64"
   obj <- cgMkInt vsum_i64
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+getInstIR i (OP r (LTE IntegerType) [r1, r2]) = do
+  -- FIXME: we treat Integers as bounded Ints -> should use GMP
+  i1 <- unboxInt (toIR r1)
+  i2 <- unboxInt (toIR r2)
+  vsum_i1 <- assignSSA $ "icmp sle i64 " ++ i1 ++ ", " ++ i2
+  vsum_i64 <- assignSSA $ "zext i1 " ++ vsum_i1 ++ " to i64"
+  obj <- cgMkInt vsum_i64
+  appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+
 getInstIR i (MKCON r (Just tag) args) = do
   obj <- mkCon tag args
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
@@ -353,6 +390,13 @@ getInstIR i (APPLY r fun arg) = do
 
 getInstIR i (MKCONSTANT r (I c)) = do
   obj <- cgMkInt $ show c
+  appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+getInstIR i (MKCONSTANT r (BI c)) = do
+  -- FIXME: we treat Integers as bounded Ints -> should use GMP
+  obj <- cgMkInt $ show c
+  appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+getInstIR i (MKCONSTANT r WorldVal) = do
+  obj <- mkCon 1337 []
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 getInstIR i (MKCONSTANT r (Str s)) = do
   let len = length s
@@ -419,7 +463,7 @@ getInstIR i (EXTPRIM r n args) =
      pure ()
 
 getInstIR i START = pure ()
-getInstIR i _ = appendCode "; NOT IMPLEMENTED"
+getInstIR i inst = appendCode $ ";=============\n; NOT IMPLEMENTED: " ++ show inst ++ "\n;=============\n"
 
 funcEntry : String
 funcEntry = "
