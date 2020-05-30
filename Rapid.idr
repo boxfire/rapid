@@ -13,7 +13,7 @@ import Compiler.SteamCG
 
 {-getVMDefs : List Sexp -> List (Either String (String, VMDef))-}
 getVMDefs : List Sexp -> List (String, VMDef)
-getVMDefs s = either (\error=>[(error, MkVMError [])]) id $ traverse fromSexp s
+getVMDefs s = either (\error=>[("error: " ++ error, MkVMError [])]) id $ traverse fromSexp s
 
 main : IO ()
 main = do

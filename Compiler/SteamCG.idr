@@ -143,10 +143,31 @@ load {t} mv = do
   loaded <- assignSSA $ "load " ++ (show t) ++ ", " ++ (toIR mv)
   pure $ SSA t loaded
 
+store : {t : IRType} -> IRValue t -> IRValue (Pointer t) -> Codegen ()
+store {t} v dst = do
+  appendCode $ "  store " ++ (toIR v) ++ ", " ++ (toIR dst)
+
 icmp : {t : IRType} -> String -> IRValue t -> IRValue t -> Codegen (IRValue I1)
 icmp {t} cond a b = do
   compare <- assignSSA $ "icmp " ++ cond ++ " " ++ (show t) ++ " " ++ showWithoutType a ++ ", " ++ showWithoutType b
   pure $ SSA I1 compare
+
+mkBinOp : {t : IRType} -> String -> IRValue t -> IRValue t -> Codegen (IRValue t)
+mkBinOp {t} s a b = do
+  result <- assignSSA $ s ++ " " ++ (show t) ++ " " ++ showWithoutType a ++ ", " ++ showWithoutType b
+  pure $ SSA t result
+
+mkOr : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
+mkOr = mkBinOp "or"
+
+mkAdd : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
+mkAdd = mkBinOp "add"
+
+mkMul : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
+mkMul = mkBinOp "mul"
+
+mkSub : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
+mkSub = mkBinOp "sub"
 
 --and : Value -> Value -> CodeGen Value
 --and v1 v1 = toIR v1 ++ toIR v2
@@ -164,13 +185,57 @@ getObjectSlotT obj n = do
   slotPtrT <- assignSSA $ "bitcast i64* " ++ slotPtr ++ " to " ++ show t ++ "*"
   load {t=t} (SSA (Pointer t) slotPtrT)
 
-putObjectSlot : {t : IRType} -> IRValue IRObjPtr -> Int -> IRValue t -> Codegen ()
-putObjectSlot {t} obj n val = do
+putObjectSlotG : {t : IRType} -> IRValue IRObjPtr -> IRValue I64 -> IRValue t -> Codegen ()
+putObjectSlotG {t} obj pos val = do
   i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
-  slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
+  slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", " ++ toIR pos
   slotPtrObj <- assignSSA $ "bitcast i64* " ++ slotPtr ++ " to " ++ show t ++ "*"
   appendCode $ "  store " ++ toIR val ++ ", " ++ show t ++ " * " ++ slotPtrObj
 
+putObjectSlot : {t : IRType} -> IRValue IRObjPtr -> Int -> IRValue t -> Codegen ()
+putObjectSlot {t} obj n val = putObjectSlotG {t=t} obj (ConstI64 n) val
+  --i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
+  --slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
+  --slotPtrObj <- assignSSA $ "bitcast i64* " ++ slotPtr ++ " to " ++ show t ++ "*"
+  --appendCode $ "  store " ++ toIR val ++ ", " ++ show t ++ " * " ++ slotPtrObj
+
+funcEntry : String
+funcEntry = "
+  %HpVar = alloca %RuntimePtr
+  store %RuntimePtr %HpArg, %RuntimePtr* %HpVar
+  %HpLimVar = alloca %RuntimePtr
+  store %RuntimePtr %HpLimArg, %RuntimePtr* %HpLimVar
+  %rvalVar = alloca %ObjPtr
+"
+
+funcReturn : String
+funcReturn = "
+  %FinHp = load %RuntimePtr, %RuntimePtr* %HpVar
+  %FinHpLim = load %RuntimePtr, %RuntimePtr* %HpLimVar
+  %FinRVal = load %ObjPtr, %ObjPtr* %rvalVar
+
+  %ret1 = insertvalue %Return1 undef, %RuntimePtr %FinHp, 0
+  %ret2 = insertvalue %Return1 %ret1, %RuntimePtr %FinHpLim, 1
+  %ret3 = insertvalue %Return1 %ret2, %ObjPtr %FinRVal, 2
+  ret %Return1 %ret3
+"
+
+dynamicAllocate : IRValue I64 -> Codegen (IRValue IRObjPtr)
+dynamicAllocate payloadSize = do
+  totalSize <- SSA I64 <$> assignSSA ("add " ++ (toIR payloadSize) ++ ", " ++ HEADER_SIZE)
+
+  hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
+  hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
+  let base = "%RuntimePtr %BaseArg"
+
+  allocated <- assignSSA $ "call hhvmcc %Return1 @rapid_allocate(" ++ showSep ", " [hp, base, hpLim] ++ ", "++(toIR totalSize)++") alwaysinline optsize nounwind"
+  newHp <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 0"
+  appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpVar"
+  newHpLim <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 1"
+  appendCode $ "store %RuntimePtr " ++ newHpLim ++ ", %RuntimePtr* %HpLimVar"
+  SSA IRObjPtr <$> assignSSA ("extractvalue %Return1 " ++ allocated ++ ", 2")
+
+-- TODO: use dynamicAllocate with ConstI64
 heapAllocate : Int -> Codegen String
 heapAllocate size = do
   su <- show <$> getUnique
@@ -188,16 +253,21 @@ heapAllocate size = do
   newObj <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 2"
   pure $ newObj
 
+header : Int -> Integer
+header i = (cast i) `prim__shl_Integer` 32
+
 applyClosureHelperFunc : Codegen ()
 applyClosureHelperFunc = do
+  appendCode $ funcEntry
+
   let maxArgs = 7
 
   --closureObj <- load {t=IRObjPtr} (MkMemValue (Pointer IRObjPtr) "%closureObjArg")
   let closureObj = SSA IRObjPtr "%closureObjArg"
   let argValue = SSA IRObjPtr "%argumentObjArg"
-  header <- getObjectSlot closureObj 0
-  argCount <- assignSSA $ "and i64 65535, " ++ showWithoutType header
-  missingArgCountShifted <- assignSSA $ "and i64 4294901760, " ++ showWithoutType header
+  closureHeader <- getObjectSlot closureObj 0
+  argCount <- assignSSA $ "and i64 65535, " ++ showWithoutType closureHeader
+  missingArgCountShifted <- assignSSA $ "and i64 4294901760, " ++ showWithoutType closureHeader
   missingArgCount <- assignSSA $ "lshr i64 " ++ missingArgCountShifted ++ ", 16"
   isSaturated <- assignSSA $ "icmp eq i64 1, " ++ missingArgCount
   labelName <- mkVarName "closure_saturated"
@@ -233,13 +303,35 @@ applyClosureHelperFunc = do
     appendCode $ "ret %Return1 " ++ callRes
     )
   appendCode $ labelName ++ "_no:"
-  appendCode $ "br label %" ++ applyClosure ++ "_error"
+
+  --appliedArgCount <- SSA I64 <$> assignSSA ("add i64 " ++ argCount ++ ", 1")
+  appliedArgCount <- mkAdd (SSA I64 argCount) (ConstI64 1)
+  newArgsSize <- mkMul appliedArgCount (ConstI64 8)
+  -- add 8 bytes for entry func ptr
+  newPayloadSize <- mkAdd newArgsSize (ConstI64 8)
+  newClosureTotalSize <- mkAdd newPayloadSize (ConstI64 $ cast HEADER_SIZE)
+  newClosure <- dynamicAllocate newPayloadSize
+
+  let newHeader = ConstI64 $ cast $ header OBJECT_TYPE_ID_CLOSURE
+  newMissingArgs <- mkSub (SSA I64 missingArgCount) (ConstI64 1)
+  newMissingArgsShifted <- mkBinOp "shl" newMissingArgs (ConstI64 16)
+
+  newHeader' <- mkOr newHeader newMissingArgsShifted
+  newHeader'' <- mkOr newHeader' appliedArgCount
+
+  appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR newClosure ++ ", " ++ toIR closureObj ++ ", " ++ toIR newClosureTotalSize ++ ", i1 false)"
+  putObjectSlot newClosure 0 newHeader''
+
+  newArgSlotNumber <- mkAdd appliedArgCount (ConstI64 1)
+  putObjectSlotG newClosure newArgSlotNumber argValue
+
+  store newClosure (reg2val RVal)
+
+  appendCode $ funcReturn
+
   appendCode $ applyClosure ++ "_error:"
   appendCode $ "call ccc void @idris_rts_crash(i64 42)"
   appendCode $ "ret %Return1 undef"
-
-header : Int -> Integer
-header i = (cast i) `prim__shl_Integer` 32
 
 cgMkInt : String -> Codegen String
 cgMkInt var = do
@@ -269,7 +361,7 @@ mkCon tag args = do
   let enumArgs = enumerate args
   for enumArgs (\x => let i = fst x
                           arg = snd x in do
-                            argptr <- assignSSA $ "getelementptr %ObjPtr, %ObjPtr* " ++ payloadPtr ++ ", i64 " ++ (show (8+i*8))
+                            argptr <- assignSSA $ "getelementptr %ObjPtr, %ObjPtr* " ++ payloadPtr ++ ", i64 " ++ (show (1+i))
                             tmp <- assignSSA $ "load %ObjPtr, %ObjPtr* " ++ (toIR arg) ++ "Var"
                             appendCode $ "store %ObjPtr " ++ tmp ++ ", %ObjPtr* " ++ argptr
                           )
@@ -285,8 +377,12 @@ unboxInt src = do
     ]
   assignSSA $ "load i64, i64* %val.payload.cast" ++ su ++ "\n"
 
-makeCaseLabel : String -> (Constant, a) -> String
-makeCaseLabel caseId (I i,_) = "i64 " ++ show i ++ ", label %" ++ caseId ++ "_is_" ++ show i
+makeConstCaseLabel : String -> (Constant, a) -> String
+makeConstCaseLabel caseId (I i,_) = "i64 " ++ show i ++ ", label %" ++ caseId ++ "_is_" ++ show i
+makeConstCaseLabel caseId (c,_) = "case error: " ++ show c
+
+makeCaseLabel : String -> (Either Int Name, a) -> String
+makeCaseLabel caseId (Left i,_) = "i64 " ++ show i ++ ", label %" ++ caseId ++ "_tag_is_" ++ show i
 makeCaseLabel caseId (c,_) = "case error: " ++ show c
 
 instrAsComment : VMInst -> String
@@ -325,6 +421,36 @@ getInstIR i (DECLARE (Loc r)) = appendCode $ "  %v" ++ show r ++ "Var = alloca %
 getInstIR i (ASSIGN r src) = do
   value <- assignSSA $ "load %ObjPtr, %ObjPtr* " ++ toIR src ++ "Var"
   appendCode $ "  store %ObjPtr " ++ value ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+
+getInstIR i (OP r StrHead [r1]) = do
+  o1 <- load (reg2val r1)
+  --objHeader <- getObjectSlotT {t=I64} o1 0
+  --strLength <- (SSA I64) <$> assignSSA "  and " ++ (toIR objHeader) ++ ", " ++ (show 0xffffffff)
+
+  first8Bytes <- getObjectSlotT {t=I64} o1 1
+
+  -- FIXME: this assumes LE-encoding
+  -- FIXME: this assumes ASCII
+  firstChar <- (SSA I64) <$> assignSSA ("  and " ++ (toIR first8Bytes) ++ ", " ++ (show 0xff))
+
+  newCharObj <- (SSA IRObjPtr) <$> heapAllocate 0
+  newHeader <- (SSA I64) <$> assignSSA ("  or " ++ (toIR firstChar) ++ ", " ++ (showWithoutType $ ConstI64 $ cast $ header OBJECT_TYPE_ID_STR))
+  putObjectSlot newCharObj 0 newHeader
+
+  store newCharObj (reg2val r)
+
+  pure ()
+
+getInstIR i (OP r StrAppend [r1, r2]) = do
+  -- TODO: append r2
+  --value <- assignSSA $ "load %ObjPtr, %ObjPtr* " ++ toIR r1 ++ "Var"
+  --appendCode $ "  store %ObjPtr " ++ value ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+  getInstIR i (MKCONSTANT r (Str "<APPEND>"))
+
+getInstIR i (OP r (Cast IntegerType StringType) [r1]) = do
+  -- TODO: int -> str
+  getInstIR i (MKCONSTANT r (Str "<Int>"))
+
 getInstIR i (OP r (Add IntType) [r1, r2]) = do
   i1 <- unboxInt (toIR r1)
   i2 <- unboxInt (toIR r2)
@@ -458,6 +584,10 @@ getInstIR i (APPLY r fun arg) = do
 
   pure ()
 
+getInstIR i (MKCONSTANT r (Ch c)) = do
+  newObj <- (SSA IRObjPtr) <$> heapAllocate 0
+  putObjectSlot newObj 0 (ConstI64 $ cast $ ((cast c) + header 4))
+  store newObj (reg2val r)
 getInstIR i (MKCONSTANT r (I c)) = do
   obj <- cgMkInt $ show c
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
@@ -468,7 +598,8 @@ getInstIR i (MKCONSTANT r (BI c)) = do
 getInstIR i (MKCONSTANT r WorldVal) = do
   obj <- mkCon 1337 []
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
-getInstIR i (MKCONSTANT r (Str s)) = do
+getInstIR i (MKCONSTANT r (Str os)) = do
+  let s = "|<" ++ os ++ ">|"
   let len = length s
   cn <- addConstant i $ "private unnamed_addr constant [" ++ show len ++ " x i8] c\"" ++ (getStringIR s) ++ "\""
   cn <- assignSSA $ "bitcast [" ++ show len ++ " x i8]* "++cn++" to i8*"
@@ -485,12 +616,13 @@ getInstIR i (MKCONSTANT r (Str s)) = do
     ]
   appendCode $ "  store %ObjPtr " ++ newObj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
   pure ()
+
 getInstIR i (CONSTCASE r alts def) =
   do let def' = fromMaybe [] def
      caseId <- mkVarName "case_"
      let labelEnd = caseId ++ "_end"
      scrutinee <- unboxInt (toIR r)
-     appendCode $ "  switch i64 " ++ scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeCaseLabel caseId) alts)) ++ " ]"
+     appendCode $ "  switch i64 " ++ scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeConstCaseLabel caseId) alts)) ++ " ]"
      appendCode $ caseId ++ "_default:"
      uniq <- getUnique
      let nextI = uniq + (i * 100)
@@ -509,6 +641,33 @@ getInstIR i (CONSTCASE r alts def) =
       appendCode $ "br label %" ++ caseId ++ "_end"
     makeCaseAlt _ (c, _) = appendCode $ "ERROR: constcase must be Int, got: " ++ show c
 
+getInstIR i (CASE r alts def) =
+  do let def' = fromMaybe [] def
+     caseId <- mkVarName "case_"
+     let labelEnd = caseId ++ "_end"
+     o1 <- load $ reg2val r
+     header <- getObjectSlotT {t=I64} o1 0
+     -- object tag is stored in the least significat 32 bits of header
+     scrutinee <- assignSSA $ "and i64 " ++ (show 0xffffffff) ++ ", " ++ showWithoutType header
+     appendCode $ "  switch i64 " ++ scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeCaseLabel caseId) alts)) ++ " ]"
+     appendCode $ caseId ++ "_default:"
+     uniq <- getUnique
+     let nextI = uniq + (i * 100)
+     traverse (getInstIR nextI) def'
+     appendCode $ "br label %" ++ labelEnd
+     traverse (makeCaseAlt caseId) alts
+     appendCode $ labelEnd ++ ":"
+     pure ()
+  where
+    makeCaseAlt : String -> (Either Int Name, List VMInst) -> Codegen ()
+    makeCaseAlt caseId (Left c, is) = do
+      appendCode $ caseId ++ "_tag_is_" ++ (show c) ++ ":"
+      uniq <- getUnique
+      let nextI = uniq + (i * 100)
+      traverse_ (getInstIR nextI) is
+      appendCode $ "br label %" ++ caseId ++ "_end"
+    makeCaseAlt _ (Right n, _) = appendCode $ "ERROR: case can only match on tag, got name: " ++ fullShow n
+
 getInstIR i (CALL r tailpos n args) =
   do argsV <- traverse prepareArg args
      hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
@@ -524,6 +683,11 @@ getInstIR i (CALL r tailpos n args) =
      appendCode $ "store %ObjPtr " ++ returnValue ++ ", %ObjPtr* " ++ toIR r ++ "Var"
      pure ()
 
+getInstIR i (PROJECT r o pos) = do
+  obj <- load {t=IRObjPtr} (reg2val o)
+  slot <- getObjectSlotT {t=IRObjPtr} obj (pos+1)
+  store slot (reg2val r)
+
 getInstIR i (EXTPRIM r n args) =
   do argsV <- traverse prepareArg args
      hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
@@ -534,27 +698,6 @@ getInstIR i (EXTPRIM r n args) =
 
 getInstIR i START = pure ()
 getInstIR i inst = appendCode $ ";=============\n; NOT IMPLEMENTED: " ++ show inst ++ "\n;=============\n"
-
-funcEntry : String
-funcEntry = "
-  %HpVar = alloca %RuntimePtr
-  store %RuntimePtr %HpArg, %RuntimePtr* %HpVar
-  %HpLimVar = alloca %RuntimePtr
-  store %RuntimePtr %HpLimArg, %RuntimePtr* %HpLimVar
-  %rvalVar = alloca %ObjPtr
-"
-
-funcReturn : String
-funcReturn = "
-  %FinHp = load %RuntimePtr, %RuntimePtr* %HpVar
-  %FinHpLim = load %RuntimePtr, %RuntimePtr* %HpLimVar
-  %FinRVal = load %ObjPtr, %ObjPtr* %rvalVar
-
-  %ret1 = insertvalue %Return1 undef, %RuntimePtr %FinHp, 0
-  %ret2 = insertvalue %Return1 %ret1, %RuntimePtr %FinHpLim, 1
-  %ret3 = insertvalue %Return1 %ret2, %ObjPtr %FinRVal, 2
-  ret %Return1 %ret3
-"
 
 getFunIR : Int -> String -> List Reg -> List VMInst -> Codegen ()
 getFunIR i n args body = do

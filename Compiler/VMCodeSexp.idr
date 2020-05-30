@@ -188,7 +188,7 @@ FromSexp VMInst where
     (do
       reg <- fromSexp regS
       defaultV <- assert_total $ readDefault defaultS
-      pure $ CASE reg [] defaultV
+      pure $ CASE reg !(sequence $ map readAlt altsS) defaultV
       )
       where
         readDefault : Sexp -> Either String (Maybe (List VMInst))
@@ -197,10 +197,23 @@ FromSexp VMInst where
           insts <- collectFromSexp is
           pure $ Just insts
         readDefault _ = Right Nothing --Left "invalid default"
+        readAlt : Sexp -> Either String (Either Int Name, (List VMInst))
+        readAlt (SList [tagOrNameS, SList is]) = do
+          tagOrName <- case tagOrNameS of
+                            SAtom i => Right $ mirror $ maybeToEither (UN i) $ parseInteger i
+                            x => mirror <$> Left <$> fromSexp x
+          insts <- collectFromSexp is
+          pure $ (tagOrName, insts)
+        readAlt _ = Left $ "error in alt"
   fromSexp (SList ((SAtom "EXTPRIM")::regS::nameS::(SList argsS)::[])) = do
     reg <- fromSexp regS
     args <- collectFromSexp argsS
     pure $ EXTPRIM reg !(fromSexp nameS) args
+  fromSexp (SList ((SAtom "PROJECT")::regS::objS::(SAtom posS)::[])) = do
+    reg <- fromSexp regS
+    obj <- fromSexp objS
+    pos <- maybeToEither ("invalid int in PROJECT pos: " ++ posS) $ parseInteger posS
+    pure $ PROJECT reg obj pos
   fromSexp sexp = Left $ "vminst not impl" ++ show sexp
 
 public export
