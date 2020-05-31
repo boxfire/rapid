@@ -12,10 +12,6 @@ import Core.TT
 import Data.Sexp
 import Utils.Hex
 
-public export
-ToSexp String where
-  toSexp n = SAtom ("\"" ++ (show n) ++ "\"")
-
 ToSexp (Maybe Int) where
   toSexp (Just i) = SList [SAtom "Just", SAtom $ show i]
   toSexp (Nothing) = SList [SAtom "Nothing"]
@@ -246,16 +242,6 @@ public export
 ToSexp (Name, VMDef) where
   toSexp (n, (MkVMFun args insts)) = SList $ [SAtom "defun", toSexp n, SList $ map (\i => SAtom $ "v" ++ show i) args, SList $ map toSexp insts]
   toSexp (n, (MkVMError insts)) = SList $ [SAtom "deferr", toSexp n, SList $ map toSexp insts]
-
-{-listFromSexp : {FromSexp a} => FromSexp (List a)-}
-{-listFromSexp {fa} =-}
-  {-let mapped = map fromSexp s-}
-
-{-export-}
-{-FromSexp a => FromSexp (List a) where-}
-  {-fromSexp (SAtom _) = Left "not a list"-}
-  {-fromSexp s = let mapped = map fromSexp s in-}
-                   {-?fmmm-}
 
 getArg : Sexp -> Either String Int
 getArg (SAtom s) = maybeToEither "invalid int" $ parseInteger $ assert_total $ strTail s
