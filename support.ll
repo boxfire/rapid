@@ -3,6 +3,7 @@ target triple = "x86_64-apple-macosx10.15"
 
 declare ccc void @idris_rts_gc(i8*)
 declare ccc void @idris_rts_crash(i64)
+declare ccc i64 @idris_rts_int_to_str(i8*, i64)
 
 @g_Hp = weak global i64 undef
 @g_HpLim = weak global i64 undef
@@ -97,6 +98,7 @@ gc_enter:
 }
 
 declare ccc i64 @write(i32, i8*, i64)
+
 define private hhvmcc %Return1 @PrimIO_2e_prim_5f__5f_putStr(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %t0, %ObjPtr %unused0) {
   %payloadPtr = getelementptr i8, %ObjPtr %t0, i64 8
   %sizePtr = bitcast %ObjPtr %t0 to i32*

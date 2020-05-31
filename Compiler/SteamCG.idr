@@ -220,6 +220,10 @@ putObjectSlotG {t} obj pos val = do
 
 putObjectSlot : {t : IRType} -> IRValue IRObjPtr -> Int -> IRValue t -> Codegen ()
 putObjectSlot {t} obj n val = putObjectSlotG {t=t} obj (ConstI64 n) val
+
+putObjectHeader : IRValue IRObjPtr -> IRValue I64 -> Codegen ()
+putObjectHeader o h = putObjectSlotG o (ConstI64 0) h
+
   --i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
   --slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
   --slotPtrObj <- assignSSA $ "bitcast i64* " ++ slotPtr ++ " to " ++ show t ++ "*"
@@ -604,8 +608,16 @@ getInstIR i (OP r StrAppend [r1, r2]) = do
   store newStr (reg2val r)
 
 getInstIR i (OP r (Cast IntegerType StringType) [r1]) = do
-  -- TODO: int -> str
-  getInstIR i (MKCONSTANT r (Str "<Int>"))
+  theIntObj <- load (reg2val r1)
+  theInt <- getObjectSlotT {t=I64} theIntObj 1
+
+  -- mac size of 2^64 = 20 + (optional "-" prefix) + NUL byte (from snprintf)
+  newStr <- dynamicAllocate (ConstI64 24)
+  strPayload <- getObjectSlotAddr {t=I8} newStr 1
+  length <- (SSA I64) <$> assignSSA ("call ccc i64 @idris_rts_int_to_str(" ++ toIR strPayload ++ ", " ++ toIR theInt ++ ")")
+  newHeader <- mkAdd (ConstI64 $ cast $ header OBJECT_TYPE_ID_STR) length
+  putObjectHeader newStr newHeader
+  store newStr (reg2val r)
 
 getInstIR i (OP r (Add IntType) [r1, r2]) = do
   i1 <- unboxInt (toIR r1)
