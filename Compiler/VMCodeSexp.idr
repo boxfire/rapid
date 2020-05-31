@@ -107,7 +107,7 @@ FromSexp Constant where
   fromSexp (SList [SAtom "I", SAtom i]) = Right $ I $ cast i
   fromSexp (SList [SAtom "BI", SAtom i]) = Right $ BI $ cast i
   fromSexp (SList [SAtom "Str", SAtom s]) = Right $ Str s
-  fromSexp (SList [SAtom "Ch", SAtom c]) = Right $ Ch $ assert_total $ strIndex c 0
+  fromSexp (SList [SAtom "Ch", SAtom c]) = Right $ Ch $ assert_total $ strIndex c 1
   fromSexp (SList [SAtom "Db", SAtom d]) = Right $ Db $ cast d
   fromSexp (SList [SAtom "%World"]) = Right $ WorldVal
   fromSexp s = Left $ "invalid constant: " ++ show s
@@ -156,9 +156,17 @@ FromSexp VMInst where
          (">Integer", [a,b]) => pure $ OP reg (GT IntegerType) [a,b]
          ("<Integer", [a,b]) => pure $ OP reg (LT IntegerType) [a,b]
          ("==Char", [a,b]) => pure $ OP reg (EQ CharType) [a,b]
+         ("<=Char", [a,b]) => pure $ OP reg (LTE CharType) [a,b]
+         ("<Char", [a,b]) => pure $ OP reg (LT CharType) [a,b]
+         (">=Char", [a,b]) => pure $ OP reg (GTE CharType) [a,b]
+         (">Char", [a,b]) => pure $ OP reg (GT CharType) [a,b]
          ("cast-Integer-String", [i]) => pure $ OP reg (Cast IntegerType StringType) [i]
+         ("cast-Int-String", [i]) => pure $ OP reg (Cast IntType StringType) [i]
+         ("cast-Char-Integer", [i]) => pure $ OP reg (Cast CharType IntegerType) [i]
+         ("cast-Char-Int", [i]) => pure $ OP reg (Cast CharType IntType) [i]
          ("++", [a,b]) => pure $ OP reg (StrAppend) [a,b]
          ("op_strhead", [s]) => pure $ OP reg (StrHead) [s]
+         ("op_strcons", [a, b]) => pure $ OP reg (StrCons) [a,b]
          (op, _) => Left $ "invalid op: " ++ op
     --pure $ OP reg name args
   fromSexp (SList [SAtom "APPLY", regS, fS, argS]) = do

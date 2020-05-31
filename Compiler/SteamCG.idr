@@ -132,7 +132,7 @@ reg2val (Loc i) = SSA (Pointer IRObjPtr) ("%v" ++ show i ++ "Var")
 reg2val RVal = SSA (Pointer IRObjPtr) ("%rvalVar")
 reg2val Discard = SSA (Pointer IRObjPtr) "undef"
 
-load : {auto t : IRType} -> IRValue (Pointer t) -> Codegen (IRValue t)
+load : {t : IRType} -> IRValue (Pointer t) -> Codegen (IRValue t)
 load {t} mv = do
   loaded <- assignSSA $ "load " ++ (show t) ++ ", " ++ (toIR mv)
   pure $ SSA t loaded
@@ -181,26 +181,37 @@ mkMul = mkBinOp "mul"
 mkSub : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
 mkSub = mkBinOp "sub"
 
---and : Value -> Value -> CodeGen Value
---and v1 v1 = toIR v1 ++ toIR v2
+unlikely : IRValue I1 -> Codegen (IRValue I1)
+unlikely cond = (SSA I1) <$> assignSSA (" call ccc i1 @llvm.expect.i1(" ++ toIR cond ++ ", i1 0)")
+
+likely : IRValue I1 -> Codegen (IRValue I1)
+likely cond = (SSA I1) <$> assignSSA (" call ccc i1 @llvm.expect.i1(" ++ toIR cond ++ ", i1 1)")
+
+branch : IRValue I1 -> (true : IRLabel) -> (false : IRLabel) -> Codegen ()
+branch cond whenTrue whenFalse =
+  appendCode $ "br " ++ toIR cond ++ ", " ++ toIR whenTrue ++ ", " ++ toIR whenFalse
+
+jump : IRLabel -> Codegen ()
+jump to =
+  appendCode $ "br " ++ toIR to
 
 getObjectSlot : IRValue IRObjPtr -> Int -> Codegen (IRValue I64)
 getObjectSlot obj n = do
   i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
-  slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
+  slotPtr <- assignSSA $ "getelementptr inbounds i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
   load {t=I64} (SSA (Pointer I64) slotPtr)
 
 getObjectSlotAddr : {t : IRType} -> IRValue IRObjPtr -> Int -> Codegen (IRValue (Pointer t))
 getObjectSlotAddr obj n = do
   i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
-  slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
+  slotPtr <- assignSSA $ "getelementptr inbounds i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
   slotPtrT <- assignSSA $ "bitcast i64* " ++ slotPtr ++ " to " ++ show t ++ "*"
   pure (SSA (Pointer t) slotPtrT)
 
 getObjectSlotT : {t : IRType} -> IRValue IRObjPtr -> Int -> Codegen (IRValue t)
 getObjectSlotT obj n = do
   i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
-  slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
+  slotPtr <- assignSSA $ "getelementptr inbounds i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
   slotPtrT <- assignSSA $ "bitcast i64* " ++ slotPtr ++ " to " ++ show t ++ "*"
   load {t=t} (SSA (Pointer t) slotPtrT)
 
@@ -210,7 +221,7 @@ getObjectHeader o = getObjectSlotT o 0
 putObjectSlotG : {t : IRType} -> IRValue IRObjPtr -> IRValue I64 -> IRValue t -> Codegen ()
 putObjectSlotG {t} obj pos val = do
   i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
-  slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", " ++ toIR pos
+  slotPtr <- assignSSA $ "getelementptr inbounds i64, i64* " ++ i64ptr ++ ", " ++ toIR pos
   slotPtrObj <- assignSSA $ "bitcast i64* " ++ slotPtr ++ " to " ++ show t ++ "*"
   appendCode $ "  store " ++ toIR val ++ ", " ++ show t ++ " * " ++ slotPtrObj
 
@@ -516,21 +527,32 @@ getInstIR i (ASSIGN r src) = do
 
 getInstIR i (OP r StrHead [r1]) = do
   o1 <- load (reg2val r1)
-  -- FIXME: this assumees strlen > 0
-  --objHeader <- getObjectSlotT {t=I64} o1 0
-  --strLength <- (SSA I64) <$> assignSSA "  and " ++ (toIR objHeader) ++ ", " ++ (show 0xffffffff)
+  objHeader <- getObjectHeader o1
+  let zeroStrHeader = (ConstI64 $ cast $ header OBJECT_TYPE_ID_STR)
+  strIsZero <- unlikely !(icmp "eq" zeroStrHeader objHeader)
+  strHeadOk <- genLabel "strhead_ok"
+  strHeadError <- genLabel "strhead_err"
+  strHeadFinished <- genLabel "strhead_finished"
 
-  first8Bytes <- getObjectSlotT {t=I64} o1 1
+  branch strIsZero strHeadError strHeadOk
+  beginLabel strHeadOk
+  payload <- getObjectSlotAddr {t=I8} o1 1
 
-  -- FIXME: this assumes LE-encoding
   -- FIXME: this assumes ASCII
-  firstChar <- (SSA I64) <$> assignSSA ("  and " ++ (toIR first8Bytes) ++ ", " ++ (show 0xff))
+  firstChar <- mkZext {to=I64} !(load payload)
 
   newCharObj <- dynamicAllocate (ConstI64 0)
-  newHeader <- (SSA I64) <$> assignSSA ("  or " ++ (toIR firstChar) ++ ", " ++ (showWithoutType $ ConstI64 $ cast $ header OBJECT_TYPE_ID_STR))
+  newHeader <- mkOr firstChar (ConstI64 $ cast $ header OBJECT_TYPE_ID_CHAR)
   putObjectHeader newCharObj newHeader
 
   store newCharObj (reg2val r)
+  jump strHeadFinished
+
+  beginLabel strHeadError
+  appendCode $ "call ccc void @idris_rts_crash(i64 42) noreturn"
+  appendCode $ "unreachable"
+
+  beginLabel strHeadFinished
 
 getInstIR i (OP r StrAppend [r1, r2]) = do
   o1 <- load (reg2val r1)
@@ -598,6 +620,16 @@ getInstIR i (OP r (Mul IntegerType) [r1, r2]) = do
   obj <- cgMkInt !(mkMul i1 i2)
   store obj (reg2val r)
 
+getInstIR i (OP r (LTE CharType) [r1, r2]) = do
+  -- compare Chars by comparing their headers
+  o1 <- load (reg2val r1)
+  o2 <- load (reg2val r2)
+  i1 <- getObjectHeader o1
+  i2 <- getObjectHeader o2
+  cmp_i1 <- icmp "ule" i1 i2
+  cmp_i64 <- assignSSA $ "zext " ++ toIR cmp_i1 ++ " to i64"
+  obj <- cgMkInt (SSA I64 cmp_i64)
+  store obj (reg2val r)
 getInstIR i (OP r (EQ CharType) [r1, r2]) = do
   -- Two Chars are equal, when their headers are equal
   o1 <- load (reg2val r1)
@@ -608,6 +640,7 @@ getInstIR i (OP r (EQ CharType) [r1, r2]) = do
   cmp_i64 <- assignSSA $ "zext " ++ toIR cmp_i1 ++ " to i64"
   obj <- cgMkInt (SSA I64 cmp_i64)
   store obj (reg2val r)
+
 getInstIR i (OP r (EQ IntType) [r1, r2]) = do
   i1 <- unboxInt (reg2val r1)
   i2 <- unboxInt (reg2val r2)
