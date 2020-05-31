@@ -33,16 +33,6 @@ OBJECT_TYPE_ID_CLOSURE = 3
 OBJECT_TYPE_ID_CHAR : Int
 OBJECT_TYPE_ID_CHAR = 4
 
---showSep : String -> List String -> String
---showSep s xs = go xs where
-  --go' : List String -> String
-  --go' xs = concat $ map ((++) s) xs
-
-  --go : List String -> String
-  --go [] = ""
-  --go [x] = x
-  --go (x::rest) = x ++ go' rest
-
 repeatStr : String -> Nat -> String
 repeatStr s 0 = ""
 repeatStr s (S x) = s ++ repeatStr s x
@@ -266,24 +256,6 @@ dynamicAllocate payloadSize = do
   appendCode $ "store %RuntimePtr " ++ newHpLim ++ ", %RuntimePtr* %HpLimVar"
   SSA IRObjPtr <$> assignSSA ("extractvalue %Return1 " ++ allocated ++ ", 2")
 
--- TODO: use dynamicAllocate with ConstI64
-heapAllocate : Int -> Codegen String
-heapAllocate size = do
-  su <- show <$> getUnique
-  let totalSize = (cast HEADER_SIZE) + size
-
-  hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
-  hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
-  let base = "%RuntimePtr %BaseArg"
-
-  allocated <- assignSSA $ "call hhvmcc %Return1 @rapid_allocate(" ++ showSep ", " [hp, base, hpLim] ++ ", i64 "++(show totalSize)++") alwaysinline optsize nounwind"
-  newHp <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 0"
-  appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpVar"
-  newHpLim <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 1"
-  appendCode $ "store %RuntimePtr " ++ newHpLim ++ ", %RuntimePtr* %HpLimVar"
-  newObj <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 2"
-  pure $ newObj
-
 header : Int -> Integer
 header i = (cast i) `prim__shl_Integer` 32
 
@@ -306,8 +278,6 @@ applyClosureHelperFunc = do
   funcPtrI64 <- getObjectSlot closureObj 1
   func <- assignSSA $ "inttoptr " ++ (toIR funcPtrI64) ++ " to %FuncPtrArgs" ++ show (maxArgs+1)
 
-  --hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
-  --hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
   let hp = "%RuntimePtr %HpArg"
   let base = "%RuntimePtr %BaseArg"
   let hpLim = "%RuntimePtr %HpLimArg"
@@ -382,21 +352,15 @@ getStringIR s = concatMap okchar (unpack s)
 
 mkStr : Int -> String -> Codegen (IRValue IRObjPtr)
 mkStr i s = do
-  let len = length s
+  let len = cast {to=Integer} $ length s
   cn <- addConstant i $ "private unnamed_addr constant [" ++ show len ++ " x i8] c\"" ++ (getStringIR s) ++ "\""
   cn <- assignSSA $ "bitcast [" ++ show len ++ " x i8]* "++cn++" to i8*"
-  su <- mkVarName "mkStr"
-  let header = 0x200000000 + len
-  newObj <- heapAllocate (cast len)
-  appendCode $ unlines [
-    "  %"++su++" = bitcast %ObjPtr " ++ newObj ++ " to i64*",
-    -- TODO: add string length in bytes to header
-    "  store i64 " ++ show header ++", i64* %"++su,
-    "  %"++su++".payloadPtr = getelementptr i64, i64* %" ++ su ++ ", i64 1",
-    "  %"++su++".strPtr = bitcast i64* %" ++ su ++ ".payloadPtr to i8*",
-    "  call void @llvm.memcpy.p0i8.p0i8.i32(i8* %" ++ su ++ ".strPtr, i8* "++cn++", i32 " ++show len ++", i1 false)"
-    ]
-  pure (SSA IRObjPtr newObj)
+  let newHeader = ConstI64 $ cast $ (header OBJECT_TYPE_ID_STR) + len
+  newObj <- dynamicAllocate (ConstI64 $ cast len)
+  putObjectHeader newObj newHeader
+  strPayload <- getObjectSlotAddr {t=I8} newObj 1
+  appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i32(" ++ toIR strPayload ++ ", i8* "++cn++", i32 " ++show len ++", i1 false)"
+  pure newObj
 
 export
 enumerate : List a -> List (Int, a)
@@ -562,7 +526,7 @@ getInstIR i (OP r StrHead [r1]) = do
   -- FIXME: this assumes ASCII
   firstChar <- (SSA I64) <$> assignSSA ("  and " ++ (toIR first8Bytes) ++ ", " ++ (show 0xff))
 
-  newCharObj <- (SSA IRObjPtr) <$> heapAllocate 0
+  newCharObj <- dynamicAllocate (ConstI64 0)
   newHeader <- (SSA I64) <$> assignSSA ("  or " ++ (toIR firstChar) ++ ", " ++ (showWithoutType $ ConstI64 $ cast $ header OBJECT_TYPE_ID_STR))
   putObjectHeader newCharObj newHeader
 
@@ -696,14 +660,14 @@ getInstIR i (MKCON r (Just tag) args) = do
   obj <- mkCon tag args
   store obj (reg2val r)
 
-getInstIR i (MKCLOSURE r n missing args) = do
-  let len = length args
+getInstIR i (MKCLOSURE r n missingN args) = do
+  let missing = cast {to=Integer} missingN
+  let len = cast {to=Integer} $ length args
   let totalArgsExpected = missing + len
-  let header = 0x300000000 + (missing * 0x10000) + len
-  newObjName <- heapAllocate (8 + 8 * (cast len))
-  let newObj = SSA IRObjPtr newObjName
+  let header = (header OBJECT_TYPE_ID_CLOSURE) + (missing * 0x10000) + len
+  newObj <- dynamicAllocate $ ConstI64 (8 + 8 * (cast len))
   putObjectHeader newObj (ConstI64 $ cast header)
-  funcPtr <- assignSSA $ "bitcast %Return1 (%RuntimePtr,%RuntimePtr,%RuntimePtr" ++ (repeatStr ", %ObjPtr" totalArgsExpected) ++ ")* @" ++ (safeName n) ++ " to %FuncPtr"
+  funcPtr <- assignSSA $ "bitcast %Return1 (%RuntimePtr,%RuntimePtr,%RuntimePtr" ++ (repeatStr ", %ObjPtr" (integerToNat totalArgsExpected)) ++ ")* @" ++ (safeName n) ++ " to %FuncPtr"
   putObjectSlot newObj 1 (SSA FuncPtr funcPtr)
   for_ (enumerate args) (\iv => do
       let (i, arg) = iv
@@ -719,7 +683,6 @@ getInstIR i (APPLY r fun arg) = do
   let base = "%RuntimePtr %BaseArg"
 
   funV <- ((++) "%FuncPtr ") <$> (assignSSA $ "load %FuncPtr, %FuncPtr* " ++ toIR fun ++ "Var")
-  --argV <- ((++) "%ObjPtr ") <$> (assignSSA $ "load %ObjPtr, %ObjPtr* " ++ toIR arg ++ "Var")
   argV <- load (reg2val arg)
 
   result <- assignSSA $ "call hhvmcc %Return1 @idris_apply_closure(" ++ showSep ", " [hp, base, hpLim, funV, toIR argV] ++ repeatStr ", %ObjPtr undef" 6  ++ ")"
@@ -734,8 +697,8 @@ getInstIR i (APPLY r fun arg) = do
   pure ()
 
 getInstIR i (MKCONSTANT r (Ch c)) = do
-  newObj <- (SSA IRObjPtr) <$> heapAllocate 0
-  putObjectHeader newObj (ConstI64 $ cast $ ((cast c) + header 4))
+  newObj <- dynamicAllocate (ConstI64 0)
+  putObjectHeader newObj (ConstI64 $ cast $ ((cast c) + header OBJECT_TYPE_ID_CHAR))
   store newObj (reg2val r)
 getInstIR i (MKCONSTANT r (I c)) = do
   obj <- cgMkInt (ConstI64 c)
@@ -747,23 +710,7 @@ getInstIR i (MKCONSTANT r (BI c)) = do
 getInstIR i (MKCONSTANT r WorldVal) = do
   obj <- mkCon 1337 []
   store obj (reg2val r)
-getInstIR i (MKCONSTANT r (Str s)) = do
-  let len = length s
-  cn <- addConstant i $ "private unnamed_addr constant [" ++ show len ++ " x i8] c\"" ++ (getStringIR s) ++ "\""
-  cn <- assignSSA $ "bitcast [" ++ show len ++ " x i8]* "++cn++" to i8*"
-  su <- mkVarName "mkStr"
-  let header = 0x200000000 + len
-  newObj <- heapAllocate (cast len)
-  appendCode $ unlines [
-    "  %"++su++" = bitcast %ObjPtr " ++ newObj ++ " to i64*",
-    -- TODO: add string length in bytes to header
-    "  store i64 " ++ show header ++", i64* %"++su,
-    "  %"++su++".payloadPtr = getelementptr i64, i64* %" ++ su ++ ", i64 1",
-    "  %"++su++".strPtr = bitcast i64* %" ++ su ++ ".payloadPtr to i8*",
-    "  call void @llvm.memcpy.p0i8.p0i8.i32(i8* %" ++ su ++ ".strPtr, i8* "++cn++", i32 " ++show len ++", i1 false)"
-    ]
-  appendCode $ "  store %ObjPtr " ++ newObj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
-  pure ()
+getInstIR i (MKCONSTANT r (Str s)) = store !(mkStr i s) (reg2val r)
 
 getInstIR i (CONSTCASE r alts def) = case findConstCaseType alts of
                                           IntType => getInstForConstCaseInt i r alts def
