@@ -4,3 +4,5 @@
 /build/
 /samples/build/
 /rts/build/
+*.o
+*.bc
