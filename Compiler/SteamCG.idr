@@ -294,7 +294,7 @@ applyClosureHelperFunc = do
 
   let closureObj = SSA IRObjPtr "%closureObjArg"
   let argValue = SSA IRObjPtr "%argumentObjArg"
-  closureHeader <- getObjectSlot closureObj 0
+  closureHeader <- getObjectHeader closureObj
   argCount <- assignSSA $ "and i64 65535, " ++ showWithoutType closureHeader
   missingArgCountShifted <- assignSSA $ "and i64 4294901760, " ++ showWithoutType closureHeader
   missingArgCount <- assignSSA $ "lshr i64 " ++ missingArgCountShifted ++ ", 16"
@@ -566,6 +566,7 @@ getInstIR i (ASSIGN r src) = do
 
 getInstIR i (OP r StrHead [r1]) = do
   o1 <- load (reg2val r1)
+  -- FIXME: this assumees strlen > 0
   --objHeader <- getObjectSlotT {t=I64} o1 0
   --strLength <- (SSA I64) <$> assignSSA "  and " ++ (toIR objHeader) ++ ", " ++ (show 0xffffffff)
 
@@ -581,13 +582,11 @@ getInstIR i (OP r StrHead [r1]) = do
 
   store newCharObj (reg2val r)
 
-  pure ()
-
 getInstIR i (OP r StrAppend [r1, r2]) = do
   o1 <- load (reg2val r1)
   o2 <- load (reg2val r2)
-  h1 <- getObjectSlotT {t=I64} o1 0
-  h2 <- getObjectSlotT {t=I64} o2 0
+  h1 <- getObjectHeader o1
+  h2 <- getObjectHeader o2
   l1 <- mkBinOp "and" (ConstI64 0xffffffff) h1
   l2 <- mkBinOp "and" (ConstI64 0xffffffff) h2
   newLength <- mkAdd l1 l2
@@ -611,7 +610,7 @@ getInstIR i (OP r (Cast IntegerType StringType) [r1]) = do
   theIntObj <- load (reg2val r1)
   theInt <- getObjectSlotT {t=I64} theIntObj 1
 
-  -- mac size of 2^64 = 20 + (optional "-" prefix) + NUL byte (from snprintf)
+  -- max size of 2^64 = 20 + (optional "-" prefix) + NUL byte (from snprintf)
   newStr <- dynamicAllocate (ConstI64 24)
   strPayload <- getObjectSlotAddr {t=I8} newStr 1
   length <- (SSA I64) <$> assignSSA ("call ccc i64 @idris_rts_int_to_str(" ++ toIR strPayload ++ ", " ++ toIR theInt ++ ")")
@@ -658,8 +657,8 @@ getInstIR i (OP r (EQ CharType) [r1, r2]) = do
   -- Two Chars are equal, when their headers are equal
   o1 <- load (reg2val r1)
   o2 <- load (reg2val r2)
-  i1 <- getObjectSlotT {t=I64} o1 0
-  i2 <- getObjectSlotT {t=I64} o2 0
+  i1 <- getObjectHeader o1
+  i2 <- getObjectHeader o2
   cmp_i1 <- icmp "eq" i1 i2
   cmp_i64 <- assignSSA $ "zext " ++ toIR cmp_i1 ++ " to i64"
   obj <- cgMkInt cmp_i64
@@ -795,7 +794,7 @@ getInstIR i (CASE r alts def) =
      caseId <- mkVarName "case_"
      let labelEnd = caseId ++ "_end"
      o1 <- load $ reg2val r
-     header <- getObjectSlotT {t=I64} o1 0
+     header <- getObjectHeader o1
      -- object tag is stored in the least significat 32 bits of header
      scrutinee <- assignSSA $ "and i64 " ++ (show 0xffffffff) ++ ", " ++ showWithoutType header
      appendCode $ "  switch i64 " ++ scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeCaseLabel caseId) alts)) ++ " ]"
