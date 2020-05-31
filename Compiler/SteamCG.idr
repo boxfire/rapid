@@ -388,9 +388,20 @@ unboxInt src = do
     ]
   assignSSA $ "load i64, i64* %val.payload.cast" ++ su ++ "\n"
 
+total
+showConstant : Constant -> String
+showConstant (I i) = "(I " ++ show i ++ ")"
+showConstant (BI i) = "(BI " ++ show i ++ ")"
+showConstant (Str i) = "(Str " ++ show i ++ ")"
+showConstant (Ch i) = "(Ch " ++ show i ++ ")"
+showConstant (Db i) = "(Db " ++ show i ++ ")"
+showConstant other = "(CONST " ++ show other ++ ")"
+
 makeConstCaseLabel : String -> (Constant, a) -> String
 makeConstCaseLabel caseId (I i,_) = "i64 " ++ show i ++ ", label %" ++ caseId ++ "_is_" ++ show i
-makeConstCaseLabel caseId (c,_) = "case error: " ++ show c
+-- FIXME: how to handle this with GMP Integers?
+makeConstCaseLabel caseId (BI i,_) = "i64 " ++ show i ++ ", label %" ++ caseId ++ "_is_" ++ show i
+makeConstCaseLabel caseId (c,_) = "const case error: " ++ (showConstant c)
 
 makeCaseLabel : String -> (Either Int Name, a) -> String
 makeCaseLabel caseId (Left i,_) = "i64 " ++ show i ++ ", label %" ++ caseId ++ "_tag_is_" ++ show i
@@ -453,7 +464,6 @@ getInstIR i (OP r StrHead [r1]) = do
   pure ()
 
 getInstIR i (OP r StrAppend [r1, r2]) = do
-  -- TODO: append r2
   o1 <- load (reg2val r1)
   o2 <- load (reg2val r2)
   h1 <- getObjectSlotT {t=I64} o1 0
@@ -629,7 +639,7 @@ getInstIR i (MKCONSTANT r WorldVal) = do
   obj <- mkCon 1337 []
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 getInstIR i (MKCONSTANT r (Str os)) = do
-  let s = "|<" ++ os ++ ">|"
+  let s = "< \"" ++ os ++ "\" >"
   let len = length s
   cn <- addConstant i $ "private unnamed_addr constant [" ++ show len ++ " x i8] c\"" ++ (getStringIR s) ++ "\""
   cn <- assignSSA $ "bitcast [" ++ show len ++ " x i8]* "++cn++" to i8*"
@@ -669,6 +679,7 @@ getInstIR i (CONSTCASE r alts def) =
       let nextI = uniq + (i * 100)
       traverse_ (getInstIR nextI) is
       appendCode $ "br label %" ++ caseId ++ "_end"
+    makeCaseAlt caseId (BI c, is) = makeCaseAlt caseId (I $ cast c, is)
     makeCaseAlt _ (c, _) = appendCode $ "ERROR: constcase must be Int, got: " ++ show c
 
 getInstIR i (CASE r alts def) =

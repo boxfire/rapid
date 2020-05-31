@@ -113,8 +113,6 @@ FromSexp Constant where
   fromSexp s = Left $ "invalid constant: " ++ show s
 
 collectFromSexp : FromSexp a => List Sexp -> Either String (List a)
-{-collectFromSexp s = Right $ rights $ map fromSexp s-}
-{-collectFromSexp s = sequence $ map fromSexp s-}
 collectFromSexp s = traverse fromSexp s
 
 export
@@ -171,7 +169,7 @@ FromSexp VMInst where
   fromSexp (SList ((SAtom "CONSTCASE")::regS::defaultS::altsS)) =
     do reg <- fromSexp regS
        defaultV <- assert_total $ readDefault defaultS
-       pure $ CONSTCASE reg (assert_total $ rights $ map readAlt altsS) defaultV
+       pure $ CONSTCASE reg !(traverse readAlt altsS) defaultV
     where
         readDefault : Sexp -> Either String (Maybe (List VMInst))
         readDefault (SList [SAtom "nodefault"]) = Right Nothing
@@ -180,15 +178,16 @@ FromSexp VMInst where
           pure $ Just insts
         readDefault _ = Right Nothing --Left "invalid default"
         readAlt : Sexp -> Either String (Constant, (List VMInst))
-        readAlt (SList [SAtom c, SList is]) = do
+        readAlt (SList [c, SList is]) = do
+          constant <- fromSexp c
           insts <- collectFromSexp is
-          pure $ (I $ cast c, insts)
+          pure $ (constant, insts)
         readAlt _ = Left $ "error in alt"
   fromSexp (SList ((SAtom "CASE")::regS::defaultS::altsS)) =
     (do
       reg <- fromSexp regS
       defaultV <- assert_total $ readDefault defaultS
-      pure $ CASE reg !(sequence $ map readAlt altsS) defaultV
+      pure $ CASE reg !(traverse readAlt altsS) defaultV
       )
       where
         readDefault : Sexp -> Either String (Maybe (List VMInst))
