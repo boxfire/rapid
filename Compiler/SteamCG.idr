@@ -152,6 +152,10 @@ icmp {t} cond a b = do
   compare <- assignSSA $ "icmp " ++ cond ++ " " ++ (show t) ++ " " ++ showWithoutType a ++ ", " ++ showWithoutType b
   pure $ SSA I1 compare
 
+getElementPtr : {t : IRType} -> IRValue (Pointer t) -> IRValue ot -> Codegen (IRValue (Pointer t))
+getElementPtr {t} ptr offset =
+  SSA (Pointer t) <$> assignSSA ("getelementptr inbounds " ++ show t ++ ", " ++ toIR ptr ++ ", " ++ toIR offset)
+
 mkBinOp : {t : IRType} -> String -> IRValue t -> IRValue t -> Codegen (IRValue t)
 mkBinOp {t} s a b = do
   result <- assignSSA $ s ++ " " ++ (show t) ++ " " ++ showWithoutType a ++ ", " ++ showWithoutType b
@@ -177,6 +181,13 @@ getObjectSlot obj n = do
   i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
   slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
   load {t=I64} (SSA (Pointer I64) slotPtr)
+
+getObjectSlotAddr : {t : IRType} -> IRValue IRObjPtr -> Int -> Codegen (IRValue (Pointer t))
+getObjectSlotAddr obj n = do
+  i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
+  slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
+  slotPtrT <- assignSSA $ "bitcast i64* " ++ slotPtr ++ " to " ++ show t ++ "*"
+  pure (SSA (Pointer t) slotPtrT)
 
 getObjectSlotT : {t : IRType} -> IRValue IRObjPtr -> Int -> Codegen (IRValue t)
 getObjectSlotT obj n = do
@@ -443,9 +454,28 @@ getInstIR i (OP r StrHead [r1]) = do
 
 getInstIR i (OP r StrAppend [r1, r2]) = do
   -- TODO: append r2
-  --value <- assignSSA $ "load %ObjPtr, %ObjPtr* " ++ toIR r1 ++ "Var"
-  --appendCode $ "  store %ObjPtr " ++ value ++ ", %ObjPtr* " ++ toIR r ++ "Var"
-  getInstIR i (MKCONSTANT r (Str "<APPEND>"))
+  o1 <- load (reg2val r1)
+  o2 <- load (reg2val r2)
+  h1 <- getObjectSlotT {t=I64} o1 0
+  h2 <- getObjectSlotT {t=I64} o2 0
+  l1 <- mkBinOp "and" (ConstI64 0xffffffff) h1
+  l2 <- mkBinOp "and" (ConstI64 0xffffffff) h2
+  newLength <- mkAdd l1 l2
+  newStr <- dynamicAllocate newLength
+  newHeader <- mkBinOp "or" newLength (ConstI64 $ cast $ header OBJECT_TYPE_ID_STR)
+
+  str1 <- getObjectSlotAddr {t=I8} o1 1
+  str2 <- getObjectSlotAddr {t=I8} o2 1
+
+  newStrPayload1 <- getObjectSlotAddr {t=I8} newStr 1
+  newStrPayload2 <- getElementPtr newStrPayload1 l1
+
+  appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR newStrPayload1 ++ ", " ++ toIR str1 ++ ", " ++ toIR l1 ++ ", i1 false)"
+  appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR newStrPayload2 ++ ", " ++ toIR str2 ++ ", " ++ toIR l2 ++ ", i1 false)"
+
+  putObjectSlot newStr 0 newHeader
+
+  store newStr (reg2val r)
 
 getInstIR i (OP r (Cast IntegerType StringType) [r1]) = do
   -- TODO: int -> str
