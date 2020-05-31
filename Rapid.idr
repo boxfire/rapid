@@ -11,11 +11,6 @@ import Compiler.VMCode
 import Compiler.VMCodeSexp
 import Compiler.SteamCG
 
-{-getVMDefs : List Sexp -> List (Either String (String, VMDef))-}
-partial
-getVMDefs : List Sexp -> List (String, VMDef)
-getVMDefs s = either (\error=>idris_crash ("failed to read VMCode from Sexp: " ++ error)) id $ traverse fromSexp s
-
 debug : Bool
 debug = True
 

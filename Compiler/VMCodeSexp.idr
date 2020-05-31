@@ -27,11 +27,30 @@ FromSexp (Maybe Int) where
 
 export
 ToSexp Name where
-  toSexp n = SAtom ("\"" ++ (fullShow n) ++ "\"") where
-    fullShow : Name -> String
-    fullShow (DN _ n) = fullShow n
-    fullShow (NS ns n) = showSep "." (reverse ns) ++ "." ++ fullShow n
-    fullShow n = show n
+  toSexp (UN s) = SList [SAtom "UN", SAtom s]
+  toSexp (NS ns n) = SList [SAtom "NS", SList (map SAtom ns), toSexp n]
+  toSexp (DN d n) = SList [SAtom "DN", SAtom d, toSexp n]
+  toSexp (MN s i) = SList [SAtom "MN", SAtom s, SAtom $ cast i]
+  toSexp (CaseBlock outer i) = SList [SAtom "CaseBlock", SAtom $ cast outer, SAtom $ cast i]
+  toSexp (Nested (outer, idx) inner) = SList [SAtom "Nested", SAtom $ cast outer, SAtom $ cast idx, toSexp inner]
+  toSexp n = assert_total $ (idris_crash $ "error-name:" ++ show n)
+
+export
+FromSexp Name where
+  fromSexp (SList [SAtom "UN", SAtom s]) = Right $ (UN s)
+  fromSexp (SList [SAtom "DN", SAtom d, n]) = pure $ (DN d !(fromSexp n))
+  fromSexp (SList [SAtom "MN", SAtom s, SAtom i]) = pure $ (MN s !(maybeToEither "invalid MN int" $ parseInteger i))
+  fromSexp (SList [SAtom "CaseBlock", SAtom o, SAtom i]) = pure $ (CaseBlock !(maybeToEither "invalid caseblock outer int" $ parseInteger o) !(maybeToEither "invalid caseblock inner int" $ parseInteger i))
+  fromSexp (SList [SAtom "NS", SList ns, n]) = do
+    comps <- traverse (unAtom "namespace component") ns
+    pure (NS comps !(fromSexp n))
+  fromSexp (SList [SAtom "Nested", SAtom o, SAtom i, inner]) = do
+    outer <- maybeToEither "invalid nested outer int" $ parseInteger o
+    idx <- maybeToEither "invalid nested idx int" $ parseInteger i
+    n <- fromSexp inner
+    pure (Nested (outer, idx) n)
+
+  fromSexp n = Left $ ("error parsing name: " ++ show n)
 
 ToSexp Reg where
   toSexp RVal = SAtom "RVAL"
@@ -45,7 +64,7 @@ public export
 ToSexp Constant where
   toSexp (I i)    = SList [SAtom "I", SAtom $ show i]
   toSexp (BI i)   = SList [SAtom "BI", SAtom $ show i]
-  toSexp (Str s)  = SList [SAtom "Str", SAtom $ show s]
+  toSexp (Str s)  = SList [SAtom "Str", SAtom s]
   toSexp (Ch c)   = SList [SAtom "Ch", SAtom $ show c]
   toSexp (Db d)   = SList [SAtom "Db", SAtom $ show d]
   toSexp WorldVal = SList [SAtom "%World"]
@@ -83,11 +102,6 @@ ToSexp VMInst where
   toSexp u = SList [SAtom "not-implemented", SAtom ("\"" ++ (assert_total $ show u) ++ "\"")]
   {-toSexp ASSIGN = SList -}
 
-
-export
-FromSexp Name where
-  fromSexp (SAtom s) = Right $ (UN s)
-  fromSexp _ = Left $ "not a name"
 
 export
 FromSexp Bool where
@@ -248,11 +262,15 @@ getArg (SAtom s) = maybeToEither "invalid int" $ parseInteger $ assert_total $ s
 getArg x = Left "invalid ARG"
 
 export
-FromSexp (String, VMDef) where
-  fromSexp (SList [SAtom "defun", SAtom n, SList args, SList insts]) = do
+FromSexp (Name, VMDef) where
+  fromSexp (SList [SAtom "defun", n, SList args, SList insts]) = do
+    name <- fromSexp n
     fArgs <- traverse getArg args
     fInsts <- collectFromSexp insts
-    pure (n, MkVMFun fArgs fInsts)
+    pure (name, MkVMFun fArgs fInsts)
   fromSexp _ = Left "invalid vmdef"
 
-
+export
+partial
+getVMDefs : List Sexp -> List (Name, VMDef)
+getVMDefs s = either (\error=>idris_crash ("failed to read VMCode from Sexp: " ++ error ++ "\n" ++ show s)) id $ traverse fromSexp s

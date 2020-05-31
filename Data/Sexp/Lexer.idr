@@ -3,7 +3,7 @@ module Data.Sexp.Lexer
 import Data.Strings
 import Text.Lexer
 
-%default partial
+%default covering
 
 public export
 data Token = LParen
@@ -44,7 +44,7 @@ quotedAtom : Lexer
 quotedAtom = is '"' <+> many (pred (\x => x /= '"')) <+> is '"' <+> many space
 
 removeQuotes : String -> String
-removeQuotes = assert_total . reverse . strTail . reverse . strTail
+removeQuotes s = assert_total $ reverse $ strTail $ reverse $ strTail s
 
 tokenMap : TokenMap Token
 tokenMap = [

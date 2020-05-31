@@ -10,7 +10,6 @@ import Compiler.VMCode
 import Core.TT
 
 import Codegen
-import Data.Sexp
 import Utils.Hex
 
 %default partial
@@ -808,11 +807,11 @@ getInstIR i (EXTPRIM r n args) =
 getInstIR i START = pure ()
 getInstIR i inst = appendCode $ ";=============\n; NOT IMPLEMENTED: " ++ show inst ++ "\n;=============\n"
 
-getFunIR : Bool -> Int -> String -> List Reg -> List VMInst -> Codegen ()
+getFunIR : Bool -> Int -> Name -> List Reg -> List VMInst -> Codegen ()
 getFunIR debug i n args body = do
     fargs <- traverse argIR args
     let visibility = if debug then "external" else "private"
-    appendCode ("\n\ndefine " ++ visibility ++ " hhvmcc %Return1 @" ++ (safeName' n) ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
+    appendCode ("\n\ndefine " ++ visibility ++ " hhvmcc %Return1 @" ++ safeName n ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
     appendCode "entry:"
     appendCode funcEntry
     traverse_ appendCode (map copyArg args)
@@ -827,7 +826,7 @@ getFunIR debug i n args body = do
     copyArg _ = idris_crash "not an argument"
 
 export
-getVMIR : Bool -> (Int, (String, VMDef)) -> String
+getVMIR : Bool -> (Int, (Name, VMDef)) -> String
 getVMIR debug (i, n, MkVMFun args body) = runCodegen $ getFunIR debug i n (map Loc args) body
 getVMIR _ _ = ""
 

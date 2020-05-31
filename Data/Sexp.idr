@@ -24,5 +24,10 @@ showSep sep xs = showSepGo True xs "" where
 
 export
 Show Sexp where
-  show (SAtom s) = s
+  show (SAtom s) = show s
   show (SList xs) = "(" ++ (showSep " " (assert_total $ map show xs)) ++ ")"
+
+export
+unAtom : (errmsg : String) -> Sexp -> Either String String
+unAtom _ (SAtom s) = Right s
+unAtom m v = Left $ "expected an atom as " ++ m ++ ", got: " ++ show v
