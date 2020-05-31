@@ -1,10 +1,10 @@
-module SexpParser
+module Data.Sexp.Parser
 
 import Text.Parser
 
 import Compiler.VMCode
 import Data.Sexp
-import SexpLexer
+import Data.Sexp.Lexer
 
 Parser : Type -> Type -> Type
 Parser tok a = Grammar tok True a

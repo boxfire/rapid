@@ -1,5 +1,7 @@
 module Data.Sexp
 
+%default total
+
 public export
 data Sexp : Type where
   SAtom : String -> Sexp
@@ -20,7 +22,7 @@ showSep sep xs = showSepGo True xs "" where
   showSepGo first (x::xs) acc = if first then showSepGo False xs (acc ++ x)
                                          else showSepGo False xs (acc ++ " " ++ x)
 
-public export
+export
 Show Sexp where
   show (SAtom s) = s
-  show (SList xs) = assert_total $ "(" ++ (showSep " " (map show xs)) ++ ")"
+  show (SList xs) = "(" ++ (showSep " " (assert_total $ map show xs)) ++ ")"

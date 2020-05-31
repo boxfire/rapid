@@ -1,4 +1,4 @@
-module SexpLexer
+module Data.Sexp.Lexer
 
 import Data.Strings
 import Text.Lexer

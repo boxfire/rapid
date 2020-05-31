@@ -5,8 +5,8 @@ import System
 import System.File
 
 import Data.Sexp
-import SexpLexer
-import SexpParser
+import Data.Sexp.Lexer
+import Data.Sexp.Parser
 import Compiler.VMCode
 import Compiler.VMCodeSexp
 import Compiler.SteamCG
