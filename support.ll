@@ -43,6 +43,28 @@ declare ccc i1 @llvm.expect.i1(i1, i1)
 
 declare ccc %ObjPtr @GC_malloc(i64)
 
+define private fastcc i1 @mem_eq(i8* %v1, i8* %v2, i64 %size) alwaysinline optsize nounwind {
+entry:
+  br label %loop
+loop:
+  %i = phi i64 [%iPlus, %loopend], [0, %entry]
+
+  %p1 = getelementptr inbounds i8, i8* %v1, i64 %i
+  %p2 = getelementptr inbounds i8, i8* %v2, i64 %i
+  %b1 = load i8, i8* %p1
+  %b2 = load i8, i8* %p2
+  %beq = icmp eq i8 %b1, %b2
+
+  br i1 %beq, label %loopend, label %finished
+
+loopend:
+  %continue = icmp ule i64 %i, %size
+  %iPlus = add i64 %i, 1
+  br i1 %continue, label %loop, label %finished
+finished:
+  ret i1 %beq
+}
+
 define external hhvmcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
   %addr = call ccc %ObjPtr @GC_malloc(i64 %size)
 

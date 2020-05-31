@@ -70,15 +70,20 @@ safeName' s = concatMap okchar (unpack s)
 
 interface ToIR a where
   toIR : a -> String
+  showWithoutType : a -> String
 
 ToIR Reg where
   toIR (Loc i) = "%v" ++ show i
   toIR RVal = "%rval"
   toIR Discard = "undef"
 
+  showWithoutType (Loc i) = "%v" ++ show i
+  showWithoutType RVal = "%rval"
+  showWithoutType Discard = "undef"
+
 ToIR String where
   toIR = id
-
+  showWithoutType = id
 
 argIR : Reg -> Codegen String
 argIR (Loc i) = pure $ "%ObjPtr %v" ++ show i
@@ -109,34 +114,33 @@ Show IRType where
   show IRObjPtr = "%ObjPtr"
   show (Pointer t) = (show t) ++ "*"
 
+data IRLabel = MkLabel String
+
+ToIR IRLabel where
+  toIR (MkLabel l) = "label %" ++ l
+  showWithoutType (MkLabel l) = "%" ++ l
+
+beginLabel : IRLabel -> Codegen ()
+beginLabel (MkLabel l) = appendCode (l ++ ":")
+
+genLabel : String -> Codegen IRLabel
+genLabel s = MkLabel <$> mkVarName ("glbl_" ++ s)
+
 data IRValue : IRType -> Type where
   ConstI64 : Int -> IRValue I64
   SSA : (t : IRType) ->  String -> IRValue t
-
-showWithoutType : IRValue a -> String
-showWithoutType (SSA _ n) = n
-showWithoutType (ConstI64 i) = show i
 
 ToIR (IRValue t) where
   toIR {t} (SSA t s) = (show t) ++ " " ++ s
   toIR (ConstI64 i) = "i64 " ++ (show i)
 
-
-data MemValue : IRType -> Type where
-  MkMemValue : (t : IRType) -> String -> MemValue t
-
-ToIR (MemValue t) where
-  toIR (MkMemValue t n) = (show t) ++ " " ++ n
-
-reg2mem : Reg -> MemValue (Pointer IRObjPtr)
-reg2mem (Loc i) = MkMemValue (Pointer IRObjPtr) ("%v" ++ show i ++ "Var")
-reg2mem RVal = MkMemValue (Pointer IRObjPtr) ("%rvalVar")
-reg2mem _ = MkMemValue (Pointer IRObjPtr) "undef"
+  showWithoutType (SSA _ n) = n
+  showWithoutType (ConstI64 i) = show i
 
 reg2val : Reg -> IRValue (Pointer IRObjPtr)
 reg2val (Loc i) = SSA (Pointer IRObjPtr) ("%v" ++ show i ++ "Var")
 reg2val RVal = SSA (Pointer IRObjPtr) ("%rvalVar")
-reg2val _ = SSA (Pointer IRObjPtr) "undef"
+reg2val Discard = SSA (Pointer IRObjPtr) "undef"
 
 load : {auto t : IRType} -> IRValue (Pointer t) -> Codegen (IRValue t)
 load {t} mv = do
@@ -152,6 +156,11 @@ icmp {t} cond a b = do
   compare <- assignSSA $ "icmp " ++ cond ++ " " ++ (show t) ++ " " ++ showWithoutType a ++ ", " ++ showWithoutType b
   pure $ SSA I1 compare
 
+phi : {t : IRType} -> List (IRValue t, IRLabel) -> Codegen (IRValue t)
+phi xs = (SSA t) <$> assignSSA ("phi " ++ show t ++ " " ++ showSep ", " (map getEdge xs)) where
+  getEdge : (IRValue t, IRLabel) -> String
+  getEdge (val, lbl) = "[ " ++ showWithoutType val ++ ", " ++ showWithoutType lbl ++ " ]"
+
 getElementPtr : {t : IRType} -> IRValue (Pointer t) -> IRValue ot -> Codegen (IRValue (Pointer t))
 getElementPtr {t} ptr offset =
   SSA (Pointer t) <$> assignSSA ("getelementptr inbounds " ++ show t ++ ", " ++ toIR ptr ++ ", " ++ toIR offset)
@@ -163,6 +172,9 @@ mkBinOp {t} s a b = do
 
 mkOr : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
 mkOr = mkBinOp "or"
+
+mkAnd : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
+mkAnd = mkBinOp "and"
 
 mkAdd : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
 mkAdd = mkBinOp "add"
@@ -195,6 +207,9 @@ getObjectSlotT obj n = do
   slotPtr <- assignSSA $ "getelementptr i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
   slotPtrT <- assignSSA $ "bitcast i64* " ++ slotPtr ++ " to " ++ show t ++ "*"
   load {t=t} (SSA (Pointer t) slotPtrT)
+
+getObjectHeader : IRValue IRObjPtr -> Codegen (IRValue I64)
+getObjectHeader o = getObjectSlotT o 0
 
 putObjectSlotG : {t : IRType} -> IRValue IRObjPtr -> IRValue I64 -> IRValue t -> Codegen ()
 putObjectSlotG {t} obj pos val = do
@@ -273,7 +288,6 @@ applyClosureHelperFunc = do
 
   let maxArgs = 7
 
-  --closureObj <- load {t=IRObjPtr} (MkMemValue (Pointer IRObjPtr) "%closureObjArg")
   let closureObj = SSA IRObjPtr "%closureObjArg"
   let argValue = SSA IRObjPtr "%argumentObjArg"
   closureHeader <- getObjectSlot closureObj 0
@@ -292,8 +306,6 @@ applyClosureHelperFunc = do
   let hp = "%RuntimePtr %HpArg"
   let base = "%RuntimePtr %BaseArg"
   let hpLim = "%RuntimePtr %HpLimArg"
-
-  --argValue <- load {t=IRObjPtr} (MkMemValue (Pointer IRObjPtr) "%argumentObjArg")
 
   applyClosure <- mkVarName "apply_closure_"
   appendCode $ "  switch i64 " ++ argCount ++ ", label %" ++ applyClosure ++ "_error [\n  " ++
@@ -350,6 +362,36 @@ cgMkInt var = do
   su <- mkVarName "mkint"
   appendCode ("  %"++su++" = bitcast %ObjPtr " ++ newObj ++ " to i64*\n  store i64 " ++ (show $ header OBJECT_TYPE_ID_INT) ++ ", i64* %"++su++"\n  %"++su++".payloadPtr = getelementptr i64, i64* %" ++ su ++ ", i64 1\n  store i64 "++ var ++", i64* %"++su++".payloadPtr")
   pure newObj
+
+asHex2 : Int -> String
+asHex2 c = let s = asHex c in
+               if length s == 1 then "0" ++ s else s
+
+getStringIR : String -> String
+getStringIR s = concatMap okchar (unpack s)
+  where
+    okchar : Char -> String
+    okchar c = if isAlphaNum c
+                  then cast c
+                  else "\\" ++ asHex2 (cast {to=Int} c)
+
+mkStr : Int -> String -> Codegen (IRValue IRObjPtr)
+mkStr i s = do
+  let len = length s
+  cn <- addConstant i $ "private unnamed_addr constant [" ++ show len ++ " x i8] c\"" ++ (getStringIR s) ++ "\""
+  cn <- assignSSA $ "bitcast [" ++ show len ++ " x i8]* "++cn++" to i8*"
+  su <- mkVarName "mkStr"
+  let header = 0x200000000 + len
+  newObj <- heapAllocate (cast len)
+  appendCode $ unlines [
+    "  %"++su++" = bitcast %ObjPtr " ++ newObj ++ " to i64*",
+    -- TODO: add string length in bytes to header
+    "  store i64 " ++ show header ++", i64* %"++su,
+    "  %"++su++".payloadPtr = getelementptr i64, i64* %" ++ su ++ ", i64 1",
+    "  %"++su++".strPtr = bitcast i64* %" ++ su ++ ".payloadPtr to i8*",
+    "  call void @llvm.memcpy.p0i8.p0i8.i32(i8* %" ++ su ++ ".strPtr, i8* "++cn++", i32 " ++show len ++", i1 false)"
+    ]
+  pure (SSA IRObjPtr newObj)
 
 export
 enumerate : List a -> List (Int, a)
@@ -425,18 +467,92 @@ prepareArg (Loc i) = do
   pure $ "%ObjPtr " ++ tmp
 prepareArg RVal = idris_crash "cannot use rval as call arg"
 
-asHex2 : Int -> String
-asHex2 c = let s = asHex c in
-               if length s == 1 then "0" ++ s else s
+findConstCaseType : List (Constant, List VMInst) -> Constant
+findConstCaseType [] = idris_crash "empty const case"
+findConstCaseType ((I _,_)::_) = IntType
+findConstCaseType ((BI _,_)::_) = IntegerType
+findConstCaseType ((Str _,_)::_) = StringType
+findConstCaseType _ = idris_crash "unknwon const case type"
 
-getStringIR : String -> String
-getStringIR s = concatMap okchar (unpack s)
+compareStr : IRValue IRObjPtr -> IRValue IRObjPtr -> Codegen (IRValue I1)
+compareStr obj1 obj2 = do
+  lblStart <- genLabel "strcompare_hdr"
+  lblEnd <- genLabel "strcompare_end"
+  lblCompareContents <- genLabel "strcompare_content"
+  appendCode $ "br " ++ toIR lblStart
+  beginLabel lblStart
+  h1 <- getObjectHeader obj1
+  h2 <- getObjectHeader obj2
+  headersEqual <- icmp "eq" h1 h2
+  appendCode $ "br " ++ toIR headersEqual ++ ", " ++ toIR lblCompareContents ++ ", " ++ toIR lblEnd
+  beginLabel lblCompareContents
+  str1 <- getObjectSlotAddr {t=I8} obj1 1
+  str2 <- getObjectSlotAddr {t=I8} obj2 1
+  length <- mkAnd h1 (ConstI64 0xffffffff)
+  contentsEqual <- (SSA I1) <$> assignSSA ("call fastcc i1 @mem_eq(" ++ (showSep ", " ([toIR str1, toIR str2, toIR length])) ++ ")")
+  appendCode $ "br " ++ toIR lblEnd
+  beginLabel lblEnd
+  phi [(headersEqual, lblStart), (contentsEqual, lblCompareContents)]
+  --(SSA I1) <$> assignSSA ("phi i1 [ " ++ showWithoutType headersEqual ++ ", " ++ showWithoutType lblStart ++ " ], [ " ++ showWithoutType contentsEqual ++ ", " ++ showWithoutType lblCompareContents ++ " ]")
+
+mutual
+getInstForConstCaseInt : Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
+getInstForConstCaseInt i r alts def =
+  do let def' = fromMaybe [] def
+     caseId <- mkVarName "case_"
+     let labelEnd = caseId ++ "_end"
+     scrutinee <- unboxInt (toIR r)
+     appendCode $ "  switch i64 " ++ scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeConstCaseLabel caseId) alts)) ++ " ]"
+     appendCode $ caseId ++ "_default:"
+     uniq <- getUnique
+     traverse (getInstIR i) def'
+     appendCode $ "br label %" ++ labelEnd
+     traverse (makeCaseAlt caseId) alts
+     appendCode $ labelEnd ++ ":"
+     pure ()
   where
-    okchar : Char -> String
-    okchar c = if isAlphaNum c
-                  then cast c
-                  else "\\" ++ asHex2 (cast {to=Int} c)
+    makeCaseAlt : String -> (Constant, List VMInst) -> Codegen ()
+    makeCaseAlt caseId (I c, is) = do
+      appendCode $ caseId ++ "_is_" ++ (show c) ++ ":"
+      uniq <- getUnique
+      let nextI = uniq + (i * 100)
+      traverse_ (getInstIR nextI) is
+      appendCode $ "br label %" ++ caseId ++ "_end"
+    makeCaseAlt caseId (BI c, is) = makeCaseAlt caseId (I $ cast c, is)
+    makeCaseAlt _ (c, _) = appendCode $ "ERROR: constcase must be Int, got: " ++ show c
 
+getInstForConstCaseString : Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
+getInstForConstCaseString i r alts def =
+  do let def' = fromMaybe [] def
+     scrutinee <- load (reg2val r)
+     let numAlts = enumerate alts
+     caseId <- mkVarName "case_"
+     labelEnd <- genLabel $ caseId ++ "_end"
+
+     traverse (makeCaseAlt caseId labelEnd scrutinee) numAlts
+
+     labelDefault <- genLabel $ caseId ++ "_default"
+     appendCode $ "br " ++ toIR labelDefault
+     beginLabel labelDefault
+
+     traverse (getInstIR i) def'
+     appendCode $ "br " ++ toIR labelEnd
+
+     beginLabel labelEnd
+  where
+    makeCaseAlt : String -> IRLabel -> IRValue IRObjPtr -> (Int, Constant, List VMInst) -> Codegen ()
+    makeCaseAlt caseId labelEnd scrutinee (idx, Str s, is) = do
+      let labelAltStart = MkLabel (caseId ++ "_alt_" ++ show idx)
+      let labelAltNext = MkLabel (caseId ++ "_next" ++ show idx)
+      compStr <- mkStr i s
+      match <- compareStr compStr scrutinee
+      appendCode $ "br " ++ toIR match ++ ", " ++ toIR labelAltStart ++ ", " ++ toIR labelAltNext
+      -- compare s == scrut
+      beginLabel labelAltStart
+      traverse_ (getInstIR i) is
+      appendCode $ "br " ++ toIR labelEnd
+      beginLabel labelAltNext
+    makeCaseAlt _ _ _ (_, c, _) = appendCode $ "ERROR: constcase must be Str, got: " ++ show c
 
 getInstIR : Int -> VMInst -> Codegen ()
 getInstIR i (DECLARE (Loc r)) = appendCode $ "  %v" ++ show r ++ "Var = alloca %ObjPtr"
@@ -611,9 +727,10 @@ getInstIR i (APPLY r fun arg) = do
   let base = "%RuntimePtr %BaseArg"
 
   funV <- ((++) "%FuncPtr ") <$> (assignSSA $ "load %FuncPtr, %FuncPtr* " ++ toIR fun ++ "Var")
-  argV <- ((++) "%FuncPtr ") <$> (assignSSA $ "load %FuncPtr, %FuncPtr* " ++ toIR arg ++ "Var")
+  --argV <- ((++) "%ObjPtr ") <$> (assignSSA $ "load %ObjPtr, %ObjPtr* " ++ toIR arg ++ "Var")
+  argV <- load (reg2val arg)
 
-  result <- assignSSA $ "call hhvmcc %Return1 @idris_apply_closure(" ++ showSep ", " [hp, base, hpLim, funV, argV] ++ repeatStr ", %ObjPtr undef" 6  ++ ")"
+  result <- assignSSA $ "call hhvmcc %Return1 @idris_apply_closure(" ++ showSep ", " [hp, base, hpLim, funV, toIR argV] ++ repeatStr ", %ObjPtr undef" 6  ++ ")"
 
   newHp <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 0"
   appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpVar"
@@ -638,8 +755,7 @@ getInstIR i (MKCONSTANT r (BI c)) = do
 getInstIR i (MKCONSTANT r WorldVal) = do
   obj <- mkCon 1337 []
   appendCode $ "  store %ObjPtr " ++ obj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
-getInstIR i (MKCONSTANT r (Str os)) = do
-  let s = "< \"" ++ os ++ "\" >"
+getInstIR i (MKCONSTANT r (Str s)) = do
   let len = length s
   cn <- addConstant i $ "private unnamed_addr constant [" ++ show len ++ " x i8] c\"" ++ (getStringIR s) ++ "\""
   cn <- assignSSA $ "bitcast [" ++ show len ++ " x i8]* "++cn++" to i8*"
@@ -657,30 +773,10 @@ getInstIR i (MKCONSTANT r (Str os)) = do
   appendCode $ "  store %ObjPtr " ++ newObj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
   pure ()
 
-getInstIR i (CONSTCASE r alts def) =
-  do let def' = fromMaybe [] def
-     caseId <- mkVarName "case_"
-     let labelEnd = caseId ++ "_end"
-     scrutinee <- unboxInt (toIR r)
-     appendCode $ "  switch i64 " ++ scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeConstCaseLabel caseId) alts)) ++ " ]"
-     appendCode $ caseId ++ "_default:"
-     uniq <- getUnique
-     let nextI = uniq + (i * 100)
-     traverse (getInstIR nextI) def'
-     appendCode $ "br label %" ++ labelEnd
-     traverse (makeCaseAlt caseId) alts
-     appendCode $ labelEnd ++ ":"
-     pure ()
-  where
-    makeCaseAlt : String -> (Constant, List VMInst) -> Codegen ()
-    makeCaseAlt caseId (I c, is) = do
-      appendCode $ caseId ++ "_is_" ++ (show c) ++ ":"
-      uniq <- getUnique
-      let nextI = uniq + (i * 100)
-      traverse_ (getInstIR nextI) is
-      appendCode $ "br label %" ++ caseId ++ "_end"
-    makeCaseAlt caseId (BI c, is) = makeCaseAlt caseId (I $ cast c, is)
-    makeCaseAlt _ (c, _) = appendCode $ "ERROR: constcase must be Int, got: " ++ show c
+getInstIR i (CONSTCASE r alts def) = case findConstCaseType alts of
+                                          IntType => getInstForConstCaseInt i r alts def
+                                          IntegerType => getInstForConstCaseInt i r alts def
+                                          StringType => getInstForConstCaseString i r alts def
 
 getInstIR i (CASE r alts def) =
   do let def' = fromMaybe [] def
