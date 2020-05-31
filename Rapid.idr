@@ -16,6 +16,9 @@ partial
 getVMDefs : List Sexp -> List (String, VMDef)
 getVMDefs s = either (\error=>idris_crash ("failed to read VMCode from Sexp: " ++ error)) id $ traverse fromSexp s
 
+debug : Bool
+debug = True
+
 main : IO ()
 main = do
   (_::filename::_) <- getArgs
@@ -34,7 +37,7 @@ main = do
          (Right support) <- readFile "support.ll"
          | Left _ => pure ()
          let support = ""
-         let ir = support ++ closureHelper ++ (fastAppend $ map getVMIR $ enumerate vmcode)
+         let ir = support ++ closureHelper ++ (fastAppend $ map (getVMIR debug) $ enumerate vmcode)
          {-putStrLn $ ir-}
          _ <- writeFile (filename ++ ".output.ll") ir
          pure ()

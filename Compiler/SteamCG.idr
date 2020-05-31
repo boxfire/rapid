@@ -848,10 +848,11 @@ getInstIR i (EXTPRIM r n args) =
 getInstIR i START = pure ()
 getInstIR i inst = appendCode $ ";=============\n; NOT IMPLEMENTED: " ++ show inst ++ "\n;=============\n"
 
-getFunIR : Int -> String -> List Reg -> List VMInst -> Codegen ()
-getFunIR i n args body = do
+getFunIR : Bool -> Int -> String -> List Reg -> List VMInst -> Codegen ()
+getFunIR debug i n args body = do
     fargs <- traverse argIR args
-    appendCode ("\n\ndefine hhvmcc %Return1 @" ++ (safeName' n) ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
+    let visibility = if debug then "external" else "private"
+    appendCode ("\n\ndefine " ++ visibility ++ " hhvmcc %Return1 @" ++ (safeName' n) ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
     appendCode "entry:"
     appendCode funcEntry
     traverse_ appendCode (map copyArg args)
@@ -866,9 +867,9 @@ getFunIR i n args body = do
     copyArg _ = idris_crash "not an argument"
 
 export
-getVMIR : (Int, (String, VMDef)) -> String
-getVMIR (i, n, MkVMFun args body) = runCodegen $ getFunIR i n (map Loc args) body
-getVMIR _ = ""
+getVMIR : Bool -> (Int, (String, VMDef)) -> String
+getVMIR debug (i, n, MkVMFun args body) = runCodegen $ getFunIR debug i n (map Loc args) body
+getVMIR _ _ = ""
 
 export
 closureHelper : String
