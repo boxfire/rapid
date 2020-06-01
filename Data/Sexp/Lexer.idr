@@ -1,7 +1,11 @@
 module Data.Sexp.Lexer
 
+import Data.List
+import Data.Maybe
 import Data.Strings
 import Text.Lexer
+
+import Parser.Support
 
 %default covering
 
@@ -34,14 +38,13 @@ isAlphNum : Char -> Bool
 isAlphNum c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 
 ident : Lexer
-{-ident = oneOf "{}:_-+*/%.<>[]|=" <|> (pred isAlphNum)-}
 ident = pred (\c => c /= '"' && c /= ' ' && c /= '(' && c /= ')' && c /= '\n')
 
 atom : Lexer
 atom = some ident <+> many space
 
 quotedAtom : Lexer
-quotedAtom = is '"' <+> many (pred (\x => x /= '"')) <+> is '"' <+> many space
+quotedAtom = stringLit <+> many space
 
 removeQuotes : String -> String
 removeQuotes s = assert_total $ reverse $ strTail $ reverse $ strTail s
@@ -51,7 +54,7 @@ tokenMap = [
   (lparen, \_ => LParen),
   (rparen, \_ => RParen),
   (atom, Atom . trim),
-  (quotedAtom, QuotedAtom . removeQuotes . trim)
+  (quotedAtom, QuotedAtom . (fromMaybe "<error>" . escape) . removeQuotes . trim)
   ]
 
 export
@@ -59,4 +62,3 @@ lexSexp : String -> Either (String) (List Token)
 lexSexp s = let (toks, line, col, remainder) = lex tokenMap s in
                 if remainder == "" then Right $ map tok toks
                                    else Left $ "remaining: " ++ remainder
-

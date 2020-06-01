@@ -28,8 +28,9 @@ verify d input =
              origTxt = show $ snd d
              parsedTxt = show parsedDef in
              if origTxt == parsedTxt then True else
-             idris_crash ("mismatch while verifying:\n"++origTxt++"\n"++parsedTxt++"\n")
-       Left _ => False
+             idris_crash ("mismatch while verifying:\n"++origTxt++"\n"++parsedTxt++"\nsource was:\+"++(show parsed))
+       Left e =>
+             idris_crash ("error parsing generated sexp: " ++ show e)
 
 compile : String -> IO()
 compile filename =

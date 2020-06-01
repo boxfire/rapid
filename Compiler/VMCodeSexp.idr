@@ -28,6 +28,7 @@ ToSexp Name where
   toSexp (DN d n) = SList [SAtom "DN", SAtom d, toSexp n]
   toSexp (MN s i) = SList [SAtom "MN", SAtom s, SAtom $ cast i]
   toSexp (CaseBlock outer i) = SList [SAtom "CaseBlock", SAtom $ cast outer, SAtom $ cast i]
+  toSexp (WithBlock outer i) = SList [SAtom "WithBlock", SAtom $ cast outer, SAtom $ cast i]
   toSexp (Nested (outer, idx) inner) = SList [SAtom "Nested", SAtom $ cast outer, SAtom $ cast idx, toSexp inner]
   toSexp n = assert_total $ (idris_crash $ "error-name:" ++ show n)
 
@@ -37,6 +38,7 @@ FromSexp Name where
   fromSexp (SList [SAtom "DN", SAtom d, n]) = pure $ (DN d !(fromSexp n))
   fromSexp (SList [SAtom "MN", SAtom s, SAtom i]) = pure $ (MN s !(maybeToEither "invalid MN int" $ parseInteger i))
   fromSexp (SList [SAtom "CaseBlock", SAtom o, SAtom i]) = pure $ (CaseBlock !(maybeToEither "invalid caseblock outer int" $ parseInteger o) !(maybeToEither "invalid caseblock inner int" $ parseInteger i))
+  fromSexp (SList [SAtom "WithBlock", SAtom o, SAtom i]) = pure $ (WithBlock !(maybeToEither "invalid withblock outer int" $ parseInteger o) !(maybeToEither "invalid withblock inner int" $ parseInteger i))
   fromSexp (SList [SAtom "NS", SList ns, n]) = do
     comps <- traverse (unAtom "namespace component") ns
     pure (NS comps !(fromSexp n))
@@ -61,29 +63,29 @@ ToSexp Constant where
   toSexp (I i)       = SList [SAtom "I", SAtom $ show i]
   toSexp (BI i)      = SList [SAtom "BI", SAtom $ show i]
   toSexp (Str s)     = SList [SAtom "Str", SAtom s]
-  toSexp (Ch c)      = SList [SAtom "Ch", SAtom $ show c]
+  toSexp (Ch c)      = SList [SAtom "Ch", SAtom $ cast c]
   toSexp (Db d)      = SList [SAtom "Db", SAtom $ show d]
   toSexp WorldVal    = SList [SAtom "%World"]
-  toSexp CharType    = SList [SAtom "CharType"]
-  toSexp IntType     = SList [SAtom "IntType"]
-  toSexp IntegerType = SList [SAtom "IntegerType"]
-  toSexp StringType  = SList [SAtom "StringType"]
-  toSexp DoubleType  = SList [SAtom "DoubleType"]
-  toSexp u           = SList [SAtom "not-implemented", SAtom $ show u]
+  toSexp CharType    = SList [SAtom "Char"]
+  toSexp IntType     = SList [SAtom "Int"]
+  toSexp IntegerType = SList [SAtom "Integer"]
+  toSexp StringType  = SList [SAtom "String"]
+  toSexp DoubleType  = SList [SAtom "Double"]
+  toSexp u           = SList [SAtom "const-not-implemented", SAtom $ show u]
 
 export
 FromSexp Constant where
   fromSexp (SList [SAtom "I", SAtom i]) = Right $ I $ cast i
   fromSexp (SList [SAtom "BI", SAtom i]) = Right $ BI $ cast i
   fromSexp (SList [SAtom "Str", SAtom s]) = Right $ Str s
-  fromSexp (SList [SAtom "Ch", SAtom c]) = Right $ Ch $ assert_total $ strIndex c 1
+  fromSexp (SList [SAtom "Ch", SAtom c]) = Right $ Ch $ assert_total $ strIndex c 0
   fromSexp (SList [SAtom "Db", SAtom d]) = Right $ Db $ cast d
   fromSexp (SList [SAtom "%World"]) = Right $ WorldVal
-  fromSexp (SList [SAtom "IntegerType"]) = Right $ IntegerType
-  fromSexp (SList [SAtom "IntType"]) = Right $ IntType
-  fromSexp (SList [SAtom "CharType"]) = Right $ CharType
-  fromSexp (SList [SAtom "StringType"]) = Right $ StringType
-  fromSexp (SList [SAtom "DoubleType"]) = Right $ DoubleType
+  fromSexp (SList [SAtom "Integer"]) = Right $ IntegerType
+  fromSexp (SList [SAtom "Int"]) = Right $ IntType
+  fromSexp (SList [SAtom "Char"]) = Right $ CharType
+  fromSexp (SList [SAtom "String"]) = Right $ StringType
+  fromSexp (SList [SAtom "Double"]) = Right $ DoubleType
   fromSexp s = Left $ "invalid constant: " ++ show s
 
 export
@@ -188,9 +190,9 @@ ToSexp VMInst where
     altToSexp : (Constant, List VMInst) -> Sexp
     altToSexp (c, insts) = SList [toSexp c, SList $ assert_total $ map toSexp insts]
   toSexp (PROJECT reg val pos) = SList [SAtom "PROJECT", toSexp reg, toSexp val, SAtom $ show pos]
-  toSexp u = SList [SAtom "not-implemented", SAtom ("\"" ++ (assert_total $ show u) ++ "\"")]
-  {-toSexp ASSIGN = SList -}
-
+  toSexp (EXTPRIM r name args) = SList [SAtom "EXTPRIM", toSexp r, toSexp name, SList (map toSexp args)]
+  toSexp (NULL r) = SList [SAtom "NULL", toSexp r]
+  toSexp (ERROR msg) = SList [SAtom "ERROR", SAtom msg]
 
 export
 FromSexp Bool where
@@ -297,6 +299,8 @@ FromSexp VMInst where
     obj <- fromSexp objS
     pos <- maybeToEither ("invalid int in PROJECT pos: " ++ posS) $ parseInteger posS
     pure $ PROJECT reg obj pos
+  fromSexp (SList ((SAtom "ERROR")::(SAtom msg)::[])) = do
+    pure $ ERROR msg
   fromSexp sexp = Left $ "vminst not impl" ++ show sexp
 
 public export
