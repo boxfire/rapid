@@ -58,13 +58,106 @@ shelper s xs = SList ([SAtom s] ++ map toSexp xs)
 
 public export
 ToSexp Constant where
-  toSexp (I i)    = SList [SAtom "I", SAtom $ show i]
-  toSexp (BI i)   = SList [SAtom "BI", SAtom $ show i]
-  toSexp (Str s)  = SList [SAtom "Str", SAtom s]
-  toSexp (Ch c)   = SList [SAtom "Ch", SAtom $ show c]
-  toSexp (Db d)   = SList [SAtom "Db", SAtom $ show d]
-  toSexp WorldVal = SList [SAtom "%World"]
-  toSexp u        = SList [SAtom "not-implemented", SAtom $ show u]
+  toSexp (I i)       = SList [SAtom "I", SAtom $ show i]
+  toSexp (BI i)      = SList [SAtom "BI", SAtom $ show i]
+  toSexp (Str s)     = SList [SAtom "Str", SAtom s]
+  toSexp (Ch c)      = SList [SAtom "Ch", SAtom $ show c]
+  toSexp (Db d)      = SList [SAtom "Db", SAtom $ show d]
+  toSexp WorldVal    = SList [SAtom "%World"]
+  toSexp CharType    = SList [SAtom "CharType"]
+  toSexp IntType     = SList [SAtom "IntType"]
+  toSexp IntegerType = SList [SAtom "IntegerType"]
+  toSexp StringType  = SList [SAtom "StringType"]
+  toSexp DoubleType  = SList [SAtom "DoubleType"]
+  toSexp u           = SList [SAtom "not-implemented", SAtom $ show u]
+
+export
+FromSexp Constant where
+  fromSexp (SList [SAtom "I", SAtom i]) = Right $ I $ cast i
+  fromSexp (SList [SAtom "BI", SAtom i]) = Right $ BI $ cast i
+  fromSexp (SList [SAtom "Str", SAtom s]) = Right $ Str s
+  fromSexp (SList [SAtom "Ch", SAtom c]) = Right $ Ch $ assert_total $ strIndex c 1
+  fromSexp (SList [SAtom "Db", SAtom d]) = Right $ Db $ cast d
+  fromSexp (SList [SAtom "%World"]) = Right $ WorldVal
+  fromSexp (SList [SAtom "IntegerType"]) = Right $ IntegerType
+  fromSexp (SList [SAtom "IntType"]) = Right $ IntType
+  fromSexp (SList [SAtom "CharType"]) = Right $ CharType
+  fromSexp (SList [SAtom "StringType"]) = Right $ StringType
+  fromSexp (SList [SAtom "DoubleType"]) = Right $ DoubleType
+  fromSexp s = Left $ "invalid constant: " ++ show s
+
+export
+ToSexp (PrimFn arity) where
+  toSexp (Add ty)     = SList [SAtom "Add", toSexp ty]
+  toSexp (Sub ty)     = SList [SAtom "Sub", toSexp ty]
+  toSexp (Mul ty)     = SList [SAtom "Mul", toSexp ty]
+  toSexp (Div ty)     = SList [SAtom "Div", toSexp ty]
+  toSexp (Mod ty)     = SList [SAtom "Mod", toSexp ty]
+  toSexp (Neg ty)     = SList [SAtom "Neg", toSexp ty]
+  toSexp (ShiftL ty)  = SList [SAtom "ShiftL", toSexp ty]
+  toSexp (ShiftR ty)  = SList [SAtom "ShiftR", toSexp ty]
+
+  toSexp (BAnd ty)    = SList [SAtom "BAnd", toSexp ty]
+  toSexp (BOr ty)     = SList [SAtom "BOr", toSexp ty]
+  toSexp (BXOr ty)    = SList [SAtom "BXOr", toSexp ty]
+
+  toSexp (LT ty)      = SList [SAtom "LT", toSexp ty]
+  toSexp (LTE ty)     = SList [SAtom "LTE", toSexp ty]
+  toSexp (EQ ty)      = SList [SAtom "EQ", toSexp ty]
+  toSexp (GTE ty)     = SList [SAtom "GTE", toSexp ty]
+  toSexp (GT ty)      = SList [SAtom "GT", toSexp ty]
+
+  toSexp StrLength    = SList [SAtom "StrLength"]
+  toSexp StrHead      = SList [SAtom "StrHead"]
+  toSexp StrTail      = SList [SAtom "StrTail"]
+  toSexp StrReverse   = SList [SAtom "StrReverse"]
+  toSexp StrIndex     = SList [SAtom "StrIndex"]
+  toSexp StrCons      = SList [SAtom "StrCons"]
+  toSexp StrAppend    = SList [SAtom "StrAppend"]
+  toSexp StrSubstr    = SList [SAtom "StrSubstr"]
+
+  toSexp (Cast t1 t2) = SList [SAtom "Cast", toSexp t1, toSexp t2]
+  toSexp BelieveMe    = SList [SAtom "BelieveMe"]
+  toSexp Crash        = SList [SAtom "Crash"]
+  toSexp f            = SAtom (show f)
+
+export
+FromSexp (PrimFn 1) where
+  fromSexp (SList [SAtom "Cast", t1, t2]) = pure $ Cast !(fromSexp t1) !(fromSexp t2)
+  fromSexp (SList [SAtom "StrLength"])    = pure $ StrLength
+  fromSexp (SList [SAtom "StrHead"])      = pure $ StrHead
+  fromSexp (SList [SAtom "StrTail"])      = pure $ StrTail
+  fromSexp (SList [SAtom "StrReverse"])   = pure $ StrReverse
+  fromSexp s                              = Left $ "invalid PrimFn 1: " ++ show s
+
+export
+FromSexp (PrimFn 2) where
+  fromSexp (SList [SAtom "Add", ty])    = Add <$> fromSexp ty
+  fromSexp (SList [SAtom "Sub", ty])    = Sub <$> fromSexp ty
+  fromSexp (SList [SAtom "Mul", ty])    = Mul <$> fromSexp ty
+  fromSexp (SList [SAtom "Div", ty])    = Div <$> fromSexp ty
+  fromSexp (SList [SAtom "Mod", ty])    = Mod <$> fromSexp ty
+  fromSexp (SList [SAtom "ShiftL", ty]) = ShiftL <$> fromSexp ty
+  fromSexp (SList [SAtom "ShiftR", ty]) = ShiftR <$> fromSexp ty
+
+  fromSexp (SList [SAtom "LT", ty])     = LT <$> fromSexp ty
+  fromSexp (SList [SAtom "LTE", ty])    = LTE <$> fromSexp ty
+  fromSexp (SList [SAtom "EQ", ty])     = EQ <$> fromSexp ty
+  fromSexp (SList [SAtom "GTE", ty])    = GTE <$> fromSexp ty
+  fromSexp (SList [SAtom "GT", ty])     = GT <$> fromSexp ty
+
+  fromSexp (SList [SAtom "StrIndex"])   = pure $ StrIndex
+  fromSexp (SList [SAtom "StrCons"])    = pure $ StrCons
+  fromSexp (SList [SAtom "StrAppend"])  = pure $ StrAppend
+
+  fromSexp (SList [SAtom "Crash"])  = pure $ Crash
+
+  fromSexp s = Left $ "invalid PrimFn 2: " ++ show s
+
+export
+FromSexp (PrimFn 3) where
+  fromSexp (SList [SAtom "BelieveMe"]) = pure $ BelieveMe
+  fromSexp s = Left $ "invalid PrimFn 3: " ++ show s
 
 public export
 ToSexp VMInst where
@@ -75,7 +168,7 @@ ToSexp VMInst where
   toSexp (MKCLOSURE reg n missing args) = SList $ [SAtom "MKCLOSURE", toSexp reg, toSexp n, SAtom $ show missing, SList (map toSexp args)]
   toSexp (MKCONSTANT reg const) = SList $ [SAtom "MKCONSTANT", toSexp reg, toSexp const]
   toSexp (CALL reg isTail n args) = SList $ [SAtom "CALL", toSexp reg, SAtom $ show isTail, toSexp n, SList $ map toSexp args]
-  toSexp (OP reg op args) = SList $ [SAtom "OP", toSexp reg, SAtom $ show op] ++ map toSexp (toList args)
+  toSexp (OP reg op args) = SList $ [SAtom "OP", toSexp reg, toSexp op] ++ map toSexp (toList args)
   toSexp (APPLY reg f a) = shelper "APPLY" [reg, f, a]
   toSexp (CASE reg alts def) = SList ([SAtom "CASE", toSexp reg, defaultCase def] ++ (map altToSexp alts)) where
     defaultCase : Maybe (List VMInst) -> Sexp
@@ -112,16 +205,6 @@ FromSexp Reg where
   fromSexp (SAtom s) = Right (Loc $ cast $ assert_total $ strTail s)
   fromSexp s = Left ("invalid reg: " ++ show s)
 
-export
-FromSexp Constant where
-  fromSexp (SList [SAtom "I", SAtom i]) = Right $ I $ cast i
-  fromSexp (SList [SAtom "BI", SAtom i]) = Right $ BI $ cast i
-  fromSexp (SList [SAtom "Str", SAtom s]) = Right $ Str s
-  fromSexp (SList [SAtom "Ch", SAtom c]) = Right $ Ch $ assert_total $ strIndex c 1
-  fromSexp (SList [SAtom "Db", SAtom d]) = Right $ Db $ cast d
-  fromSexp (SList [SAtom "%World"]) = Right $ WorldVal
-  fromSexp s = Left $ "invalid constant: " ++ show s
-
 collectFromSexp : FromSexp a => List Sexp -> Either String (List a)
 collectFromSexp s = traverse fromSexp s
 
@@ -153,59 +236,14 @@ FromSexp VMInst where
     tail <- fromSexp tailS
     args <- collectFromSexp argsS
     pure $ CALL reg tail name args
-  fromSexp (SList ((SAtom "OP")::regS::(SAtom name)::argsS)) = do
+  fromSexp (SList ((SAtom "OP")::regS::nameS::argsS)) = do
     reg <- fromSexp regS
     args <- collectFromSexp argsS
-    case (name, args) of
-         ("+Int", [a,b]) => pure $ OP reg (Add IntType) [a,b]
-         ("-Int", [a,b]) => pure $ OP reg (Sub IntType) [a,b]
-         ("*Int", [a,b]) => pure $ OP reg (Mul IntType) [a,b]
-         ("/Int", [a,b]) => pure $ OP reg (Div IntType) [a,b]
-         ("%Int", [a,b]) => pure $ OP reg (Mod IntType) [a,b]
-         ("<Int", [a,b]) => pure $ OP reg (LT IntType) [a,b]
-         ("<=Int", [a,b]) => pure $ OP reg (LTE IntType) [a,b]
-         (">Int", [a,b]) => pure $ OP reg (GT IntType) [a,b]
-         (">=Int", [a,b]) => pure $ OP reg (GTE IntType) [a,b]
-         ("==Int", [a,b]) => pure $ OP reg (EQ IntType) [a,b]
-         ("+Integer", [a,b]) => pure $ OP reg (Add IntegerType) [a,b]
-         ("-Integer", [a,b]) => pure $ OP reg (Sub IntegerType) [a,b]
-         ("*Integer", [a,b]) => pure $ OP reg (Mul IntegerType) [a,b]
-         ("==Integer", [a,b]) => pure $ OP reg (EQ IntegerType) [a,b]
-         ("<=Integer", [a,b]) => pure $ OP reg (LTE IntegerType) [a,b]
-         (">=Integer", [a,b]) => pure $ OP reg (GTE IntegerType) [a,b]
-         (">Integer", [a,b]) => pure $ OP reg (GT IntegerType) [a,b]
-         ("<Integer", [a,b]) => pure $ OP reg (LT IntegerType) [a,b]
-         ("shl Integer", [a,b]) => pure $ OP reg (ShiftL IntegerType) [a,b]
-         ("shr Integer", [a,b]) => pure $ OP reg (ShiftR IntegerType) [a,b]
-         ("==Char", [a,b]) => pure $ OP reg (EQ CharType) [a,b]
-         ("<=Char", [a,b]) => pure $ OP reg (LTE CharType) [a,b]
-         ("<Char", [a,b]) => pure $ OP reg (LT CharType) [a,b]
-         (">=Char", [a,b]) => pure $ OP reg (GTE CharType) [a,b]
-         (">Char", [a,b]) => pure $ OP reg (GT CharType) [a,b]
-         ("cast-String-Integer", [i]) => pure $ OP reg (Cast StringType IntegerType) [i]
-         ("cast-String-Int", [i]) => pure $ OP reg (Cast StringType IntType) [i]
-         ("cast-Integer-String", [i]) => pure $ OP reg (Cast IntegerType StringType) [i]
-         ("cast-Int-String", [i]) => pure $ OP reg (Cast IntType StringType) [i]
-         ("cast-Int-Char", [i]) => pure $ OP reg (Cast IntType CharType) [i]
-         ("cast-Integer-Char", [i]) => pure $ OP reg (Cast IntegerType CharType) [i]
-         ("cast-Int-Integer", [i]) => pure $ OP reg (Cast IntType IntegerType) [i]
-         ("cast-Integer-Int", [i]) => pure $ OP reg (Cast IntegerType IntType) [i]
-         ("cast-Char-Integer", [i]) => pure $ OP reg (Cast CharType IntegerType) [i]
-         ("cast-Char-Int", [i]) => pure $ OP reg (Cast CharType IntType) [i]
-         ("cast-Char-String", [i]) => pure $ OP reg (Cast CharType StringType) [i]
-         ("cast-Double-String", [i]) => pure $ OP reg (Cast DoubleType StringType) [i]
-         ("cast-String-Double", [i]) => pure $ OP reg (Cast StringType DoubleType) [i]
-         ("==String", [a,b]) => pure $ OP reg (EQ StringType) [a,b]
-         ("++", [a,b]) => pure $ OP reg (StrAppend) [a,b]
-         ("op_strlen", [s]) => pure $ OP reg (StrLength) [s]
-         ("op_strrev", [s]) => pure $ OP reg (StrReverse) [s]
-         ("op_strhead", [s]) => pure $ OP reg (StrHead) [s]
-         ("op_strtail", [s]) => pure $ OP reg (StrTail) [s]
-         ("op_strcons", [a, b]) => pure $ OP reg (StrCons) [a,b]
-         ("op_strindex", [a, b]) => pure $ OP reg (StrIndex) [a,b]
-         ("believe_me", [a,b,c]) => pure $ OP reg (BelieveMe) [a,b,c]
-         ("crash", [a,b]) => pure $ OP reg (Crash) [a,b]
-         (op, _) => Left $ "invalid op: " ++ op
+    case (nameS, args) of
+         (op, [a]) => pure $ OP reg !(fromSexp op) [a]
+         (op, [a, b]) => pure $ OP reg !(fromSexp op) [a, b]
+         (op, [a, b, c]) => pure $ OP reg !(fromSexp op) [a, b, c]
+         (op, args) => Left $ "invalid op: " ++ show (op, args)
     --pure $ OP reg name args
   fromSexp (SList [SAtom "APPLY", regS, fS, argS]) = do
     reg <- fromSexp regS
