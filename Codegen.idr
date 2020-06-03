@@ -41,4 +41,4 @@ addConstant i v = do
 export
 runCodegen : Codegen () -> String
 runCodegen r = let (MkCGBuf _ cs ls) = snd $ runState r emptyCG in
-                    unlines $ (map (\(n,v) => n ++ " = " ++ v) $ reverse cs) ++ reverse ls
+                    fastAppend $ intersperse "\n" $ (map (\(n,v) => n ++ " = " ++ v) $ reverse cs) ++ reverse ls
