@@ -93,11 +93,12 @@ assignSSA value = do
   appendCode ("  " ++ varname ++ " = " ++ (toIR value))
   pure varname
 
-data IRType = I1 | I8 | I64 | FuncPtr | IRObjPtr | Pointer IRType
+data IRType = I1 | I8 | I32 | I64 | FuncPtr | IRObjPtr | Pointer IRType
 
 Show IRType where
   show I1 = "i1"
   show I8 = "i8"
+  show I32 = "i32"
   show I64 = "i64"
   show FuncPtr = "%FuncPtr"
   show IRObjPtr = "%ObjPtr"
@@ -266,6 +267,9 @@ dynamicAllocate payloadSize = do
   appendCode $ "store %RuntimePtr " ++ newHpLim ++ ", %RuntimePtr* %HpLimVar"
   SSA IRObjPtr <$> assignSSA ("extractvalue %Return1 " ++ allocated ++ ", 2")
 
+mkTrunc : {to : IRType} -> IRValue from -> Codegen (IRValue to)
+mkTrunc {to} val = (SSA to) <$> assignSSA ("trunc " ++ toIR val ++ " to " ++ show to)
+
 header : Int -> Integer
 header i = (cast i) `prim__shl_Integer` 32
 
@@ -407,6 +411,7 @@ makeConstCaseLabel : String -> (Constant, a) -> String
 makeConstCaseLabel caseId (I i,_) = "i64 " ++ show i ++ ", label %" ++ caseId ++ "_is_" ++ show i
 -- FIXME: how to handle this with GMP Integers?
 makeConstCaseLabel caseId (BI i,_) = "i64 " ++ show i ++ ", label %" ++ caseId ++ "_is_" ++ show i
+makeConstCaseLabel caseId (Ch c,_) = "i32 " ++ show i ++ ", label %" ++ caseId ++ "_is_" ++ show i where i:Int; i = (cast {to=Int} c)
 makeConstCaseLabel caseId (c,_) = "const case error: " ++ (showConstant c)
 
 makeCaseLabel : String -> (Either Int Name, a) -> String
@@ -436,7 +441,8 @@ findConstCaseType [] = idris_crash "empty const case"
 findConstCaseType ((I _,_)::_) = IntType
 findConstCaseType ((BI _,_)::_) = IntegerType
 findConstCaseType ((Str _,_)::_) = StringType
-findConstCaseType _ = idris_crash "unknwon const case type"
+findConstCaseType ((Ch _,_)::_) = CharType
+findConstCaseType t = idris_crash $ "unknwon const case type" ++ show t
 
 compareStr : IRValue IRObjPtr -> IRValue IRObjPtr -> Codegen (IRValue I1)
 compareStr obj1 obj2 = do
@@ -459,7 +465,36 @@ compareStr obj1 obj2 = do
   phi [(headersEqual, lblStart), (contentsEqual, lblCompareContents)]
   --(SSA I1) <$> assignSSA ("phi i1 [ " ++ showWithoutType headersEqual ++ ", " ++ showWithoutType lblStart ++ " ], [ " ++ showWithoutType contentsEqual ++ ", " ++ showWithoutType lblCompareContents ++ " ]")
 
+unboxChar : IRValue (Pointer IRObjPtr) -> Codegen (IRValue I32)
+unboxChar objPtr = do
+  hdr <- getObjectHeader !(load objPtr)
+  chVal64 <- mkAnd (ConstI64 0xffffffff) hdr
+  chVal32 <- mkTrunc {to=I32} chVal64
+  pure chVal32
+
 mutual
+getInstForConstCaseChar : Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
+getInstForConstCaseChar i r alts def =
+  do let def' = fromMaybe [] def
+     caseId <- mkVarName "case_"
+     let labelEnd = caseId ++ "_end"
+     scrutinee <- unboxChar (reg2val r)
+     appendCode $ "  switch " ++ toIR scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeConstCaseLabel caseId) alts)) ++ " ]"
+     appendCode $ caseId ++ "_default:"
+     traverse (getInstIR i) def'
+     appendCode $ "br label %" ++ labelEnd
+     traverse (makeCaseAlt caseId) alts
+     appendCode $ labelEnd ++ ":"
+     pure ()
+  where
+    makeCaseAlt : String -> (Constant, List VMInst) -> Codegen ()
+    makeCaseAlt caseId (Ch ch, is) = do
+      let c = cast {to=Int} ch
+      appendCode $ caseId ++ "_is_" ++ (show c) ++ ":"
+      traverse_ (getInstIR i) is
+      appendCode $ "br label %" ++ caseId ++ "_end"
+    makeCaseAlt _ (c, _) = appendCode $ "ERROR: constcase must be Char, got: " ++ show c
+
 getInstForConstCaseInt : Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
 getInstForConstCaseInt i r alts def =
   do let def' = fromMaybe [] def
@@ -468,7 +503,6 @@ getInstForConstCaseInt i r alts def =
      scrutinee <- unboxInt (reg2val r)
      appendCode $ "  switch " ++ toIR scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeConstCaseLabel caseId) alts)) ++ " ]"
      appendCode $ caseId ++ "_default:"
-     uniq <- getUnique
      traverse (getInstIR i) def'
      appendCode $ "br label %" ++ labelEnd
      traverse (makeCaseAlt caseId) alts
@@ -478,9 +512,7 @@ getInstForConstCaseInt i r alts def =
     makeCaseAlt : String -> (Constant, List VMInst) -> Codegen ()
     makeCaseAlt caseId (I c, is) = do
       appendCode $ caseId ++ "_is_" ++ (show c) ++ ":"
-      uniq <- getUnique
-      let nextI = uniq + (i * 100)
-      traverse_ (getInstIR nextI) is
+      traverse_ (getInstIR i) is
       appendCode $ "br label %" ++ caseId ++ "_end"
     makeCaseAlt caseId (BI c, is) = makeCaseAlt caseId (I $ cast c, is)
     makeCaseAlt _ (c, _) = appendCode $ "ERROR: constcase must be Int, got: " ++ show c
@@ -748,6 +780,7 @@ getInstIR i (CONSTCASE r alts def) = case findConstCaseType alts of
                                           IntType => getInstForConstCaseInt i r alts def
                                           IntegerType => getInstForConstCaseInt i r alts def
                                           StringType => getInstForConstCaseString i r alts def
+                                          CharType => getInstForConstCaseChar i r alts def
 
 getInstIR i (CASE r alts def) =
   do let def' = fromMaybe [] def
@@ -759,9 +792,7 @@ getInstIR i (CASE r alts def) =
      scrutinee <- assignSSA $ "and i64 " ++ (show 0xffffffff) ++ ", " ++ showWithoutType header
      appendCode $ "  switch i64 " ++ scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeCaseLabel caseId) alts)) ++ " ]"
      appendCode $ caseId ++ "_default:"
-     uniq <- getUnique
-     let nextI = uniq + (i * 100)
-     traverse (getInstIR nextI) def'
+     traverse (getInstIR i) def'
      appendCode $ "br label %" ++ labelEnd
      traverse (makeCaseAlt caseId) alts
      appendCode $ labelEnd ++ ":"
@@ -770,11 +801,10 @@ getInstIR i (CASE r alts def) =
     makeCaseAlt : String -> (Either Int Name, List VMInst) -> Codegen ()
     makeCaseAlt caseId (Left c, is) = do
       appendCode $ caseId ++ "_tag_is_" ++ (show c) ++ ":"
-      uniq <- getUnique
-      let nextI = uniq + (i * 100)
-      traverse_ (getInstIR nextI) is
+      traverse_ (getInstIR i) is
       appendCode $ "br label %" ++ caseId ++ "_end"
     makeCaseAlt _ (Right n, _) = appendCode $ "ERROR: case can only match on tag, got name: " ++ fullShow n
+    makeCaseAlt a1 a2 = idris_crash "a1_a2"
 
 getInstIR i (CALL r tailpos n args) =
   do argsV <- traverse prepareArg args
