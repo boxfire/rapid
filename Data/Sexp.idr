@@ -1,5 +1,7 @@
 module Data.Sexp
 
+import Data.Strings
+
 %default total
 
 public export
@@ -15,6 +17,18 @@ public export
 interface FromSexp a where
   fromSexp : Sexp -> Either String a
 
+isSafe : String -> Bool
+isSafe "" = False
+isSafe s = let l = prim__strLength s in
+               if l > 20 then False else
+               go s l 0 where
+                 safeChar : Char -> Bool
+                 safeChar c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '-'
+
+                 go : String -> Int -> Int -> Bool
+                 go s l i = if i >= l then True
+                                      else safeChar (assert_total $ strIndex s i) && (assert_total $ go s l (i+1))
+
 showSep : String -> List String -> String
 showSep sep xs = showSepGo True xs "" where
   showSepGo : Bool -> List String -> String -> String
@@ -24,7 +38,7 @@ showSep sep xs = showSepGo True xs "" where
 
 export
 Show Sexp where
-  show (SAtom s) = show s
+  show (SAtom s) = if isSafe s then s else (show s)
   show (SList xs) = "(" ++ (showSep " " (assert_total $ map show xs)) ++ ")"
 
 export
