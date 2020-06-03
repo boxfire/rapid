@@ -4,9 +4,12 @@ import Data.Strings
 import System
 import System.File
 
-import Core.Core
-import Core.Name
+import Compiler.Common
 import Compiler.VMCode
+import Core.Core
+import Core.CompileExpr
+import Core.FC
+import Core.Name
 
 import Compiler.VMCodeSexp
 import Data.Sexp
@@ -34,11 +37,19 @@ verify d input =
 
 compile : String -> IO()
 compile filename =
-  do vmcode <- runCore (compileMain filename)
-     case vmcode of
-          (Right defs) => writeFile ("build/rapid/" ++ filename ++ ".sexp") (fastAppend $ map (if debug then dumpDefWithCheck else dumpDef) defs) >>= \_ => pure ()
+  do compiled <- runCore (compileMain filename)
+     case compiled of
+          (Right cd) => do
+            let foreignDecls = map dumpFgn (namedDefs cd)
+            let compiledFunctions = map (if debug then dumpDefWithCheck else dumpDef) (vmcode cd)
+            writeFile ("build/rapid/" ++ filename ++ ".sexp") (fastAppend (foreignDecls ++ compiledFunctions))
+            pure ()
           (Left e) => (putStrLn ("error: " ++ show e) >>= \_ => exitFailure)
   where
+    dumpFgn : (Name, FC, NamedDef) -> String
+    dumpFgn (n, _, (MkNmForeign cs args ret)) = ";FOREIGN: " ++ show n ++ " = " ++ show cs ++ " (" ++ show args ++ ") -> " ++ show ret ++ "\n"
+    dumpFgn _ = "" -- not a foreign function
+
     dumpDef : (Name, VMDef) -> String
     dumpDef d = (show $ toSexp d) ++ "\n\n"
 

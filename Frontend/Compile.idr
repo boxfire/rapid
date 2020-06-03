@@ -35,7 +35,7 @@ import TTImp.Elab.Check
 import TTImp.TTImp
 
 export
-compileMain : String -> Core (List (Name, VMDef))
+compileMain : String -> Core CompileData
 compileMain fname = do
   defs <- initDefs
   c <- newRef Ctxt defs
@@ -64,5 +64,4 @@ compileMain fname = do
   ttimp <- desugar AnyExpr [] (PApp replFC (PRef replFC (UN "unsafePerformIO")) ctm)
   (tm, gty) <- elabTerm inidx InExpr [] (MkNested []) [] ttimp Nothing
   tm_erased <- linearCheck replFC linear True [] tm
-  cd <- getCompileData VMCode tm_erased
-  pure $ vmcode cd
+  getCompileData VMCode tm_erased
