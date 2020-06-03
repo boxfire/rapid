@@ -36,7 +36,7 @@ compile : String -> IO()
 compile filename =
   do vmcode <- runCore (compileMain filename)
      case vmcode of
-          (Right defs) => writeFile (filename ++ ".sexp") (fastAppend $ map (if debug then dumpDefWithCheck else dumpDef) defs) >>= \_ => pure ()
+          (Right defs) => writeFile ("build/rapid/" ++ filename ++ ".sexp") (fastAppend $ map (if debug then dumpDefWithCheck else dumpDef) defs) >>= \_ => pure ()
           (Left e) => (putStrLn ("error: " ++ show e) >>= \_ => exitFailure)
   where
     dumpDef : (Name, VMDef) -> String

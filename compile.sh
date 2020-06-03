@@ -8,6 +8,10 @@ root=$PWD
 fdir="$(dirname "$1")"
 fbase="$(basename "$1")"
 
+workdir="$fdir/build/rapid"
+workfile="$workdir/$fbase"
+mkdir -p "$workdir"
+
 opt="${2:-}"
 optimize=
 optimizeO1="-mem2reg -inline -dce"
@@ -21,11 +25,11 @@ fi
 
 set -x
 (cd "$fdir" && "$root/build/exec/rapid2-fe" "${fbase}")
-./build/exec/rapid2-cg "${1}.sexp"
-cat support.ll "${1}.sexp.output.ll" > "${1}.full.ll"
-opt "${1}.full.ll" $optimize | tee "${1}.bc" | llc -o "${1}.s"
+./build/exec/rapid2-cg "${workfile}.sexp"
+cat support.ll "${workfile}.sexp.output.ll" > "${workfile}.full.ll"
+opt "${workfile}.full.ll" $optimize | tee "${workfile}.bc" | llc -o "${workfile}.s"
 
 set +x
 
 clang -flto -c -o rts/rts.bc rts/rts.c
-clang -g -o "${1}.native" "${1}.s" rts/rts.bc -lgc
+clang -g -o "${workfile}.native" "${workfile}.s" rts/rts.bc -lgc
