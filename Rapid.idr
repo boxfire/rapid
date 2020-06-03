@@ -1,5 +1,6 @@
 module Main
 
+import Data.List
 import Data.Strings
 import System
 import System.File
@@ -27,13 +28,13 @@ main = do
   case result of
        Right parsed => do
          --putStrLn $ show $ parsed
-         let vmcode = getVMDefs parsed
+         let vmcode = getVMDefs (filter isVmdef parsed)
+         let foreigns = (filter isForeignDecl parsed)
          --putStrLn $ show $ vmcode
          (Right support) <- readFile "support.ll"
          | Left _ => pure ()
          let support = ""
-         let ir = support ++ closureHelper ++ (fastAppend $ map (getVMIR debug) $ enumerate vmcode)
-         {-putStrLn $ ir-}
+         let ir = fastAppend $ [support, closureHelper] ++ (map (getVMIR debug) $ enumerate vmcode)
          _ <- writeFile (filename ++ ".output.ll") ir
          pure ()
        Left e => putStrLn $ "error" ++ e

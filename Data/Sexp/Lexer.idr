@@ -31,7 +31,7 @@ Eq Token where
   _ == _ = False
 
 comment : Lexer
-comment = many space <+> is ';' <+> many (pred (/= '\n')) <+> is '\n'
+comment = is ';' <+> many (pred (/= '\n')) <+> is '\n'
 
 lparen : Lexer
 lparen = is '(' <+> many space
@@ -59,8 +59,8 @@ tokenMap = [
   (lparen, \_ => LParen),
   (rparen, \_ => RParen),
   (atom, Atom . trim),
-  (quotedAtom, QuotedAtom . (fromMaybe "<error>" . escape) . removeQuotes . trim),
-  (comment, Comment)
+  (quotedAtom, QuotedAtom . (fromMaybe "<error>" . escape) . removeQuotes . trim)
+  --(comment, Comment)
   ]
 
 export

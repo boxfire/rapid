@@ -47,7 +47,7 @@ compile filename =
           (Left e) => (putStrLn ("error: " ++ show e) >>= \_ => exitFailure)
   where
     dumpFgn : (Name, FC, NamedDef) -> String
-    dumpFgn (n, _, (MkNmForeign cs args ret)) = ";FOREIGN: " ++ show n ++ " = " ++ show cs ++ " (" ++ show args ++ ") -> " ++ show ret ++ "\n"
+    dumpFgn (n, _, def@(MkNmForeign cs args ret)) = show (toSexp (n, def)) ++ "\n" --";FOREIGN: " ++ show n ++ " = " ++ show cs ++ " (" ++ show args ++ ") -> " ++ show ret ++ "\n"
     dumpFgn _ = "" -- not a foreign function
 
     dumpDef : (Name, VMDef) -> String

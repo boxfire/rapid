@@ -112,6 +112,24 @@ define private hhvmcc %Return1 @PrimIO_2e_prim_5f__5f_putStr(%RuntimePtr %HpArg,
   ret %Return1 %packed2
 }
 
+define private hhvmcc %Return1 @PrimIO_2e_prim_5f__5f_getString(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %unused0) {
+; TODO: implement
+  %nullptr = inttoptr i64 0 to %ObjPtr
+  %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpArg, 0
+  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimArg, 1
+  %packed3 = insertvalue %Return1 %packed2, %ObjPtr %nullptr, 2
+  ret %Return1 %packed3
+}
+
+define private hhvmcc %Return1 @PrimIO_2e_prim_5f__5f_nullAnyPtr(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %unused0) {
+; TODO: implement
+  %nullptr = inttoptr i64 0 to %ObjPtr
+  %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpArg, 0
+  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimArg, 1
+  %packed3 = insertvalue %Return1 %packed2, %ObjPtr %nullptr, 2
+  ret %Return1 %packed3
+}
+
 declare ccc i8* @malloc(i64)
 
 define private hhvmcc i64 @idris_enter_stackbridge(i8* %BaseTSO, i8* %heapStart, i8* %heapEnd) {

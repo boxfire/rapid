@@ -7,6 +7,7 @@ import Data.Strings
 import Data.Vect
 
 import Codegen
+import Compiler.CompileExpr
 import Compiler.VMCode
 import Core.TT
 import Data.Sexp
@@ -313,6 +314,15 @@ ToSexp (Name, VMDef) where
   toSexp (n, (MkVMFun args insts)) = SList $ [SAtom "defun", toSexp n, SList $ map (\i => SAtom $ "v" ++ show i) args, SList $ map toSexp insts]
   toSexp (n, (MkVMError insts)) = SList $ [SAtom "deferr", toSexp n, SList $ map toSexp insts]
 
+export
+ToSexp CFType where
+  toSexp t = SList [SAtom $ show t]
+
+export
+ToSexp (Name, NamedDef) where
+  toSexp (n, (MkNmForeign cs args ret)) = SList $ [SAtom "foreign", toSexp n, SList $ map SAtom cs, SList $ map toSexp args, toSexp ret]
+  toSexp (n, _) = SList $ [SAtom "error"]
+
 getArg : Sexp -> Either String Int
 getArg (SAtom s) = maybeToEither "invalid int" $ parseInteger $ assert_total $ strTail s
 getArg x = Left "invalid ARG"
@@ -324,9 +334,19 @@ FromSexp (Name, VMDef) where
     fArgs <- traverse getArg args
     fInsts <- collectFromSexp insts
     pure (name, MkVMFun fArgs fInsts)
-  fromSexp _ = Left "invalid vmdef"
+  fromSexp l = Left ("invalid vmdef: " ++ show l)
 
 export
 partial
 getVMDefs : List Sexp -> List (Name, VMDef)
-getVMDefs s = either (\error=>idris_crash ("failed to read VMCode from Sexp: " ++ error ++ "\n" ++ show s)) id $ traverse fromSexp s
+getVMDefs s = either (\error=>idris_crash ("failed to read VMCode from Sexp: " ++ error ++ "\n")) id $ traverse fromSexp s
+
+export
+isVmdef : Sexp -> Bool
+isVmdef (SList (SAtom "defun"::_)) = True
+isVmdef _ = False
+
+export
+isForeignDecl : Sexp -> Bool
+isForeignDecl (SList (SAtom "foreign"::_)) = True
+isForeignDecl _ = False
