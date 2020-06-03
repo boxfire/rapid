@@ -14,9 +14,15 @@ exact t = terminal (show t) f where
   f : Token -> Maybe ()
   f x = if x == t then Just () else Nothing
 
+ignoreComment : Parser Token ()
+ignoreComment = terminal "comment" f where
+  f : Token -> Maybe ()
+  f (Comment _) = Just ()
+  f _ = Nothing
+
 mutual
   oneSexp : Parser Token Sexp
-  oneSexp = parseSAtom <|> parseSList
+  oneSexp = (many ignoreComment) *> (parseSAtom <|> parseSList)
 
   parseSList : Parser Token Sexp
   parseSList = do

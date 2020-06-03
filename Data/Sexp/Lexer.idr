@@ -14,6 +14,7 @@ data Token = LParen
            | RParen
            | Atom String
            | QuotedAtom String
+           | Comment String
 
 export
 Show Token where
@@ -21,12 +22,16 @@ Show Token where
   show RParen = "RParen"
   show (Atom s) = "Atom \"" ++ s ++ "\""
   show (QuotedAtom s) = "QAtom \"" ++ s ++ "\""
+  show (Comment s) = "; " ++ s ++ "\n"
 
 export
 Eq Token where
   LParen == LParen = True
   RParen == RParen = True
   _ == _ = False
+
+comment : Lexer
+comment = many space <+> is ';' <+> many (pred (/= '\n')) <+> is '\n'
 
 lparen : Lexer
 lparen = is '(' <+> many space
@@ -38,7 +43,7 @@ isAlphNum : Char -> Bool
 isAlphNum c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 
 ident : Lexer
-ident = pred (\c => c /= '"' && c /= ' ' && c /= '(' && c /= ')' && c /= '\n')
+ident = pred (\c => c /= '"' && c /= ' ' && c /= '(' && c /= ')' && c /= '\n' && c /= ';')
 
 atom : Lexer
 atom = some ident <+> many space
@@ -54,7 +59,8 @@ tokenMap = [
   (lparen, \_ => LParen),
   (rparen, \_ => RParen),
   (atom, Atom . trim),
-  (quotedAtom, QuotedAtom . (fromMaybe "<error>" . escape) . removeQuotes . trim)
+  (quotedAtom, QuotedAtom . (fromMaybe "<error>" . escape) . removeQuotes . trim),
+  (comment, Comment)
   ]
 
 export
