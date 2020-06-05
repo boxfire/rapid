@@ -481,7 +481,7 @@ getInstForConstCaseChar i r alts def =
      scrutinee <- unboxChar (reg2val r)
      appendCode $ "  switch " ++ toIR scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeConstCaseLabel caseId) alts)) ++ " ]"
      appendCode $ caseId ++ "_default:"
-     traverse (getInstIR i) def'
+     traverse (getInstIRWithComment i) def'
      appendCode $ "br label %" ++ labelEnd
      traverse (makeCaseAlt caseId) alts
      appendCode $ labelEnd ++ ":"
@@ -491,7 +491,7 @@ getInstForConstCaseChar i r alts def =
     makeCaseAlt caseId (Ch ch, is) = do
       let c = cast {to=Int} ch
       appendCode $ caseId ++ "_is_" ++ (show c) ++ ":"
-      traverse_ (getInstIR i) is
+      traverse_ (getInstIRWithComment i) is
       appendCode $ "br label %" ++ caseId ++ "_end"
     makeCaseAlt _ (c, _) = appendCode $ "ERROR: constcase must be Char, got: " ++ show c
 
@@ -503,7 +503,7 @@ getInstForConstCaseInt i r alts def =
      scrutinee <- unboxInt (reg2val r)
      appendCode $ "  switch " ++ toIR scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeConstCaseLabel caseId) alts)) ++ " ]"
      appendCode $ caseId ++ "_default:"
-     traverse (getInstIR i) def'
+     traverse (getInstIRWithComment i) def'
      appendCode $ "br label %" ++ labelEnd
      traverse (makeCaseAlt caseId) alts
      appendCode $ labelEnd ++ ":"
@@ -512,7 +512,7 @@ getInstForConstCaseInt i r alts def =
     makeCaseAlt : String -> (Constant, List VMInst) -> Codegen ()
     makeCaseAlt caseId (I c, is) = do
       appendCode $ caseId ++ "_is_" ++ (show c) ++ ":"
-      traverse_ (getInstIR i) is
+      traverse_ (getInstIRWithComment i) is
       appendCode $ "br label %" ++ caseId ++ "_end"
     makeCaseAlt caseId (BI c, is) = makeCaseAlt caseId (I $ cast c, is)
     makeCaseAlt _ (c, _) = appendCode $ "ERROR: constcase must be Int, got: " ++ show c
@@ -531,7 +531,7 @@ getInstForConstCaseString i r alts def =
      appendCode $ "br " ++ toIR labelDefault
      beginLabel labelDefault
 
-     traverse (getInstIR i) def'
+     traverse (getInstIRWithComment i) def'
      appendCode $ "br " ++ toIR labelEnd
 
      beginLabel labelEnd
@@ -545,7 +545,7 @@ getInstForConstCaseString i r alts def =
       appendCode $ "br " ++ toIR match ++ ", " ++ toIR labelAltStart ++ ", " ++ toIR labelAltNext
       -- compare s == scrut
       beginLabel labelAltStart
-      traverse_ (getInstIR i) is
+      traverse_ (getInstIRWithComment i) is
       appendCode $ "br " ++ toIR labelEnd
       beginLabel labelAltNext
     makeCaseAlt _ _ _ (_, c, _) = appendCode $ "ERROR: constcase must be Str, got: " ++ show c
@@ -792,7 +792,7 @@ getInstIR i (CASE r alts def) =
      scrutinee <- assignSSA $ "and i64 " ++ (show 0xffffffff) ++ ", " ++ showWithoutType header
      appendCode $ "  switch i64 " ++ scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeCaseLabel caseId) alts)) ++ " ]"
      appendCode $ caseId ++ "_default:"
-     traverse (getInstIR i) def'
+     traverse (getInstIRWithComment i) def'
      appendCode $ "br label %" ++ labelEnd
      traverse (makeCaseAlt caseId) alts
      appendCode $ labelEnd ++ ":"
@@ -801,7 +801,7 @@ getInstIR i (CASE r alts def) =
     makeCaseAlt : String -> (Either Int Name, List VMInst) -> Codegen ()
     makeCaseAlt caseId (Left c, is) = do
       appendCode $ caseId ++ "_tag_is_" ++ (show c) ++ ":"
-      traverse_ (getInstIR i) is
+      traverse_ (getInstIRWithComment i) is
       appendCode $ "br label %" ++ caseId ++ "_end"
     makeCaseAlt _ (Right n, _) = appendCode $ "ERROR: case can only match on tag, got name: " ++ fullShow n
     makeCaseAlt a1 a2 = idris_crash "a1_a2"
@@ -837,6 +837,11 @@ getInstIR i (EXTPRIM r n args) =
 getInstIR i START = pure ()
 getInstIR i inst = appendCode $ ";=============\n; NOT IMPLEMENTED: " ++ show inst ++ "\n;=============\n"
 
+getInstIRWithComment : Int -> VMInst -> Codegen ()
+getInstIRWithComment i instr = do
+  appendCode (instrAsComment instr)
+  getInstIR i instr
+
 getFunIR : Bool -> Int -> Name -> List Reg -> List VMInst -> Codegen ()
 getFunIR debug i n args body = do
     fargs <- traverse argIR args
@@ -845,7 +850,7 @@ getFunIR debug i n args body = do
     appendCode "entry:"
     appendCode funcEntry
     traverse_ appendCode (map copyArg args)
-    for body (\instr => appendCode (instrAsComment instr) *> getInstIR i instr)
+    traverse_ (getInstIRWithComment i) body
     appendCode funcReturn
     appendCode "}\n"
   where
