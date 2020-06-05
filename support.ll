@@ -28,13 +28,18 @@ declare ccc i64 @idris_rts_int_to_str(i8*, i64)
 %FuncPtrArgs10 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
 %FuncPtrArgs11 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
 %FuncPtrArgs12 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
+%FuncPtrArgs13 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
+%FuncPtrArgs14 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
+%FuncPtrArgs15 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
+%FuncPtrArgs16 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
+%FuncPtrArgs17 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
 
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind
 
 declare i8* @llvm.frameaddress(i32)
 
-define private hhvm_ccc %Return1 @rapid_gc_enter() noinline {
+define private ccc %Return1 @rapid_gc_enter() noinline {
   %frame = call i8* @llvm.frameaddress(i32 0)
   call ccc void @idris_rts_gc(i8* %frame)
   ret %Return1 undef
@@ -66,8 +71,9 @@ finished:
   ret i1 %beq
 }
 
-define external hhvmcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
+define external fastcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
   %addr = call ccc %ObjPtr @GC_malloc(i64 %size)
+  ;%addr = call ccc %ObjPtr @malloc(i64 %size)
 
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpPtrArg, 0
   %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 1
@@ -75,7 +81,7 @@ define external hhvmcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %Runtime
   ret %Return1 %packed3
 }
 
-define external hhvmcc %Return1 @rapid_allocate_fast (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
+define external fastcc %Return1 @rapid_allocate_fast (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
   %Hp = ptrtoint %RuntimePtr %HpPtrArg to i64
   %HpLim = ptrtoint %RuntimePtr %HpLimPtrArg to i64
 
@@ -93,13 +99,13 @@ continue:
   %packed3 = insertvalue %Return1 %packed2, %RuntimePtr %HpPtrArg, 2
   ret %Return1 %packed3
 gc_enter:
-  %gcresult = call hhvm_ccc %Return1 @rapid_gc_enter() noreturn
+  %gcresult = call ccc %Return1 @rapid_gc_enter() noreturn
   ret %Return1 %gcresult
 }
 
 declare ccc i64 @write(i32, i8*, i64)
 
-define private hhvmcc %Return1 @PrimIO_2e_prim_5f__5f_putStr(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %t0, %ObjPtr %unused0) {
+define private fastcc %Return1 @PrimIO.prim__putStr(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %t0, %ObjPtr %unused0) {
   %payloadPtr = getelementptr i8, %ObjPtr %t0, i64 8
   %sizePtr = bitcast %ObjPtr %t0 to i32*
   %size32 = load i32, i32* %sizePtr
@@ -112,7 +118,7 @@ define private hhvmcc %Return1 @PrimIO_2e_prim_5f__5f_putStr(%RuntimePtr %HpArg,
   ret %Return1 %packed2
 }
 
-define private hhvmcc %Return1 @PrimIO_2e_prim_5f__5f_getString(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %unused0) {
+define private fastcc %Return1 @PrimIO.prim__getString(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %unused0) {
 ; TODO: implement
   %nullptr = inttoptr i64 0 to %ObjPtr
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpArg, 0
@@ -121,7 +127,7 @@ define private hhvmcc %Return1 @PrimIO_2e_prim_5f__5f_getString(%RuntimePtr %HpA
   ret %Return1 %packed3
 }
 
-define private hhvmcc %Return1 @PrimIO_2e_prim_5f__5f_nullAnyPtr(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %unused0) {
+define private fastcc %Return1 @PrimIO.prim__nullAnyPtr(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %unused0) {
 ; TODO: implement
   %nullptr = inttoptr i64 0 to %ObjPtr
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpArg, 0
@@ -132,9 +138,9 @@ define private hhvmcc %Return1 @PrimIO_2e_prim_5f__5f_nullAnyPtr(%RuntimePtr %Hp
 
 declare ccc i8* @malloc(i64)
 
-define private hhvmcc i64 @idris_enter_stackbridge(i8* %BaseTSO, i8* %heapStart, i8* %heapEnd) {
-  call hhvmcc %Return1 @_7b__5f__5f_mainExpression_3a_0_7d_(%RuntimePtr %heapStart, %RuntimePtr %BaseTSO, %RuntimePtr %heapEnd)
-  ;call hhvmcc %Return1 @Main_2e__7b_main_3a_0_7d_(%RuntimePtr %heapStart, %RuntimePtr %BaseTSO, %RuntimePtr %heapEnd, %ObjPtr undef)
+define private fastcc i64 @idris_enter_stackbridge(i8* %BaseTSO, i8* %heapStart, i8* %heapEnd) {
+  call fastcc %Return1 @$7b__mainExpression$3a0$7d(%RuntimePtr %heapStart, %RuntimePtr %BaseTSO, %RuntimePtr %heapEnd)
+  ;call hhvmcc %Return1 @Main$2e$7bmain$3a0$7d(%RuntimePtr %heapStart, %RuntimePtr %BaseTSO, %RuntimePtr %heapEnd, %ObjPtr undef)
   ret i64 0
 }
 
@@ -152,6 +158,6 @@ define external ccc i64 @idris_enter(%Idris_TSO.struct* %BaseTSO) {
   %heapEnd = load %RuntimePtr, %RuntimePtr* %heapEndPtr
 
   %BaseTSO.raw = bitcast %Idris_TSO.struct* %BaseTSO to %RuntimePtr
-  call hhvmcc i64 @idris_enter_stackbridge(%RuntimePtr %BaseTSO.raw, %RuntimePtr %heapStart, %RuntimePtr %heapEnd)
+  call fastcc i64 @idris_enter_stackbridge(%RuntimePtr %BaseTSO.raw, %RuntimePtr %heapStart, %RuntimePtr %heapEnd)
   ret i64 0
 }

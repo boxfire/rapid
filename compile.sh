@@ -17,19 +17,19 @@ optimize=
 optimizeO1="-mem2reg -inline -dce"
 optimizeO2="$optimizeO1 -functionattrs -ipsccp -sccp -simplifycfg -gvn -ipconstprop -constprop -constmerge -adce -die -dse -deadargelim -globaldce"
 if [ "$opt" = "-O1" ]; then
-  optimize="$optimizeO1"
+  optimize="$optimizeO1 -O1"
 fi
 if [ "$opt" = "-O2" ]; then
-  optimize="$optimizeO2"
+  optimize="$optimizeO2 -O2"
 fi
 
 set -x
 (cd "$fdir" && "$root/build/exec/rapid2-fe" "${fbase}")
 ./build/exec/rapid2-cg "${workfile}.sexp"
 cat support.ll "${workfile}.sexp.output.ll" > "${workfile}.full.ll"
-opt "${workfile}.full.ll" $optimize | tee "${workfile}.bc" | llc -o "${workfile}.s"
+opt "${workfile}.full.ll" $optimize | tee "${workfile}.bc" >/dev/null # | llc -o "${workfile}.s"
 
 set +x
 
-clang -flto -c -o rts/rts.bc rts/rts.c
-clang -g -o "${workfile}.native" "${workfile}.s" rts/rts.bc -lgc
+clang -flto -c -I /usr/local/include -o rts/rts.bc rts/rts.c
+clang -g -o "${workfile}.native" "${workfile}.bc" rts/rts.bc -L /usr/local/lib -lgc

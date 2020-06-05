@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <gc/gc.h>
+
 const size_t IDRIS_ALIGNMENT = 8;
-const size_t NURSERY_SIZE = 1024;
+const size_t NURSERY_SIZE = 1 * 1024 * 1024;
 
 typedef struct {
   void *nurseryStart;
@@ -28,6 +30,8 @@ int64_t idris_rts_int_to_str(char *dst, int64_t val) {
 }
 
 int main(int argc, char **argv) {
+  GC_init();
+
   Idris_TSO *tso = malloc(sizeof(Idris_TSO));
   tso->nurseryStart = malloc(NURSERY_SIZE);
   tso->nurseryNext = tso->nurseryStart;

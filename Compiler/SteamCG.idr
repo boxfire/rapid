@@ -32,6 +32,9 @@ OBJECT_TYPE_ID_CLOSURE = 3
 OBJECT_TYPE_ID_CHAR : Int
 OBJECT_TYPE_ID_CHAR = 4
 
+CLOSURE_MAX_ARGS : Int
+CLOSURE_MAX_ARGS = 16
+
 repeatStr : String -> Nat -> String
 repeatStr s 0 = ""
 repeatStr s (S x) = s ++ repeatStr s x
@@ -41,21 +44,18 @@ fullShow (DN _ n) = fullShow n
 fullShow (NS ns n) = showSep "." (reverse ns) ++ "." ++ fullShow n
 fullShow n = show n
 
+isSafeChar : Char -> Bool
+isSafeChar '.' = True
+isSafeChar '_' = True
+isSafeChar c = isAlphaNum c
+
 safeName : Name -> String
 safeName s = concatMap okchar (unpack $ fullShow s)
   where
     okchar : Char -> String
-    okchar c = if isAlphaNum c
+    okchar c = if isSafeChar c
                   then cast c
-                  else "_" ++ asHex (cast {to=Int} c) ++ "_"
-
-safeName' : String -> String
-safeName' s = concatMap okchar (unpack s)
-  where
-    okchar : Char -> String
-    okchar c = if isAlphaNum c
-                  then cast c
-                  else "_" ++ asHex (cast {to=Int} c) ++ "_"
+                  else "$" ++ asHex (cast {to=Int} c)
 
 interface ToIR a where
   toIR : a -> String
@@ -260,7 +260,7 @@ dynamicAllocate payloadSize = do
   hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
   let base = "%RuntimePtr %BaseArg"
 
-  allocated <- assignSSA $ "call hhvmcc %Return1 @rapid_allocate(" ++ showSep ", " [hp, base, hpLim] ++ ", "++(toIR totalSize)++") alwaysinline optsize nounwind"
+  allocated <- assignSSA $ "call fastcc %Return1 @rapid_allocate(" ++ showSep ", " [hp, base, hpLim] ++ ", "++(toIR totalSize)++") alwaysinline optsize nounwind"
   newHp <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 0"
   appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpVar"
   newHpLim <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 1"
@@ -277,7 +277,7 @@ applyClosureHelperFunc : Codegen ()
 applyClosureHelperFunc = do
   appendCode $ funcEntry
 
-  let maxArgs = 7
+  let maxArgs = CLOSURE_MAX_ARGS
 
   let closureObj = SSA IRObjPtr "%closureObjArg"
   let argValue = SSA IRObjPtr "%argumentObjArg"
@@ -311,7 +311,7 @@ applyClosureHelperFunc = do
     let argList = [hp, base, hpLim] ++ storedArgs ++ [toIR argValue]
     --appendCode $ labelName ++ "_do_call:"
     let undefs = repeatStr ", %ObjPtr undef" (minus (integerToNat $ cast maxArgs) (integerToNat $ cast i))
-    callRes <- assignSSA $ "musttail call hhvmcc %Return1 " ++ func ++ "(" ++ (showSep ", " argList) ++ undefs ++ ")"
+    callRes <- assignSSA $ "tail call fastcc %Return1 " ++ func ++ "(" ++ (showSep ", " argList) ++ undefs ++ ")"
     appendCode $ "ret %Return1 " ++ callRes
     )
   appendCode $ labelName ++ "_no:"
@@ -342,7 +342,7 @@ applyClosureHelperFunc = do
   appendCode $ funcReturn
 
   appendCode $ applyClosure ++ "_error:"
-  appendCode $ "call ccc void @idris_rts_crash(i64 42)"
+  appendCode $ "call ccc void @idris_rts_crash(i64 13)"
   appendCode $ "ret %Return1 undef"
 
 cgMkInt : IRValue I64 -> Codegen (IRValue IRObjPtr)
@@ -580,7 +580,7 @@ getInstIR i (OP r StrHead [r1]) = do
   jump strHeadFinished
 
   beginLabel strHeadError
-  appendCode $ "call ccc void @idris_rts_crash(i64 42) noreturn"
+  appendCode $ "call ccc void @idris_rts_crash(i64 1) noreturn"
   appendCode $ "unreachable"
 
   beginLabel strHeadFinished
@@ -728,6 +728,7 @@ getInstIR i (MKCLOSURE r n missingN args) = do
   let missing = cast {to=Integer} missingN
   let len = cast {to=Integer} $ length args
   let totalArgsExpected = missing + len
+  if totalArgsExpected > (cast CLOSURE_MAX_ARGS) then idris_crash $ "ERROR : too many closure arguments: " ++ show totalArgsExpected ++ " > " ++ show CLOSURE_MAX_ARGS else do
   let header = (header OBJECT_TYPE_ID_CLOSURE) + (missing * 0x10000) + len
   newObj <- dynamicAllocate $ ConstI64 (8 + 8 * (cast len))
   putObjectHeader newObj (ConstI64 $ cast header)
@@ -749,7 +750,7 @@ getInstIR i (APPLY r fun arg) = do
   funV <- ((++) "%FuncPtr ") <$> (assignSSA $ "load %FuncPtr, %FuncPtr* " ++ toIR fun ++ "Var")
   argV <- load (reg2val arg)
 
-  result <- assignSSA $ "call hhvmcc %Return1 @idris_apply_closure(" ++ showSep ", " [hp, base, hpLim, funV, toIR argV] ++ repeatStr ", %ObjPtr undef" 6  ++ ")"
+  result <- assignSSA $ "call fastcc %Return1 @idris_apply_closure(" ++ showSep ", " [hp, base, hpLim, funV, toIR argV] ++ ")"
 
   newHp <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 0"
   appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpVar"
@@ -811,7 +812,7 @@ getInstIR i (CALL r tailpos n args) =
      hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
      hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
      let base = "%RuntimePtr %BaseArg"
-     result <- assignSSA $ "call hhvmcc %Return1 @" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
+     result <- assignSSA $ "call fastcc %Return1 @" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
 
      newHp <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 0"
      appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpVar"
@@ -831,7 +832,7 @@ getInstIR i (EXTPRIM r n args) =
      hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
      hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
      let base = "%RuntimePtr %BaseArg"
-     result <- assignSSA $ "call hhvmcc %Return1 @_extprim_" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
+     result <- assignSSA $ "call fastcc %Return1 @_extprim_" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
      pure ()
 
 getInstIR i START = pure ()
@@ -846,7 +847,7 @@ getFunIR : Bool -> Int -> Name -> List Reg -> List VMInst -> Codegen ()
 getFunIR debug i n args body = do
     fargs <- traverse argIR args
     let visibility = if debug then "external" else "private"
-    appendCode ("\n\ndefine " ++ visibility ++ " hhvmcc %Return1 @" ++ safeName n ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
+    appendCode ("\n\ndefine " ++ visibility ++ " fastcc %Return1 @" ++ safeName n ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
     appendCode "entry:"
     appendCode funcEntry
     traverse_ appendCode (map copyArg args)
@@ -867,4 +868,4 @@ getVMIR _ _ = ""
 
 export
 closureHelper : String
-closureHelper = "define hhvmcc %Return1 @idris_apply_closure(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %closureObjArg, %ObjPtr %argumentObjArg, i8* %unused0, i8* %unused1, i8* %unused2, i8* %unused3, i8* %unused4, i8* %unused5) {\n" ++ runCodegen applyClosureHelperFunc ++ "\n}"
+closureHelper = "define fastcc %Return1 @idris_apply_closure(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %closureObjArg, %ObjPtr %argumentObjArg) {\n" ++ runCodegen applyClosureHelperFunc ++ "\n}"
