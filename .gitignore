@@ -4,5 +4,8 @@
 /build/
 /samples/build/
 /rts/build/
+/tests/**/build/
+/tests/**/compile.log
+/tests/**/output
 *.o
 *.bc
