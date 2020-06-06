@@ -1,5 +1,6 @@
 module Compiler.SteamCG
 
+import Data.Buffer
 import Data.Either
 import Data.List
 import Data.Maybe
@@ -22,6 +23,10 @@ OBJECT_TYPE_ID_CON_NO_ARGS = 0
 
 OBJECT_TYPE_ID_INT : Int
 OBJECT_TYPE_ID_INT = 1
+
+-- for now treat all numbers the same
+OBJECT_TYPE_ID_DOUBLE : Int
+OBJECT_TYPE_ID_DOUBLE = 1
 
 OBJECT_TYPE_ID_STR : Int
 OBJECT_TYPE_ID_STR = 2
@@ -84,6 +89,19 @@ argIR : Reg -> Codegen String
 argIR (Loc i) = pure $ "%ObjPtr %v" ++ show i
 argIR _ = pure $ "undef"
 
+asHex2 : Int -> String
+asHex2 0 = "00"
+asHex2 c = let s = asHex c in
+               if length s == 1 then "0" ++ s else s
+
+doubleToHex : Double -> String
+doubleToHex d = let bytes = unsafePerformIO (do
+                                buf <- (fromMaybe $ idris_crash "no buf") <$> newBuffer 8
+                                setDouble buf 0 d
+                                bufferData buf
+                                ) in
+                                concatMap asHex2 $ reverse bytes
+
 mkVarName : String -> Codegen String
 mkVarName pfx = do
   i <- getUnique
@@ -99,13 +117,14 @@ assignSSA value = do
   appendCode ("  " ++ varname ++ " = " ++ (toIR value))
   pure varname
 
-data IRType = I1 | I8 | I32 | I64 | FuncPtr | IRObjPtr | Pointer IRType
+data IRType = I1 | I8 | I32 | I64 | F64 | FuncPtr | IRObjPtr | Pointer IRType
 
 Show IRType where
   show I1 = "i1"
   show I8 = "i8"
   show I32 = "i32"
   show I64 = "i64"
+  show F64 = "double"
   show FuncPtr = "%FuncPtr"
   show IRObjPtr = "%ObjPtr"
   show (Pointer t) = (show t) ++ "*"
@@ -124,14 +143,17 @@ genLabel s = MkLabel <$> mkVarName ("glbl_" ++ s)
 
 data IRValue : IRType -> Type where
   ConstI64 : Int -> IRValue I64
+  ConstF64 : Double -> IRValue F64
   SSA : (t : IRType) ->  String -> IRValue t
 
 ToIR (IRValue t) where
   toIR {t} (SSA t s) = (show t) ++ " " ++ s
   toIR (ConstI64 i) = "i64 " ++ (show i)
+  toIR (ConstF64 f) = "double 0x" ++ (doubleToHex f)
 
   showWithoutType (SSA _ n) = n
   showWithoutType (ConstI64 i) = show i
+  showWithoutType (ConstF64 f) = "0x" ++ (doubleToHex f)
 
 reg2val : Reg -> IRValue (Pointer IRObjPtr)
 reg2val (Loc i) = SSA (Pointer IRObjPtr) ("%v" ++ show i ++ "Var")
@@ -154,6 +176,9 @@ icmp {t} cond a b = do
 
 mkZext : {to : IRType} -> IRValue from -> Codegen (IRValue to)
 mkZext {to} val = (SSA to) <$> assignSSA ("zext " ++ toIR val ++ " to " ++ show to)
+
+fptosi : {to : IRType} -> IRValue from -> Codegen (IRValue to)
+fptosi {to} val = (SSA to) <$> assignSSA ("fptosi " ++ toIR val ++ " to " ++ show to)
 
 phi : {t : IRType} -> List (IRValue t, IRLabel) -> Codegen (IRValue t)
 phi xs = (SSA t) <$> assignSSA ("phi " ++ show t ++ " " ++ showSep ", " (map getEdge xs)) where
@@ -361,9 +386,12 @@ cgMkInt val = do
   putObjectSlotG newObj (ConstI64 1) val
   pure newObj
 
-asHex2 : Int -> String
-asHex2 c = let s = asHex c in
-               if length s == 1 then "0" ++ s else s
+cgMkDouble : IRValue F64 -> Codegen (IRValue IRObjPtr)
+cgMkDouble val = do
+  newObj <- dynamicAllocate (ConstI64 8)
+  putObjectHeader newObj (ConstI64 $ cast $ header OBJECT_TYPE_ID_DOUBLE)
+  putObjectSlotG newObj (ConstI64 1) val
+  pure newObj
 
 getStringIR : String -> String
 getStringIR s = concatMap okchar (unpack s)
@@ -409,6 +437,9 @@ unboxInt src = getObjectSlotT {t=I64} !(load src) 1
 
 unboxInt' : IRValue IRObjPtr -> Codegen (IRValue I64)
 unboxInt' src = getObjectSlotT {t=I64} src 1
+
+unboxFloat64 : IRValue (Pointer IRObjPtr) -> Codegen (IRValue F64)
+unboxFloat64 src = getObjectSlotT {t=F64} !(load src) 1
 
 total
 showConstant : Constant -> String
@@ -572,6 +603,8 @@ getInstIR i (OP r Crash [r1, r2]) = do
   msg <- load (reg2val r2)
   appendCode $ "  call ccc void @idris_rts_crash_msg(" ++ toIR msg ++ ") noreturn"
   appendCode $ "unreachable"
+getInstIR i (OP r BelieveMe [_, _, v]) = do
+  store !(load (reg2val v)) (reg2val r)
 
 getInstIR i (OP r StrHead [r1]) = do
   o1 <- load (reg2val r1)
@@ -697,29 +730,45 @@ getInstIR i (OP r (Cast IntType StringType) [r1]) = do
   putObjectHeader newStr newHeader
   store newStr (reg2val r)
 getInstIR i (OP r (Cast DoubleType StringType) [r1]) = do
-  -- TODO: implement
-  newStr <- mkStr i "<Double-Casted>"
+  obj <- load (reg2val r1)
+  theDouble <- getObjectSlotT {t=F64} obj 1
+
+  -- call once with nullptr as dest, to get required length
+  length <- (SSA I64) <$> assignSSA ("call ccc i64 @idris_rts_double_to_str(i8* null, i64 0, " ++ toIR theDouble ++ ")")
+  -- snprintf writes an additional NUL byte to terminate the cstr
+  lengthPlus1 <- mkAdd length (ConstI64 1)
+
+  newStr <- dynamicAllocate lengthPlus1
+  strPayload <- getObjectSlotAddr {t=I8} newStr 1
+  length <- (SSA I64) <$> assignSSA ("call ccc i64 @idris_rts_double_to_str(" ++ toIR strPayload ++ ", " ++ toIR lengthPlus1 ++ ", " ++ toIR theDouble ++ ")")
+  newHeader <- mkAdd (ConstI64 $ cast $ header OBJECT_TYPE_ID_STR) length
+  putObjectHeader newStr newHeader
   store newStr (reg2val r)
 getInstIR i (OP r (Cast DoubleType IntType) [r1]) = do
-  -- TODO: implement
-  newInt <- cgMkInt (ConstI64 423)
+  fval <- unboxFloat64 (reg2val r1)
+  intval <- fptosi fval
+  newInt <- cgMkInt intval
   store newInt (reg2val r)
 getInstIR i (OP r (Cast DoubleType IntegerType) [r1]) = do
-  -- TODO: implement
-  newInt <- cgMkInt (ConstI64 420)
+  fval <- unboxFloat64 (reg2val r1)
+  intval <- fptosi fval
+  newInt <- cgMkInt intval
   store newInt (reg2val r)
 getInstIR i (OP r (Cast StringType IntegerType) [r1]) = do
-  -- TODO: implement
-  newInt <- cgMkInt (ConstI64 421)
+  strObj <- load (reg2val r1)
+  parsedVal <- SSA I64 <$> assignSSA ("  call ccc i64 @idris_rts_str_to_int(" ++ toIR strObj ++ ")")
+  newInt <- cgMkInt parsedVal
   store newInt (reg2val r)
 getInstIR i (OP r (Cast StringType IntType) [r1]) = do
-  -- TODO: implement
-  newInt <- cgMkInt (ConstI64 422)
+  strObj <- load (reg2val r1)
+  parsedVal <- SSA I64 <$> assignSSA ("  call ccc i64 @idris_rts_str_to_int(" ++ toIR strObj ++ ")")
+  newInt <- cgMkInt parsedVal
   store newInt (reg2val r)
 getInstIR i (OP r (Cast StringType DoubleType) [r1]) = do
-  -- TODO: implement
-  newInt <- cgMkInt (ConstI64 428)
-  store newInt (reg2val r)
+  strObj <- load (reg2val r1)
+  parsedVal <- SSA F64 <$> assignSSA ("  call ccc double @idris_rts_str_to_double(" ++ toIR strObj ++ ")")
+  newDouble <- cgMkDouble parsedVal
+  store newDouble (reg2val r)
 
 getInstIR i (OP r (Cast CharType IntegerType) [r1]) = do
   charHdr <- getObjectHeader !(load (reg2val r1))
@@ -930,7 +979,7 @@ getInstIR i (MKCONSTANT r (BI c)) = do
   store obj (reg2val r)
 getInstIR i (MKCONSTANT r (Db d)) = do
   -- TODO: implement
-  obj <- cgMkInt (ConstI64 1337)
+  obj <- cgMkDouble (ConstF64 d)
   store obj (reg2val r)
 getInstIR i (MKCONSTANT r WorldVal) = do
   obj <- mkCon 1337 []

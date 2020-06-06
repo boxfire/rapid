@@ -12,6 +12,9 @@ declare ccc void @idris_rts_gc(i8*)
 declare ccc void @idris_rts_crash(i64)
 declare ccc void @idris_rts_crash_msg(%ObjPtr)
 declare ccc i64 @idris_rts_int_to_str(i8*, i64)
+declare ccc i64 @idris_rts_double_to_str(i8*, i64, double)
+declare ccc double @idris_rts_str_to_double(%ObjPtr)
+declare ccc i64 @idris_rts_str_to_int(%ObjPtr)
 
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind

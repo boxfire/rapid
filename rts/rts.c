@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <gc/gc.h>
@@ -50,6 +51,29 @@ void idris_rts_gc(long arg0) {
 int64_t idris_rts_int_to_str(char *dst, int64_t val) {
   int64_t size = snprintf(dst, 24, "%lld", val);
   return size;
+}
+
+int64_t idris_rts_double_to_str(char *dst, int64_t size, double val) {
+  int64_t needed_size = snprintf(dst, size, "%g", val);
+  return needed_size;
+}
+
+double idris_rts_str_to_double(ObjPtr obj) {
+  int length = OBJ_SIZE(obj->hdr);
+  const char *str = (const char *)&(obj->data);
+  char *scopy = (char *)alloca(length + 1);
+  memcpy(scopy, str, length);
+  scopy[length] = '\0';
+  return strtod(scopy, NULL);
+}
+
+int64_t idris_rts_str_to_int(ObjPtr obj) {
+  int length = OBJ_SIZE(obj->hdr);
+  const char *str = (const char *)&(obj->data);
+  char *scopy = (char *)alloca(length + 1);
+  memcpy(scopy, str, length);
+  scopy[length] = '\0';
+  return strtoll(scopy, NULL, 10);
 }
 
 int main(int argc, char **argv) {
