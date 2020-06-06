@@ -32,6 +32,12 @@ OBJECT_TYPE_ID_CLOSURE = 3
 OBJECT_TYPE_ID_CHAR : Int
 OBJECT_TYPE_ID_CHAR = 4
 
+OBJECT_TYPE_ID_IOREF : Int
+OBJECT_TYPE_ID_IOREF = 5
+
+OBJECT_TYPE_ID_BUFFER : Int
+OBJECT_TYPE_ID_BUFFER = 6
+
 CLOSURE_MAX_ARGS : Int
 CLOSURE_MAX_ARGS = 32
 
@@ -159,7 +165,7 @@ getElementPtr {t} ptr offset =
   SSA (Pointer t) <$> assignSSA ("getelementptr inbounds " ++ show t ++ ", " ++ toIR ptr ++ ", " ++ toIR offset)
 
 bitcast : {from : IRType} -> {to : IRType} -> IRValue from -> Codegen (IRValue (Pointer to))
-bitcast {from} {to} val = (SSA (Pointer to)) <$> assignSSA ("bitcast " ++ toIR val ++ " to " ++ show to)
+bitcast {from} {to} val = (SSA (Pointer to)) <$> assignSSA ("bitcast " ++ toIR val ++ " to " ++ show (Pointer to))
 
 mkBinOp : {t : IRType} -> String -> IRValue t -> IRValue t -> Codegen (IRValue t)
 mkBinOp {t} s a b = do
@@ -398,6 +404,9 @@ mkCon tag args = do
 unboxInt : IRValue (Pointer IRObjPtr) -> Codegen (IRValue I64)
 unboxInt src = getObjectSlotT {t=I64} !(load src) 1
 
+unboxInt' : IRValue IRObjPtr -> Codegen (IRValue I64)
+unboxInt' src = getObjectSlotT {t=I64} src 1
+
 total
 showConstant : Constant -> String
 showConstant (I i) = "(I " ++ show i ++ ")"
@@ -609,6 +618,53 @@ getInstIR i (OP r StrAppend [r1, r2]) = do
 
   store newStr (reg2val r)
 
+getInstIR i (OP r StrCons [r1, r2]) = do
+  o1 <- load (reg2val r1)
+  o2 <- load (reg2val r2)
+  h1 <- getObjectHeader o1
+  h2 <- getObjectHeader o2
+  -- FIXME: this assumes ASCII
+  charVal64 <- mkBinOp "and" (ConstI64 0xff) h1
+  charVal <- mkTrunc {to=I8} charVal64
+  l2 <- mkBinOp "and" (ConstI64 0xffffffff) h2
+  newLength <- mkAdd (ConstI64 1) l2
+  newStr <- dynamicAllocate newLength
+  newHeader <- mkBinOp "or" newLength (ConstI64 $ cast $ header OBJECT_TYPE_ID_STR)
+
+  str2 <- getObjectSlotAddr {t=I8} o2 1
+
+  newStrPayload1 <- getObjectSlotAddr {t=I8} newStr 1
+  newStrPayload2 <- getElementPtr newStrPayload1 (ConstI64 1)
+
+  store charVal newStrPayload1
+  appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR newStrPayload2 ++ ", " ++ toIR str2 ++ ", " ++ toIR l2 ++ ", i1 false)"
+
+  putObjectHeader newStr newHeader
+
+  store newStr (reg2val r)
+
+getInstIR i (OP r StrLength [r1]) = do
+  h1 <- getObjectHeader !(load (reg2val r1))
+  l1 <- mkBinOp "and" (ConstI64 0xffffffff) h1
+  sizeIntObj <- cgMkInt l1
+  store sizeIntObj (reg2val r)
+getInstIR i (OP r StrIndex [r1, r2]) = do
+  o1 <- load (reg2val r1)
+  objHeader <- getObjectHeader o1
+  payload0 <- getObjectSlotAddr {t=I8} o1 1
+
+  index <- unboxInt (reg2val r2)
+  payload <- getElementPtr payload0 index
+
+  -- FIXME: this assumes ASCII
+  charVal <- mkZext {to=I64} !(load payload)
+
+  newCharObj <- dynamicAllocate (ConstI64 0)
+  newHeader <- mkOr charVal (ConstI64 $ cast $ header OBJECT_TYPE_ID_CHAR)
+  putObjectHeader newCharObj newHeader
+
+  store newCharObj (reg2val r)
+
 getInstIR i (OP r (Cast IntegerType StringType) [r1]) = do
   theIntObj <- load (reg2val r1)
   theInt <- getObjectSlotT {t=I64} theIntObj 1
@@ -620,6 +676,35 @@ getInstIR i (OP r (Cast IntegerType StringType) [r1]) = do
   newHeader <- mkAdd (ConstI64 $ cast $ header OBJECT_TYPE_ID_STR) length
   putObjectHeader newStr newHeader
   store newStr (reg2val r)
+
+getInstIR i (OP r (Cast IntType StringType) [r1]) = do
+  theIntObj <- load (reg2val r1)
+  theInt <- getObjectSlotT {t=I64} theIntObj 1
+
+  -- max size of 2^64 = 20 + (optional "-" prefix) + NUL byte (from snprintf)
+  newStr <- dynamicAllocate (ConstI64 24)
+  strPayload <- getObjectSlotAddr {t=I8} newStr 1
+  length <- (SSA I64) <$> assignSSA ("call ccc i64 @idris_rts_int_to_str(" ++ toIR strPayload ++ ", " ++ toIR theInt ++ ")")
+  newHeader <- mkAdd (ConstI64 $ cast $ header OBJECT_TYPE_ID_STR) length
+  putObjectHeader newStr newHeader
+  store newStr (reg2val r)
+
+getInstIR i (OP r (Cast CharType IntegerType) [r1]) = do
+  charHdr <- getObjectHeader !(load (reg2val r1))
+  charVal <- mkAnd charHdr (ConstI64 0xffffffff)
+  newInt <- cgMkInt charVal
+  store newInt (reg2val r)
+
+getInstIR i (OP r (Cast CharType IntType) [r1]) = do
+  charHdr <- getObjectHeader !(load (reg2val r1))
+  charVal <- mkAnd charHdr (ConstI64 0xffffffff)
+  newInt <- cgMkInt charVal
+  store newInt (reg2val r)
+
+getInstIR i (OP r (Cast IntegerType IntType) [r1]) = do
+  store !(load (reg2val r1)) (reg2val r)
+getInstIR i (OP r (Cast IntType IntegerType) [r1]) = do
+  store !(load (reg2val r1)) (reg2val r)
 
 getInstIR i (OP r (Add IntType) [r1, r2]) = do
   i1 <- unboxInt (reg2val r1)
@@ -661,8 +746,28 @@ getInstIR i (OP r (LTE CharType) [r1, r2]) = do
   cmp_i64 <- assignSSA $ "zext " ++ toIR cmp_i1 ++ " to i64"
   obj <- cgMkInt (SSA I64 cmp_i64)
   store obj (reg2val r)
+getInstIR i (OP r (GTE CharType) [r1, r2]) = do
+  -- compare Chars by comparing their headers
+  o1 <- load (reg2val r1)
+  o2 <- load (reg2val r2)
+  i1 <- getObjectHeader o1
+  i2 <- getObjectHeader o2
+  cmp_i1 <- icmp "uge" i1 i2
+  cmp_i64 <- assignSSA $ "zext " ++ toIR cmp_i1 ++ " to i64"
+  obj <- cgMkInt (SSA I64 cmp_i64)
+  store obj (reg2val r)
+getInstIR i (OP r (GT CharType) [r1, r2]) = do
+  -- compare Chars by comparing their headers
+  o1 <- load (reg2val r1)
+  o2 <- load (reg2val r2)
+  i1 <- getObjectHeader o1
+  i2 <- getObjectHeader o2
+  cmp_i1 <- icmp "ugt" i1 i2
+  cmp_i64 <- assignSSA $ "zext " ++ toIR cmp_i1 ++ " to i64"
+  obj <- cgMkInt (SSA I64 cmp_i64)
+  store obj (reg2val r)
 getInstIR i (OP r (EQ CharType) [r1, r2]) = do
-  -- Two Chars are equal, when their headers are equal
+  -- Two Chars are equal, iff their headers are equal
   o1 <- load (reg2val r1)
   o2 <- load (reg2val r2)
   i1 <- getObjectHeader o1
@@ -679,6 +784,14 @@ getInstIR i (OP r (EQ IntType) [r1, r2]) = do
   vsum_i64 <- mkZext {to=I64} vsum_i1
   obj <- cgMkInt vsum_i64
   store obj (reg2val r)
+getInstIR i (OP r (GTE IntType) [r1, r2]) = do
+  i1 <- unboxInt (reg2val r1)
+  i2 <- unboxInt (reg2val r2)
+  vsum_i1 <- icmp "sge" i1 i2
+  vsum_i64 <- mkZext {to=I64} vsum_i1
+  obj <- cgMkInt vsum_i64
+  store obj (reg2val r)
+
 getInstIR i (OP r (EQ IntegerType) [r1, r2]) = do
   -- FIXME: we treat Integers as bounded Ints -> should use GMP
   i1 <- unboxInt (reg2val r1)
@@ -842,7 +955,7 @@ getInstIR i (EXTPRIM r n args) =
      store returnValue (reg2val r)
 
 getInstIR i START = pure ()
-getInstIR i inst = appendCode $ ";=============\n; NOT IMPLEMENTED: " ++ show inst ++ "\n;=============\n"
+getInstIR i inst = idris_crash $ ";=============\n; NOT IMPLEMENTED: " ++ show inst ++ "\n;=============\n"
 
 getInstIRWithComment : Int -> VMInst -> Codegen ()
 getInstIRWithComment i instr = do
@@ -867,6 +980,134 @@ getFunIR debug i n args body = do
 "
     copyArg _ = idris_crash "not an argument"
 
+mk_prim__bufferNew : Vect 2 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferNew [sizeObj, _] = do
+  size <- unboxInt' sizeObj
+  -- TODO: safety check: size < 2^32
+  hdrValue <- mkOr (ConstI64 $ cast $ header OBJECT_TYPE_ID_BUFFER) size
+  newObj <- dynamicAllocate size
+  putObjectHeader newObj hdrValue
+  store newObj (reg2val RVal)
+
+mk_prim__bufferSize : Vect 1 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferSize [arg0] = do
+  hdr <- getObjectHeader arg0
+  size <- mkAnd hdr (ConstI64 0xffffffff)
+  sizeInt <- cgMkInt size
+  store sizeInt (reg2val RVal)
+
+mk_prim__bufferGetByte : Vect 3 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferGetByte [buf, offsetObj, _] = do
+  -- TODO: size check in safe mode
+  --hdr <- getObjectHeader buf
+  --size <- mkAnd hdr (ConstI64 0xffffffff)
+  offset <- unboxInt' offsetObj
+  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  bytePtr <- getElementPtr payloadStart offset
+  byte <- load bytePtr
+  val <- mkZext {to=I64} byte
+  store !(cgMkInt val) (reg2val RVal)
+
+mk_prim__bufferGetInt : Vect 3 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferGetInt [buf, offsetObj, _] = do
+  -- TODO: size check in safe mode
+  --hdr <- getObjectHeader buf
+  --size <- mkAnd hdr (ConstI64 0xffffffff)
+  offset <- unboxInt' offsetObj
+  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  bytePtr <- getElementPtr payloadStart offset
+  intPtr <- bitcast {to=I64} bytePtr
+  val <- load intPtr
+  store !(cgMkInt val) (reg2val RVal)
+
+mk_prim__bufferGetInt32 : Vect 3 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferGetInt32 [buf, offsetObj, _] = do
+  -- TODO: size check in safe mode
+  --hdr <- getObjectHeader buf
+  --size <- mkAnd hdr (ConstI64 0xffffffff)
+  offset <- unboxInt' offsetObj
+  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  bytePtr <- getElementPtr payloadStart offset
+  intPtr <- bitcast {to=I32} bytePtr
+  val32 <- load intPtr
+  val <- mkZext val32
+  store !(cgMkInt val) (reg2val RVal)
+
+mk_prim__bufferSetInt : Vect 4 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferSetInt [buf, offsetObj, valObj, _] = do
+  -- TODO: size check in safe mode
+  --hdr <- getObjectHeader buf
+  --size <- mkAnd hdr (ConstI64 0xffffffff)
+  offset <- unboxInt' offsetObj
+  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  bytePtr <- getElementPtr payloadStart offset
+  intPtr <- bitcast {to=I64} bytePtr
+  val <- unboxInt' valObj
+  store val intPtr
+
+mk_prim__bufferSetInt32 : Vect 4 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferSetInt32 [buf, offsetObj, valObj, _] = do
+  -- TODO: size check in safe mode
+  --hdr <- getObjectHeader buf
+  --size <- mkAnd hdr (ConstI64 0xffffffff)
+  offset <- unboxInt' offsetObj
+  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  bytePtr <- getElementPtr payloadStart offset
+  intPtr <- bitcast {to=I32} bytePtr
+  val <- mkTrunc {to=I32} !(unboxInt' valObj)
+  store val intPtr
+
+
+mk_prim__bufferGetString : Vect 4 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferGetString [buf, offsetObj, lengthObj, _] = do
+  -- TODO: size check in safe mode
+  --hdr <- getObjectHeader buf
+  --size <- mkAnd hdr (ConstI64 0xffffffff)
+  offset <- unboxInt' offsetObj
+  length <- unboxInt' lengthObj
+  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  bytePtr <- getElementPtr payloadStart offset
+
+  newStr <- dynamicAllocate length
+  newHeader <- mkBinOp "or" length (ConstI64 $ cast $ header OBJECT_TYPE_ID_STR)
+  putObjectHeader newStr newHeader
+  strPayload <- getObjectSlotAddr {t=I8} newStr 1
+  appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR strPayload ++ ", " ++ toIR bytePtr ++ ", " ++ toIR length ++ ", i1 false)"
+  store newStr (reg2val RVal)
+
+mk_prim__bufferSetString : Vect 4 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferSetString [buf, offsetObj, valObj, _] = do
+  -- TODO: size check in safe mode
+  --hdr <- getObjectHeader buf
+  --size <- mkAnd hdr (ConstI64 0xffffffff)
+  offset <- unboxInt' offsetObj
+  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  bytePtr <- getElementPtr payloadStart offset
+  strHeader <- getObjectHeader valObj
+  strLength <- mkAnd strHeader (ConstI64 0xffffffff)
+  strPayload <- getObjectSlotAddr {t=I8} valObj 1
+  appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR bytePtr ++ ", " ++ toIR strPayload ++ ", " ++ toIR strLength ++ ", i1 false)"
+
+
+mkSupport : {n : Nat} -> Name -> (Vect n (IRValue IRObjPtr) -> Codegen ()) -> String
+mkSupport {n} name f = "define private fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ toList $ map toIR args) ++ ") {\n" ++ funcEntry ++ runCodegen (f args) ++ funcReturn ++ "\n}\n" where
+  args : Vect n (IRValue IRObjPtr)
+  args = map (\i => SSA IRObjPtr $ "%arg" ++ show (finToNat i)) range
+
+supportPrelude : String
+supportPrelude = fastAppend [
+    mkSupport (NS ["Buffer", "Data"] (UN "prim__newBuffer")) mk_prim__bufferNew
+  , mkSupport (NS ["Buffer", "Data"] (UN "prim__bufferSize")) mk_prim__bufferSize
+  , mkSupport (NS ["Buffer", "Data"] (UN "prim__getByte")) mk_prim__bufferGetByte
+  , mkSupport (NS ["Buffer", "Data"] (UN "prim__getDouble")) mk_prim__bufferGetByte
+  , mkSupport (NS ["Buffer", "Data"] (UN "prim__getInt")) mk_prim__bufferGetInt
+  , mkSupport (NS ["Buffer", "Data"] (UN "prim__setInt")) mk_prim__bufferSetInt
+  , mkSupport (NS ["Buffer", "Data"] (UN "prim__getInt32")) mk_prim__bufferGetInt32
+  , mkSupport (NS ["Buffer", "Data"] (UN "prim__setInt32")) mk_prim__bufferSetInt32
+  , mkSupport (NS ["Buffer", "Data"] (UN "prim__getString")) mk_prim__bufferGetString
+  , mkSupport (NS ["Buffer", "Data"] (UN "prim__setString")) mk_prim__bufferSetString
+  ]
+
 export
 getVMIR : Bool -> (Int, (Name, VMDef)) -> String
 getVMIR debug (i, n, MkVMFun args body) = runCodegen $ getFunIR debug i n (map Loc args) body
@@ -879,4 +1120,4 @@ funcPtrTypes = unlines $ map funcPtr (rangeFromTo 0 CLOSURE_MAX_ARGS) where
 
 export
 closureHelper : String
-closureHelper = funcPtrTypes ++ "\ndefine fastcc %Return1 @idris_apply_closure(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %closureObjArg, %ObjPtr %argumentObjArg) {\n" ++ runCodegen applyClosureHelperFunc ++ "\n}"
+closureHelper = funcPtrTypes ++ "\ndefine fastcc %Return1 @idris_apply_closure(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %closureObjArg, %ObjPtr %argumentObjArg) {\n" ++ runCodegen applyClosureHelperFunc ++ "\n}\n\n" ++ supportPrelude

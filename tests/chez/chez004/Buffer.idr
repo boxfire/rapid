@@ -8,14 +8,14 @@ main
          s <- rawSize buf
          printLn s
 
-         setInt buf 1 94
+         setInt32 buf 1 94
          setString buf 5 "AAAA"
-         val <- getInt buf 1
+         val <- getInt32 buf 1
          printLn val
 
-         setDouble buf 10 94.42
-         val <- getDouble buf 10
-         printLn val
+         --setDouble buf 10 94.42
+         --val <- getDouble buf 10
+         --printLn val
 
          setString buf 20 "Hello there!"
          val <- getString buf 20 5
@@ -27,16 +27,16 @@ main
          ds <- bufferData buf
          printLn ds
 
-         Right _ <- writeBufferToFile "test.buf" buf 100
-             | Left err => putStrLn "Buffer write fail"
-         Right buf2 <- createBufferFromFile "test.buf"
-             | Left err => putStrLn "Buffer read fail"
+         --Right _ <- writeBufferToFile "test.buf" buf 100
+             --| Left err => putStrLn "Buffer write fail"
+         --Right buf2 <- createBufferFromFile "test.buf"
+             --| Left err => putStrLn "Buffer read fail"
 
-         ds <- bufferData buf2
-         printLn ds
+         --ds <- bufferData buf2
+         --printLn ds
 
          freeBuffer buf
-         freeBuffer buf2
+         --freeBuffer buf2
 
 -- Put back when the File API is moved to C and these can work again
 --          Right f <- openBinaryFile "test.buf" Read

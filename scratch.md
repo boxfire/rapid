@@ -54,3 +54,5 @@ Opaque Data:
     HEADER: (MSB 4 Bytes ObjType, LSB 4 Bytes Unicode Codepoint)
 
   ObjTyp : 5 == IORef
+  ObjTyp : 6 == IOBuffer
+    HEADER (4 bytes type `<<` 32, 4 bytes size (number of bytes))
