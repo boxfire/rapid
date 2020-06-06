@@ -81,6 +81,15 @@ define external fastcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %Runtime
   ret %Return1 %packed3
 }
 
+define external fastcc %Return1 @rapid_allocate_mutable (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
+  %addr = call ccc %ObjPtr @GC_malloc(i64 %size)
+
+  %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpPtrArg, 0
+  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 1
+  %packed3 = insertvalue %Return1 %packed2, %RuntimePtr %addr, 2
+  ret %Return1 %packed3
+}
+
 define external fastcc %Return1 @rapid_allocate_fast (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
   %Hp = ptrtoint %RuntimePtr %HpPtrArg to i64
   %HpLim = ptrtoint %RuntimePtr %HpLimPtrArg to i64
@@ -130,6 +139,54 @@ define private fastcc %Return1 @PrimIO.prim__getString(%RuntimePtr %HpArg, %Runt
 define private fastcc %Return1 @PrimIO.prim__nullAnyPtr(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %unused0) {
 ; TODO: implement
   %nullptr = inttoptr i64 0 to %ObjPtr
+  %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpArg, 0
+  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimArg, 1
+  %packed3 = insertvalue %Return1 %packed2, %ObjPtr %nullptr, 2
+  ret %Return1 %packed3
+}
+
+define private fastcc %Return1 @_extprim_Data.IORef.prim__newIORef(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %val, %ObjPtr %world) {
+  %allocated.ret = call fastcc %Return1 @rapid_allocate_mutable (%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, i64 16)
+  %hpnew = extractvalue %Return1 %allocated.ret, 0
+  %hplimnew = extractvalue %Return1 %allocated.ret, 1
+  %newobj = extractvalue %Return1 %allocated.ret, 2
+
+  %objptr = bitcast %ObjPtr %newobj to i64*
+  %hdr.ptr = getelementptr inbounds i64, i64* %objptr, i64 0
+  ; putObjectHeader 0x05 `shl` 32
+  store i64 21474836480, i64* %hdr.ptr
+
+  %ref.ptr = getelementptr inbounds i64, i64* %objptr, i64 1
+  %ref.objptr = bitcast i64* %ref.ptr to %ObjPtr*
+  store %ObjPtr %val, %ObjPtr* %ref.objptr
+
+  %packed1 = insertvalue %Return1 undef, %RuntimePtr %hpnew, 0
+  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %hplimnew, 1
+  %packed3 = insertvalue %Return1 %packed2, %ObjPtr %newobj, 2
+  ret %Return1 %packed3
+}
+
+define private fastcc %Return1 @_extprim_Data.IORef.prim__readIORef(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %ref, %ObjPtr %world) alwaysinline {
+  %objptr = bitcast %ObjPtr %ref to i64*
+  %payload.ptr = getelementptr inbounds i64, i64* %objptr, i64 1
+  %payload.objptr = bitcast i64* %payload.ptr to %ObjPtr*
+  %payload.obj = load %ObjPtr, %ObjPtr* %payload.objptr
+
+  %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpArg, 0
+  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimArg, 1
+  %packed3 = insertvalue %Return1 %packed2, %ObjPtr %payload.obj, 2
+  ret %Return1 %packed3
+}
+
+define private fastcc %Return1 @_extprim_Data.IORef.prim__writeIORef(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %ref, %ObjPtr %val, %ObjPtr %world) alwaysinline {
+  %objptr = bitcast %ObjPtr %ref to i64*
+  %payload.ptr = getelementptr inbounds i64, i64* %objptr, i64 1
+  %payload.objptr = bitcast i64* %payload.ptr to %ObjPtr*
+  ; future write barrier required?
+  store %ObjPtr %val, %ObjPtr* %payload.objptr
+
+  %nullptr = inttoptr i64 0 to %ObjPtr
+
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpArg, 0
   %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimArg, 1
   %packed3 = insertvalue %Return1 %packed2, %ObjPtr %nullptr, 2

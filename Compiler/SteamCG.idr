@@ -833,7 +833,13 @@ getInstIR i (EXTPRIM r n args) =
      hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
      let base = "%RuntimePtr %BaseArg"
      result <- assignSSA $ "call fastcc %Return1 @_extprim_" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
-     pure ()
+
+     newHp <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 0"
+     appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpVar"
+     newHpLim <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 1"
+     appendCode $ "store %RuntimePtr " ++ newHpLim ++ ", %RuntimePtr* %HpLimVar"
+     returnValue <- SSA IRObjPtr <$> assignSSA ("extractvalue %Return1 " ++ result ++ ", 2")
+     store returnValue (reg2val r)
 
 getInstIR i START = pure ()
 getInstIR i inst = appendCode $ ";=============\n; NOT IMPLEMENTED: " ++ show inst ++ "\n;=============\n"

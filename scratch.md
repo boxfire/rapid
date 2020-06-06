@@ -52,3 +52,5 @@ Opaque Data:
 
   ObjTyp : 4 == Char
     HEADER: (MSB 4 Bytes ObjType, LSB 4 Bytes Unicode Codepoint)
+
+  ObjTyp : 5 == IORef
