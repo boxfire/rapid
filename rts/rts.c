@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include <gc/gc.h>
 
@@ -12,11 +13,33 @@ typedef struct {
   void *nurseryEnd;
 } Idris_TSO;
 
+typedef uint64_t RapidObjectHeader;
+
+typedef struct __attribute__((packed, aligned(1))) {
+  RapidObjectHeader hdr;
+  void *data;
+} RapidObject_t;
+
+typedef RapidObject_t *ObjPtr;
+
+static uint32_t inline OBJ_SIZE(RapidObjectHeader h) {
+  return (h & 0xffffffff);
+}
+
 extern long idris_enter(void *baseTSO);
 
 void idris_rts_crash(long arg0) {
   printf("CRASH called: %ld\n", arg0);
   exit(3);
+}
+
+void idris_rts_crash_msg(ObjPtr msg) {
+  int length = OBJ_SIZE(msg->hdr);
+  const char *str = (const char *)&(msg->data);
+  fprintf(stderr, "ERROR: ");
+  fwrite(str, length, 1, stderr);
+  fprintf(stderr, "\n");
+  exit(4);
 }
 
 void idris_rts_gc(long arg0) {

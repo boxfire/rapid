@@ -187,6 +187,9 @@ mkMul = mkBinOp "mul"
 mkSub : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
 mkSub = mkBinOp "sub"
 
+mkSDiv : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
+mkSDiv = mkBinOp "sdiv"
+
 unlikely : IRValue I1 -> Codegen (IRValue I1)
 unlikely cond = (SSA I1) <$> assignSSA (" call ccc i1 @llvm.expect.i1(" ++ toIR cond ++ ", i1 0)")
 
@@ -565,6 +568,11 @@ getInstIR i (ASSIGN r src) = do
   value <- assignSSA $ "load %ObjPtr, %ObjPtr* " ++ toIR src ++ "Var"
   appendCode $ "  store %ObjPtr " ++ value ++ ", %ObjPtr* " ++ toIR r ++ "Var"
 
+getInstIR i (OP r Crash [r1, r2]) = do
+  msg <- load (reg2val r2)
+  appendCode $ "  call ccc void @idris_rts_crash_msg(" ++ toIR msg ++ ") noreturn"
+  appendCode $ "unreachable"
+
 getInstIR i (OP r StrHead [r1]) = do
   o1 <- load (reg2val r1)
   objHeader <- getObjectHeader o1
@@ -688,6 +696,30 @@ getInstIR i (OP r (Cast IntType StringType) [r1]) = do
   newHeader <- mkAdd (ConstI64 $ cast $ header OBJECT_TYPE_ID_STR) length
   putObjectHeader newStr newHeader
   store newStr (reg2val r)
+getInstIR i (OP r (Cast DoubleType StringType) [r1]) = do
+  -- TODO: implement
+  newStr <- mkStr i "<Double-Casted>"
+  store newStr (reg2val r)
+getInstIR i (OP r (Cast DoubleType IntType) [r1]) = do
+  -- TODO: implement
+  newInt <- cgMkInt (ConstI64 423)
+  store newInt (reg2val r)
+getInstIR i (OP r (Cast DoubleType IntegerType) [r1]) = do
+  -- TODO: implement
+  newInt <- cgMkInt (ConstI64 420)
+  store newInt (reg2val r)
+getInstIR i (OP r (Cast StringType IntegerType) [r1]) = do
+  -- TODO: implement
+  newInt <- cgMkInt (ConstI64 421)
+  store newInt (reg2val r)
+getInstIR i (OP r (Cast StringType IntType) [r1]) = do
+  -- TODO: implement
+  newInt <- cgMkInt (ConstI64 422)
+  store newInt (reg2val r)
+getInstIR i (OP r (Cast StringType DoubleType) [r1]) = do
+  -- TODO: implement
+  newInt <- cgMkInt (ConstI64 428)
+  store newInt (reg2val r)
 
 getInstIR i (OP r (Cast CharType IntegerType) [r1]) = do
   charHdr <- getObjectHeader !(load (reg2val r1))
@@ -716,6 +748,11 @@ getInstIR i (OP r (Sub IntType) [r1, r2]) = do
   i2 <- unboxInt (reg2val r2)
   obj <- cgMkInt !(mkSub i1 i2)
   store obj (reg2val r)
+getInstIR i (OP r (Div IntType) [r1, r2]) = do
+  i1 <- unboxInt (reg2val r1)
+  i2 <- unboxInt (reg2val r2)
+  obj <- cgMkInt !(mkSDiv i1 i2)
+  store obj (reg2val r)
 
 getInstIR i (OP r (Add IntegerType) [r1, r2]) = do
   -- FIXME: we treat Integers as bounded Ints -> should use GMP
@@ -734,6 +771,12 @@ getInstIR i (OP r (Mul IntegerType) [r1, r2]) = do
   i1 <- unboxInt (reg2val r1)
   i2 <- unboxInt (reg2val r2)
   obj <- cgMkInt !(mkMul i1 i2)
+  store obj (reg2val r)
+getInstIR i (OP r (Div IntegerType) [r1, r2]) = do
+  -- FIXME: we treat Integers as bounded Ints -> should use GMP
+  i1 <- unboxInt (reg2val r1)
+  i2 <- unboxInt (reg2val r2)
+  obj <- cgMkInt !(mkSDiv i1 i2)
   store obj (reg2val r)
 
 getInstIR i (OP r (LTE CharType) [r1, r2]) = do
@@ -884,6 +927,10 @@ getInstIR i (MKCONSTANT r (I c)) = do
 getInstIR i (MKCONSTANT r (BI c)) = do
   -- FIXME: we treat Integers as bounded Ints -> should use GMP
   obj <- cgMkInt (ConstI64 $ cast c)
+  store obj (reg2val r)
+getInstIR i (MKCONSTANT r (Db d)) = do
+  -- TODO: implement
+  obj <- cgMkInt (ConstI64 1337)
   store obj (reg2val r)
 getInstIR i (MKCONSTANT r WorldVal) = do
   obj <- mkCon 1337 []

@@ -1,19 +1,17 @@
 target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx10.15"
 
-declare ccc void @idris_rts_gc(i8*)
-declare ccc void @idris_rts_crash(i64)
-declare ccc i64 @idris_rts_int_to_str(i8*, i64)
-
-@g_Hp = weak global i64 undef
-@g_HpLim = weak global i64 undef
-
 %ObjPtr = type i8*
 %RuntimePtr = type i8*
 %FuncPtr = type i8*
 
 %VoidReturn = type {%RuntimePtr, %RuntimePtr, %RuntimePtr}
 %Return1 = type {%RuntimePtr, %RuntimePtr, %ObjPtr}
+
+declare ccc void @idris_rts_gc(i8*)
+declare ccc void @idris_rts_crash(i64)
+declare ccc void @idris_rts_crash_msg(%ObjPtr)
+declare ccc i64 @idris_rts_int_to_str(i8*, i64)
 
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind
