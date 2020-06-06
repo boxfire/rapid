@@ -13,9 +13,9 @@ main
          val <- getInt32 buf 1
          printLn val
 
-         --setDouble buf 10 94.42
-         --val <- getDouble buf 10
-         --printLn val
+         setDouble buf 10 94.42
+         val <- getDouble buf 10
+         printLn val
 
          setString buf 20 "Hello there!"
          val <- getString buf 20 5

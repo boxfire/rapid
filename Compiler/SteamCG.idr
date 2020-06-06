@@ -441,6 +441,9 @@ unboxInt' src = getObjectSlotT {t=I64} src 1
 unboxFloat64 : IRValue (Pointer IRObjPtr) -> Codegen (IRValue F64)
 unboxFloat64 src = getObjectSlotT {t=F64} !(load src) 1
 
+unboxFloat64' : IRValue IRObjPtr -> Codegen (IRValue F64)
+unboxFloat64' src = getObjectSlotT {t=F64} src 1
+
 total
 showConstant : Constant -> String
 showConstant (I i) = "(I " ++ show i ++ ")"
@@ -1104,6 +1107,30 @@ mk_prim__bufferGetByte [buf, offsetObj, _] = do
   val <- mkZext {to=I64} byte
   store !(cgMkInt val) (reg2val RVal)
 
+mk_prim__bufferGetDouble : Vect 3 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferGetDouble [buf, offsetObj, _] = do
+  -- TODO: size check in safe mode
+  --hdr <- getObjectHeader buf
+  --size <- mkAnd hdr (ConstI64 0xffffffff)
+  offset <- unboxInt' offsetObj
+  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  bytePtr <- getElementPtr payloadStart offset
+  doublePtr <- bitcast bytePtr
+  val <- load doublePtr
+  store !(cgMkDouble val) (reg2val RVal)
+
+mk_prim__bufferSetDouble : Vect 4 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferSetDouble [buf, offsetObj, valObj, _] = do
+  -- TODO: size check in safe mode
+  --hdr <- getObjectHeader buf
+  --size <- mkAnd hdr (ConstI64 0xffffffff)
+  offset <- unboxInt' offsetObj
+  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  bytePtr <- getElementPtr payloadStart offset
+  doublePtr <- bitcast bytePtr
+  val <- unboxFloat64' valObj
+  store val doublePtr
+
 mk_prim__bufferGetInt : Vect 3 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__bufferGetInt [buf, offsetObj, _] = do
   -- TODO: size check in safe mode
@@ -1195,7 +1222,8 @@ supportPrelude = fastAppend [
     mkSupport (NS ["Buffer", "Data"] (UN "prim__newBuffer")) mk_prim__bufferNew
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__bufferSize")) mk_prim__bufferSize
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__getByte")) mk_prim__bufferGetByte
-  , mkSupport (NS ["Buffer", "Data"] (UN "prim__getDouble")) mk_prim__bufferGetByte
+  , mkSupport (NS ["Buffer", "Data"] (UN "prim__getDouble")) mk_prim__bufferGetDouble
+  , mkSupport (NS ["Buffer", "Data"] (UN "prim__setDouble")) mk_prim__bufferSetDouble
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__getInt")) mk_prim__bufferGetInt
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__setInt")) mk_prim__bufferSetInt
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__getInt32")) mk_prim__bufferGetInt32
