@@ -1,0 +1,18 @@
++ cd tests/chez/chez003
++ /Users/cypheon/dev/idris2/steam/build/exec/rapid2-fe IORef.idr
++ ./build/exec/rapid2-cg tests/chez/chez003/build/rapid/IORef.idr.sexp
+reading input from: tests/chez/chez003/build/rapid/IORef.idr.sexp
++ cat support.ll tests/chez/chez003/build/rapid/IORef.idr.sexp.output.ll
++ opt tests/chez/chez003/build/rapid/IORef.idr.full.ll
++ tee tests/chez/chez003/build/rapid/IORef.idr.bc
+opt: tests/chez/chez003/build/rapid/IORef.idr.full.ll:3485:30: error: use of undefined value '@_extprim_Data.IORef.prim__newIORef'
+  %t5 = call fastcc %Return1 @_extprim_Data.IORef.prim__newIORef(%RuntimePtr %t3, %RuntimePtr %BaseArg, %RuntimePtr %t4, %ObjPtr %t0, %ObjPtr %t1, %ObjPtr %t2)
+                             ^
++ set +x
+warning: overriding the module target triple with x86_64-apple-macosx10.15.0 [-Woverride-module]
+1 warning generated.
+Undefined symbols for architecture x86_64:
+  "_idris_enter", referenced from:
+      _main in rts-950903.o
+ld: symbol(s) not found for architecture x86_64
+clang-10: error: linker command failed with exit code 1 (use -v to see invocation)

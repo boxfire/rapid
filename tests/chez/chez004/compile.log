@@ -1,0 +1,5 @@
++ cd tests/chez/chez004
++ /Users/cypheon/dev/idris2/steam/build/exec/rapid2-fe Buffer.idr
++ ./build/exec/rapid2-cg tests/chez/chez004/build/rapid/Buffer.idr.sexp
+ERROR: ERROR : too many closure arguments: 23 > 16
+reading input from: tests/chez/chez004/build/rapid/Buffer.idr.sexp

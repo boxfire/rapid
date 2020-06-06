@@ -1,0 +1,11 @@
++ cd tests/chez/chez002
++ /Users/cypheon/dev/idris2/steam/build/exec/rapid2-fe Pythag.idr
++ ./build/exec/rapid2-cg tests/chez/chez002/build/rapid/Pythag.idr.sexp
+reading input from: tests/chez/chez002/build/rapid/Pythag.idr.sexp
++ cat support.ll tests/chez/chez002/build/rapid/Pythag.idr.sexp.output.ll
++ opt tests/chez/chez002/build/rapid/Pythag.idr.full.ll
++ tee tests/chez/chez002/build/rapid/Pythag.idr.bc
++ set +x
+warning: overriding the module target triple with x86_64-apple-macosx10.15.0 [-Woverride-module]
+1 warning generated.
+warning: no debug symbols in executable (-arch x86_64)
