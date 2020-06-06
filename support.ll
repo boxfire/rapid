@@ -15,25 +15,6 @@ declare ccc i64 @idris_rts_int_to_str(i8*, i64)
 %VoidReturn = type {%RuntimePtr, %RuntimePtr, %RuntimePtr}
 %Return1 = type {%RuntimePtr, %RuntimePtr, %ObjPtr}
 
-;%FuncPtrArgs0 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr)*
-%FuncPtrArgs1 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr)*
-%FuncPtrArgs2 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr)*
-%FuncPtrArgs3 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr)*
-%FuncPtrArgs4 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
-%FuncPtrArgs5 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
-%FuncPtrArgs6 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
-%FuncPtrArgs7 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
-%FuncPtrArgs8 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
-%FuncPtrArgs9 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
-%FuncPtrArgs10 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
-%FuncPtrArgs11 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
-%FuncPtrArgs12 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
-%FuncPtrArgs13 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
-%FuncPtrArgs14 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
-%FuncPtrArgs15 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
-%FuncPtrArgs16 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
-%FuncPtrArgs17 = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr, %ObjPtr)*
-
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind
 

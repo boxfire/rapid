@@ -1,6 +1,6 @@
 #!/bin/bash
 
-tests=(chez001 chez002 chez003 chez004)
+tests=(chez001 chez002 chez003 chez004 chez005 chez006 chez007 chez008 chez009 chez010 chez011 chez012 chez013 chez014 chez014 chez015 chez016 chez017 chez018)
 
 if [[ -n "$1" ]]; then
   read -r -a tests <<< "$@"

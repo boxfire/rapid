@@ -33,7 +33,7 @@ OBJECT_TYPE_ID_CHAR : Int
 OBJECT_TYPE_ID_CHAR = 4
 
 CLOSURE_MAX_ARGS : Int
-CLOSURE_MAX_ARGS = 16
+CLOSURE_MAX_ARGS = 32
 
 repeatStr : String -> Nat -> String
 repeatStr s 0 = ""
@@ -872,6 +872,11 @@ getVMIR : Bool -> (Int, (Name, VMDef)) -> String
 getVMIR debug (i, n, MkVMFun args body) = runCodegen $ getFunIR debug i n (map Loc args) body
 getVMIR _ _ = ""
 
+funcPtrTypes : String
+funcPtrTypes = unlines $ map funcPtr (rangeFromTo 0 CLOSURE_MAX_ARGS) where
+  funcPtr : Int -> String
+  funcPtr i = "%FuncPtrArgs" ++ (show (i + 1)) ++ " = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr" ++ repeatStr ", %ObjPtr" (integerToNat $ cast (i+1)) ++ ")*"
+
 export
 closureHelper : String
-closureHelper = "define fastcc %Return1 @idris_apply_closure(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %closureObjArg, %ObjPtr %argumentObjArg) {\n" ++ runCodegen applyClosureHelperFunc ++ "\n}"
+closureHelper = funcPtrTypes ++ "\ndefine fastcc %Return1 @idris_apply_closure(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %closureObjArg, %ObjPtr %argumentObjArg) {\n" ++ runCodegen applyClosureHelperFunc ++ "\n}"
