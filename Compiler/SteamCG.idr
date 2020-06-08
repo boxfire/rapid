@@ -143,20 +143,25 @@ genLabel : String -> Codegen IRLabel
 genLabel s = MkLabel <$> mkVarName ("glbl_" ++ s)
 
 data IRValue : IRType -> Type where
+  Const : (t : IRType) -> Integer -> IRValue t
   ConstI64 : Integer -> IRValue I64
   ConstF64 : Double -> IRValue F64
   SSA : (t : IRType) ->  String -> IRValue t
   IRDiscard : IRValue (Pointer IRObjPtr)
 
+
+total
 ToIR (IRValue t) where
   toIR {t} (SSA t s) = (show t) ++ " " ++ s
+  toIR (Const t i) = (show t) ++ " " ++ (show i)
   toIR (ConstI64 i) = "i64 " ++ (show i)
-  toIR (ConstF64 f) = "double 0x" ++ (doubleToHex f)
+  toIR (ConstF64 f) = "double 0x" ++ (assert_total $ doubleToHex f)
   toIR (IRDiscard) = "ERROR: trying to use DISCARD with type"
 
   showWithoutType (SSA _ n) = n
+  showWithoutType (Const _ i) = show i
   showWithoutType (ConstI64 i) = show i
-  showWithoutType (ConstF64 f) = "0x" ++ (doubleToHex f)
+  showWithoutType (ConstF64 f) = "0x" ++ (assert_total $ doubleToHex f)
   showWithoutType (IRDiscard) = "ERROR: trying to use DISCARD without type"
 
 reg2val : Reg -> IRValue (Pointer IRObjPtr)
@@ -184,6 +189,9 @@ icmp {t} cond a b = do
 
 mkZext : {to : IRType} -> IRValue from -> Codegen (IRValue to)
 mkZext {to} val = (SSA to) <$> assignSSA ("zext " ++ toIR val ++ " to " ++ show to)
+
+mkSext : {to : IRType} -> IRValue from -> Codegen (IRValue to)
+mkSext {to} val = (SSA to) <$> assignSSA ("sext " ++ toIR val ++ " to " ++ show to)
 
 fptosi : {to : IRType} -> IRValue from -> Codegen (IRValue to)
 fptosi {to} val = (SSA to) <$> assignSSA ("fptosi " ++ toIR val ++ " to " ++ show to)
@@ -245,6 +253,11 @@ branch cond whenTrue whenFalse =
 jump : IRLabel -> Codegen ()
 jump to =
   appendCode $ "br " ++ toIR to
+
+mkMin : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
+mkMin {t} a b = do
+  aSmaller <- icmp "slt" a b
+  (SSA t) <$> assignSSA ("select " ++ toIR aSmaller ++ ", " ++ toIR a ++ ", " ++ toIR b)
 
 call : {t : IRType} -> String -> String -> Vect n String -> Codegen (IRValue t)
 call {t} cconv name args = do
@@ -426,6 +439,64 @@ getStringIR s = concatMap okchar (unpack s)
     okchar c = if isAlphaNum c
                   then cast c
                   else "\\" ++ asHex2 (cast {to=Int} c)
+
+data CompareOp = LT | LTE | EQ | GTE | GT
+
+stringCompare : CompareOp -> Reg -> Reg -> Codegen (IRValue IRObjPtr)
+stringCompare op r1 r2 = do
+  o1 <- load (reg2val r1)
+  o2 <- load (reg2val r2)
+  h1 <- getObjectHeader o1
+  h2 <- getObjectHeader o2
+  l1 <- mkBinOp "and" (ConstI64 0xffffffff) h1
+  l2 <- mkBinOp "and" (ConstI64 0xffffffff) h2
+
+  minLength <- mkMin l1 l2
+
+  str1 <- getObjectSlotAddr {t=I8} o1 1
+  str2 <- getObjectSlotAddr {t=I8} o2 1
+
+  lblCmpStart <- genLabel "strcompare_start"
+  lblPrefixEq <- genLabel "strcompare_prefix_eq"
+  lblPrefixNotEq <- genLabel "strcompare_prefix_neq"
+  lblEnd <- genLabel "strcompare_end"
+
+  jump lblCmpStart
+  beginLabel lblCmpStart
+  cmpResult32 <- call {t=I32} "fastcc" "@rapid.memcmp" [toIR str1, toIR str2, toIR minLength]
+  cmpResult <- mkSext cmpResult32
+  cmpResultIsEq <- icmp "eq" cmpResult (ConstI64 0)
+  branch cmpResultIsEq lblPrefixEq lblPrefixNotEq
+
+  beginLabel lblPrefixEq
+  string1Shorter <- icmp "slt" l1 l2
+  string1ShorterOrEqual <- icmp "sle" l1 l2
+  string2Shorter <- icmp "slt" l2 l1
+  string2ShorterOrEqual <- icmp "sle" l2 l1
+  lengthsEqual <- icmp "eq" l1 l2
+  let result : IRValue I1
+      result =  case op of
+                     LT  => string1Shorter
+                     LTE => string1ShorterOrEqual
+                     EQ  => lengthsEqual
+                     GTE => string2ShorterOrEqual
+                     GT  => string2Shorter
+  jump lblEnd
+
+  beginLabel lblPrefixNotEq
+  cmpResultIsLt <- icmp "slt" cmpResult (Const I64 0)
+  cmpResultIsGt <- icmp "sgt" cmpResult (Const I64 0)
+  let result2 =  case op of
+                      LT  => cmpResultIsLt
+                      LTE => cmpResultIsLt
+                      EQ  => Const I1 0
+                      GT  => cmpResultIsGt
+                      GTE => cmpResultIsGt
+  jump lblEnd
+  beginLabel lblEnd
+
+  finalResult <- phi [(result, lblPrefixEq), (result2, lblPrefixNotEq)]
+  cgMkInt !(mkZext finalResult)
 
 mkStr : Int -> String -> Codegen (IRValue IRObjPtr)
 mkStr i s = do
@@ -740,6 +811,12 @@ getInstIR i (OP r StrIndex [r1, r2]) = do
   putObjectHeader newCharObj newHeader
 
   store newCharObj (reg2val r)
+
+getInstIR i (OP r (LT  StringType) [r1, r2]) = store !(stringCompare LT  r1 r2) (reg2val r)
+getInstIR i (OP r (LTE StringType) [r1, r2]) = store !(stringCompare LTE r1 r2) (reg2val r)
+getInstIR i (OP r (EQ  StringType) [r1, r2]) = store !(stringCompare EQ  r1 r2) (reg2val r)
+getInstIR i (OP r (GTE StringType) [r1, r2]) = store !(stringCompare GTE r1 r2) (reg2val r)
+getInstIR i (OP r (GT  StringType) [r1, r2]) = store !(stringCompare GT  r1 r2) (reg2val r)
 
 getInstIR i (OP r (Cast IntegerType StringType) [r1]) = do
   theIntObj <- load (reg2val r1)

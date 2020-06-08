@@ -49,14 +49,15 @@ loop:
   br i1 %beq, label %loopend, label %finished
 
 loopend:
-  %continue = icmp ule i64 %i, %size
   %iPlus = add nuw nsw i64 %i, 1
+  %continue = icmp ult i64 %iPlus, %size
   br i1 %continue, label %loop, label %finished
 finished:
   ret i1 %beq
 }
 
-define private fastcc i32 @rapid.memcmp(i8* %v1, i8* %v2, i64 %size) alwaysinline optsize nounwind {
+;define private fastcc i32 @rapid.memcmp(i8* %v1, i8* %v2, i64 %size) inline optsize nounwind {
+define external fastcc i32 @rapid.memcmp(i8* %v1, i8* %v2, i64 %size) noinline optsize nounwind {
 entry:
   br label %loop
 loop:
@@ -71,8 +72,8 @@ loop:
   br i1 %beq, label %loopend, label %finished_neq
 
 loopend:
-  %continue = icmp ule i64 %i, %size
   %iPlus = add nuw nsw i64 %i, 1
+  %continue = icmp ult i64 %iPlus, %size
   br i1 %continue, label %loop, label %finished_eq
 finished_neq:
   %bcmp = icmp ult i8 %b1, %b2
