@@ -470,9 +470,15 @@ makeConstCaseLabel caseId (BI i,_) = "i64 " ++ show i ++ ", label %" ++ caseId +
 makeConstCaseLabel caseId (Ch c,_) = "i32 " ++ show i ++ ", label %" ++ caseId ++ "_is_" ++ show i where i:Int; i = (cast {to=Int} c)
 makeConstCaseLabel caseId (c,_) = "const case error: " ++ (showConstant c)
 
-makeCaseLabel : String -> (Either Int Name, a) -> String
+makeNameId : Int -> Int
+makeNameId nid = 0x80000000 + nid
+
+makeCaseLabel : {auto conNames : SortedMap Name Int} -> String -> (Either Int Name, a) -> String
 makeCaseLabel caseId (Left i,_) = "i64 " ++ show i ++ ", label %" ++ caseId ++ "_tag_is_" ++ show i
-makeCaseLabel caseId (c,_) = "case error: " ++ show c
+makeCaseLabel {conNames} caseId (Right n,_) =
+  case lookup n conNames of
+       Just nameId => "i64 " ++ show (makeNameId nameId) ++ ", label %" ++ caseId ++ "_name_is_" ++ show (makeNameId nameId)
+       Nothing => idris_crash $ "name not found: " ++ show n
 
 instrAsComment : VMInst -> String
 instrAsComment i = ";" ++ (unwords $ lines $ show i)
@@ -529,7 +535,7 @@ unboxChar objPtr = do
   pure chVal32
 
 mutual
-getInstForConstCaseChar : Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
+getInstForConstCaseChar : {auto conNames : SortedMap Name Int} -> Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
 getInstForConstCaseChar i r alts def =
   do let def' = fromMaybe [] def
      caseId <- mkVarName "case_"
@@ -551,7 +557,7 @@ getInstForConstCaseChar i r alts def =
       appendCode $ "br label %" ++ caseId ++ "_end"
     makeCaseAlt _ (c, _) = appendCode $ "ERROR: constcase must be Char, got: " ++ show c
 
-getInstForConstCaseInt : Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
+getInstForConstCaseInt : {auto conNames : SortedMap Name Int} -> Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
 getInstForConstCaseInt i r alts def =
   do let def' = fromMaybe [] def
      caseId <- mkVarName "case_"
@@ -573,7 +579,7 @@ getInstForConstCaseInt i r alts def =
     makeCaseAlt caseId (BI c, is) = makeCaseAlt caseId (I $ cast c, is)
     makeCaseAlt _ (c, _) = appendCode $ "ERROR: constcase must be Int, got: " ++ show c
 
-getInstForConstCaseString : Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
+getInstForConstCaseString : {auto conNames : SortedMap Name Int} -> Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
 getInstForConstCaseString i r alts def =
   do let def' = fromMaybe [] def
      scrutinee <- load (reg2val r)
@@ -606,7 +612,7 @@ getInstForConstCaseString i r alts def =
       beginLabel labelAltNext
     makeCaseAlt _ _ _ (_, c, _) = appendCode $ "ERROR: constcase must be Str, got: " ++ show c
 
-getInstIR : Int -> VMInst -> Codegen ()
+getInstIR : {auto conNames : SortedMap Name Int} -> Int -> VMInst -> Codegen ()
 getInstIR i (DECLARE (Loc r)) = appendCode $ "  %v" ++ show r ++ "Var = alloca %ObjPtr"
 getInstIR i (ASSIGN r src) = do
   value <- assignSSA $ "load %ObjPtr, %ObjPtr* " ++ toIR src ++ "Var"
@@ -946,9 +952,11 @@ getInstIR i (OP r (LTE IntegerType) [r1, r2]) = do
 getInstIR i (MKCON r (Left tag) args) = do
   obj <- mkCon tag args
   store obj (reg2val r)
-getInstIR i (MKCON r (Right n) args) = do
-  obj <- mkCon 0 args
-  store obj (reg2val r)
+getInstIR {conNames} i (MKCON r (Right n) args) = do
+  case lookup n conNames of
+       Just nameId => do obj <- mkCon (makeNameId nameId) args
+                         store obj (reg2val r)
+       Nothing => idris_crash $ "MKCON name not found: " ++ show n
 
 getInstIR i (MKCLOSURE r n missingN args) = do
   let missing = cast {to=Integer} missingN
@@ -1013,7 +1021,7 @@ getInstIR i (CONSTCASE r alts def) = case findConstCaseType alts of
                                           StringType => getInstForConstCaseString i r alts def
                                           CharType => getInstForConstCaseChar i r alts def
 
-getInstIR i (CASE r alts def) =
+getInstIR {conNames} i (CASE r alts def) =
   do let def' = fromMaybe [] def
      caseId <- mkVarName "case_"
      let labelEnd = caseId ++ "_end"
@@ -1034,8 +1042,14 @@ getInstIR i (CASE r alts def) =
       appendCode $ caseId ++ "_tag_is_" ++ (show c) ++ ":"
       traverse_ (getInstIRWithComment i) is
       appendCode $ "br label %" ++ caseId ++ "_end"
-    makeCaseAlt _ (Right n, _) = appendCode $ "ERROR: case can only match on tag, got name: " ++ fullShow n
-    makeCaseAlt a1 a2 = idris_crash "a1_a2"
+    makeCaseAlt caseId (Right n, is) =
+      case lookup n conNames of
+           Just nameId => do
+             appendCode $ "; " ++ (show n) ++ " -> " ++ (show nameId)
+             appendCode (caseId ++ "_name_is_" ++ (show (makeNameId nameId)) ++ ":")
+             traverse_ (getInstIRWithComment i) is
+             appendCode ("br label %" ++ caseId ++ "_end")
+           Nothing => idris_crash $ "name for case not found: " ++ show n
 
 getInstIR i (CALL r tailpos n args) =
   do argsV <- traverse prepareArg args
@@ -1074,13 +1088,13 @@ getInstIR i (EXTPRIM r n args) =
 getInstIR i START = pure ()
 getInstIR i inst = idris_crash $ ";=============\n; NOT IMPLEMENTED: " ++ show inst ++ "\n;=============\n"
 
-getInstIRWithComment : Int -> VMInst -> Codegen ()
+getInstIRWithComment : {auto conNames : SortedMap Name Int} -> Int -> VMInst -> Codegen ()
 getInstIRWithComment i instr = do
   appendCode (instrAsComment instr)
   getInstIR i instr
 
-getFunIR : Bool -> Int -> Name -> List Reg -> List VMInst -> Codegen ()
-getFunIR debug i n args body = do
+getFunIR : Bool -> SortedMap Name Int -> Int -> Name -> List Reg -> List VMInst -> Codegen ()
+getFunIR debug conNames i n args body = do
     fargs <- traverse argIR args
     let visibility = if debug then "external" else "private"
     appendCode ("\n\ndefine " ++ visibility ++ " fastcc %Return1 @" ++ safeName n ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
@@ -1297,7 +1311,7 @@ supportPrelude = fastAppend [
 
 export
 getVMIR : Bool -> SortedMap Name Int -> (Int, (Name, VMDef)) -> String
-getVMIR debug conNames (i, n, MkVMFun args body) = runCodegen $ getFunIR debug (i+1000) n (map Loc args) body
+getVMIR debug conNames (i, n, MkVMFun args body) = runCodegen $ getFunIR debug conNames (i+1000) n (map Loc args) body
 getVMIR _ _ _ = ""
 
 funcPtrTypes : String

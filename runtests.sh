@@ -10,6 +10,7 @@ if [[ -n "$1" ]]; then
       chez003
       chez004
       chez005
+      chez006
       chez008
       reg001
     )
