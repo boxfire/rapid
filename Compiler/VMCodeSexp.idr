@@ -53,7 +53,7 @@ FromSexp Name where
 
 ToSexp (Either Int Name) where
   toSexp (Left i) = SAtom $ show i
-  toSexp (Right n) = SList [toSexp n]
+  toSexp (Right n) = toSexp n
 
 FromSexp (Either Int Name) where
   fromSexp (SAtom i) = do
