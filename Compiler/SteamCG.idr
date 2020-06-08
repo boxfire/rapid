@@ -942,8 +942,11 @@ getInstIR i (OP r (LTE IntegerType) [r1, r2]) = do
   obj <- cgMkInt vsum_i64
   store obj (reg2val r)
 
-getInstIR i (MKCON r (Just tag) args) = do
+getInstIR i (MKCON r (Left tag) args) = do
   obj <- mkCon tag args
+  store obj (reg2val r)
+getInstIR i (MKCON r (Right n) args) = do
+  obj <- mkCon 0 args
   store obj (reg2val r)
 
 getInstIR i (MKCLOSURE r n missingN args) = do

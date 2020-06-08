@@ -51,6 +51,17 @@ FromSexp Name where
 
   fromSexp n = Left $ ("error parsing name: " ++ show n)
 
+ToSexp (Either Int Name) where
+  toSexp (Left i) = SAtom $ show i
+  toSexp (Right n) = SList [toSexp n]
+
+FromSexp (Either Int Name) where
+  fromSexp (SAtom i) = do
+    tag <- maybeToEither "invalid int/name" (parseInteger i)
+    pure (Left tag)
+  fromSexp n = do
+    pure $ Right !(fromSexp n)
+
 ToSexp Reg where
   toSexp RVal = SAtom "RVAL"
   toSexp (Loc i) = SAtom ("v" ++ show i)
@@ -180,8 +191,7 @@ ToSexp VMInst where
                            Just insts => SList [SAtom "default", SList $ assert_total $ map toSexp insts]
 
     altToSexp : (Either Int Name, List VMInst) -> Sexp
-    altToSexp (Left i, insts) = SList [SAtom $ show i, SList $ assert_total $ map toSexp insts]
-    altToSexp (Right n, insts) = SList [toSexp n, SList $ assert_total $ map toSexp insts]
+    altToSexp (c, insts) = SList [toSexp c, SList $ assert_total $ map toSexp insts]
   toSexp (CONSTCASE reg alts def) = SList ([SAtom "CONSTCASE", toSexp reg, defaultCase def] ++ (map altToSexp alts)) where
     defaultCase : Maybe (List VMInst) -> Sexp
     defaultCase def = case def of
@@ -285,9 +295,7 @@ FromSexp VMInst where
         readDefault _ = Right Nothing --Left "invalid default"
         readAlt : Sexp -> Either String (Either Int Name, (List VMInst))
         readAlt (SList [tagOrNameS, SList is]) = do
-          tagOrName <- case tagOrNameS of
-                            SAtom i => Right $ mirror $ maybeToEither (UN i) $ parseInteger i
-                            x => mirror <$> Left <$> fromSexp x
+          tagOrName <- fromSexp tagOrNameS
           insts <- collectFromSexp is
           pure $ (tagOrName, insts)
         readAlt _ = Left $ "error in alt"
