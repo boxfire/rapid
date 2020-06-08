@@ -229,9 +229,14 @@ jump : IRLabel -> Codegen ()
 jump to =
   appendCode $ "br " ++ toIR to
 
-call : {t : IRType} -> String -> String -> Vect n String -> Codegen ()
+call : {t : IRType} -> String -> String -> Vect n String -> Codegen (IRValue t)
 call {t} cconv name args = do
-  appendCode $ "  call " ++ cconv ++ " " ++ show t ++ " " ++ name ++ "(" ++ (showSep ", " (toList args)) ++ ")"
+  SSA t <$> (assignSSA $ "  call " ++ cconv ++ " " ++ show t ++ " " ++ name ++ "(" ++ (showSep ", " (toList args)) ++ ")")
+
+-- Call a "runtime-aware" foreign function, i.e. one, that can allocate memory
+foreignCall : {t : IRType} -> String -> Vect n String -> Codegen (IRValue t)
+foreignCall {t} name args = do
+  SSA t <$> (assignSSA $ "  call ccc " ++ show t ++ " " ++ name ++ "(%RuntimePtr %BaseArg, " ++ (showSep ", " (toList args)) ++ ")")
 
 getObjectSlot : IRValue IRObjPtr -> Int -> Codegen (IRValue I64)
 getObjectSlot obj n = do
@@ -1224,7 +1229,14 @@ mk_prim__bufferSetString [buf, offsetObj, valObj, _] = do
 mk_prim__bufferWriteToFile : Vect 5 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__bufferWriteToFile [_, fname, buf, sizeObj, _] = do
   maxSize <- unboxInt' sizeObj
-  call {t=I64} "ccc" "@idris_rts_write_buffer_to_file" [toIR fname, toIR buf, toIR maxSize]
+  retval <- call {t=I64} "ccc" "@idris_rts_write_buffer_to_file" [toIR fname, toIR buf, toIR maxSize]
+  result <- cgMkInt retval
+  store result (reg2val RVal)
+
+mk_prim__bufferReadFromFile : Vect 3 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferReadFromFile [_, fname, _] = do
+  newObj <- foreignCall {t=IRObjPtr} "@idris_rts_read_buffer_from_file" [toIR fname]
+  store newObj (reg2val RVal)
 
 mk_prim__nullAnyPtr : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__nullAnyPtr [p] = do
@@ -1273,6 +1285,7 @@ supportPrelude = fastAppend [
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__getString")) mk_prim__bufferGetString
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__setString")) mk_prim__bufferSetString
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__writeBuffer")) mk_prim__bufferWriteToFile
+  , mkSupport (NS ["Buffer", "Data"] (UN "prim__readBufferFromFile")) mk_prim__bufferReadFromFile
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__isBuffer")) mk_prim__isBuffer
   , mkSupport (NS ["Directory", "System"] (UN "prim_currentDir")) mk_prim__currentDir
   , mkSupport (NS ["PrimIO"] (UN "prim__nullAnyPtr")) mk_prim__nullAnyPtr

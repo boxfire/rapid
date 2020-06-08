@@ -8,6 +8,8 @@
 const size_t IDRIS_ALIGNMENT = 8;
 const size_t NURSERY_SIZE = 1 * 1024 * 1024;
 
+const int64_t OBJ_TYPE_BUFFER = 0x06;
+
 typedef struct {
   void *nurseryStart;
   void *nurseryNext;
@@ -31,6 +33,10 @@ static inline void *OBJ_PAYLOAD(ObjPtr p) {
   return &(p->data);
 }
 
+static inline RapidObjectHeader MAKE_HEADER(int64_t objType, int32_t sizeOrTag) {
+  return (objType << 32) | sizeOrTag;
+}
+
 extern long idris_enter(void *baseTSO);
 
 void idris_rts_crash(long arg0) {
@@ -45,6 +51,11 @@ void idris_rts_crash_msg(ObjPtr msg) {
   fwrite(str, length, 1, stderr);
   fprintf(stderr, "\n");
   exit(4);
+}
+
+void rapid_C_crash(const char *msg) {
+  fprintf(stderr, "ERROR: %s\n", msg);
+  exit(5);
 }
 
 void idris_rts_gc(long arg0) {
@@ -96,7 +107,7 @@ int64_t idris_rts_write_buffer_to_file(ObjPtr fnameObj, ObjPtr bufObj, int64_t m
     writeSize = maxSize;
   }
 
-  FILE *outf = fopen(scopy, "w");
+  FILE *outf = fopen(scopy, "wb");
 
   size_t written = fwrite(OBJ_PAYLOAD(bufObj), 1, writeSize, outf);
   if (written != writeSize) {
@@ -107,6 +118,57 @@ int64_t idris_rts_write_buffer_to_file(ObjPtr fnameObj, ObjPtr bufObj, int64_t m
   int closeOk = fclose(outf);
 
   return closeOk;
+}
+
+ObjPtr idris_rts_read_buffer_from_file(Idris_TSO *base, ObjPtr fnameObj) {
+  int fnameLength = OBJ_SIZE(fnameObj);
+  const char *fnameStr = (const char *)OBJ_PAYLOAD(fnameObj);
+  char *scopy = (char *)alloca(fnameLength + 1);
+  memcpy(scopy, fnameStr, fnameLength);
+  scopy[fnameLength] = '\0';
+
+  int err = 0;
+
+  FILE *inf = NULL;
+  if (!(inf = fopen(scopy, "rb"))) {
+    err = 1;
+    goto end;
+  }
+
+  if ((err = fseeko(inf, 0L, SEEK_END))) {
+    goto end;
+  }
+
+  off_t fileSize = ftello(inf);
+  if (fileSize > 0xffffffffull) {
+    rapid_C_crash("file too big");
+  }
+
+  if ((err = fseeko(inf, 0L, SEEK_SET))) {
+    goto end;
+  }
+
+  ObjPtr newObj = (ObjPtr)rapid_C_allocate(base, 8 + fileSize);
+  newObj->hdr = MAKE_HEADER(OBJ_TYPE_BUFFER, fileSize);
+
+  size_t readBytes = fread(OBJ_PAYLOAD(newObj), 1, fileSize, inf);
+  if (readBytes != fileSize) {
+    err = 2;
+    goto end;
+  }
+
+end:
+  if (inf != NULL) {
+    int closeErr = fclose(inf);
+    if (!err && !closeErr) {
+      return newObj;
+    }
+  }
+
+  // create a "null" obj to signify error
+  ObjPtr nullObj = rapid_C_allocate(base, 8);
+  nullObj->hdr = 0x0ull;
+  return nullObj;
 }
 
 int main(int argc, char **argv) {

@@ -8,6 +8,8 @@ if [[ -n "$1" ]]; then
       chez001
       chez002
       chez003
+      chez004
+      chez005
       chez008
       reg001
     )

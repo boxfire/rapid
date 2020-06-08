@@ -27,3 +27,6 @@ foo = show test
 even : Nat -> Bool
 even Z = True
 even (S k) = not (even k)
+
+main : IO ()
+main = printLn (filter even [S Z,2,3,4,5,6])
