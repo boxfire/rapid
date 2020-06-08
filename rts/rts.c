@@ -23,8 +23,12 @@ typedef struct __attribute__((packed, aligned(1))) {
 
 typedef RapidObject_t *ObjPtr;
 
-static uint32_t inline OBJ_SIZE(RapidObjectHeader h) {
-  return (h & 0xffffffff);
+static inline uint32_t OBJ_SIZE(ObjPtr p) {
+  return ((p->hdr) & 0xffffffff);
+}
+
+static inline void *OBJ_PAYLOAD(ObjPtr p) {
+  return &(p->data);
 }
 
 extern long idris_enter(void *baseTSO);
@@ -35,7 +39,7 @@ void idris_rts_crash(long arg0) {
 }
 
 void idris_rts_crash_msg(ObjPtr msg) {
-  int length = OBJ_SIZE(msg->hdr);
+  int length = OBJ_SIZE(msg);
   const char *str = (const char *)&(msg->data);
   fprintf(stderr, "ERROR: ");
   fwrite(str, length, 1, stderr);
@@ -59,8 +63,8 @@ int64_t idris_rts_double_to_str(char *dst, int64_t size, double val) {
 }
 
 double idris_rts_str_to_double(ObjPtr obj) {
-  int length = OBJ_SIZE(obj->hdr);
-  const char *str = (const char *)&(obj->data);
+  int length = OBJ_SIZE(obj);
+  const char *str = (const char *)OBJ_PAYLOAD(obj);
   char *scopy = (char *)alloca(length + 1);
   memcpy(scopy, str, length);
   scopy[length] = '\0';
@@ -68,12 +72,37 @@ double idris_rts_str_to_double(ObjPtr obj) {
 }
 
 int64_t idris_rts_str_to_int(ObjPtr obj) {
-  int length = OBJ_SIZE(obj->hdr);
+  int length = OBJ_SIZE(obj);
   const char *str = (const char *)&(obj->data);
   char *scopy = (char *)alloca(length + 1);
   memcpy(scopy, str, length);
   scopy[length] = '\0';
   return strtoll(scopy, NULL, 10);
+}
+
+int64_t idris_rts_write_buffer_to_file(ObjPtr fnameObj, ObjPtr bufObj, int64_t maxSize) {
+  int fnameLength = OBJ_SIZE(fnameObj);
+  const char *fnameStr = (const char *)OBJ_PAYLOAD(fnameObj);
+  char *scopy = (char *)alloca(fnameLength + 1);
+  memcpy(scopy, fnameStr, fnameLength);
+  scopy[fnameLength] = '\0';
+
+  int64_t writeSize = OBJ_SIZE(bufObj);
+  if (maxSize < writeSize) {
+    writeSize = maxSize;
+  }
+
+  FILE *outf = fopen(scopy, "w");
+
+  size_t written = fwrite(OBJ_PAYLOAD(bufObj), 1, writeSize, outf);
+  if (written != writeSize) {
+    fclose(outf);
+    return 1;
+  }
+
+  int closeOk = fclose(outf);
+
+  return closeOk;
 }
 
 int main(int argc, char **argv) {

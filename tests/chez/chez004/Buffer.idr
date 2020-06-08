@@ -27,8 +27,8 @@ main
          ds <- bufferData buf
          printLn ds
 
-         --Right _ <- writeBufferToFile "test.buf" buf 100
-             --| Left err => putStrLn "Buffer write fail"
+         Right _ <- writeBufferToFile "test.buf" buf 100
+             | Left err => putStrLn "Buffer write fail"
          --Right buf2 <- createBufferFromFile "test.buf"
              --| Left err => putStrLn "Buffer read fail"
 

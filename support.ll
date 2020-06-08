@@ -2,6 +2,7 @@ target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx10.15"
 
 %ObjPtr = type i8*
+%RawPtr = type i8*
 %RuntimePtr = type i8*
 %FuncPtr = type i8*
 
@@ -15,6 +16,7 @@ declare ccc i64 @idris_rts_int_to_str(i8*, i64)
 declare ccc i64 @idris_rts_double_to_str(i8*, i64, double)
 declare ccc double @idris_rts_str_to_double(%ObjPtr)
 declare ccc i64 @idris_rts_str_to_int(%ObjPtr)
+declare ccc i64 @idris_rts_write_buffer_to_file(%ObjPtr, %ObjPtr, i64)
 
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind
@@ -110,15 +112,6 @@ define private fastcc %Return1 @PrimIO.prim__putStr(%RuntimePtr %HpArg, %Runtime
 }
 
 define private fastcc %Return1 @PrimIO.prim__getString(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %unused0) {
-; TODO: implement
-  %nullptr = inttoptr i64 0 to %ObjPtr
-  %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpArg, 0
-  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimArg, 1
-  %packed3 = insertvalue %Return1 %packed2, %ObjPtr %nullptr, 2
-  ret %Return1 %packed3
-}
-
-define private fastcc %Return1 @PrimIO.prim__nullAnyPtr(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %unused0) {
 ; TODO: implement
   %nullptr = inttoptr i64 0 to %ObjPtr
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpArg, 0

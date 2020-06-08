@@ -229,6 +229,10 @@ jump : IRLabel -> Codegen ()
 jump to =
   appendCode $ "br " ++ toIR to
 
+call : {t : IRType} -> String -> String -> Vect n String -> Codegen ()
+call {t} cconv name args = do
+  appendCode $ "  call " ++ cconv ++ " " ++ show t ++ " " ++ name ++ "(" ++ (showSep ", " (toList args)) ++ ")"
+
 getObjectSlot : IRValue IRObjPtr -> Int -> Codegen (IRValue I64)
 getObjectSlot obj n = do
   i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
@@ -800,6 +804,11 @@ getInstIR i (OP r (Sub IntType) [r1, r2]) = do
   i2 <- unboxInt (reg2val r2)
   obj <- cgMkInt !(mkSub i1 i2)
   store obj (reg2val r)
+getInstIR i (OP r (Mul IntType) [r1, r2]) = do
+  i1 <- unboxInt (reg2val r1)
+  i2 <- unboxInt (reg2val r2)
+  obj <- cgMkInt !(mkMul i1 i2)
+  store obj (reg2val r)
 getInstIR i (OP r (Div IntType) [r1, r2]) = do
   i1 <- unboxInt (reg2val r1)
   i2 <- unboxInt (reg2val r2)
@@ -1212,8 +1221,36 @@ mk_prim__bufferSetString [buf, offsetObj, valObj, _] = do
   appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR bytePtr ++ ", " ++ toIR strPayload ++ ", " ++ toIR strLength ++ ", i1 false)"
 
 
+mk_prim__bufferWriteToFile : Vect 5 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferWriteToFile [_, fname, buf, sizeObj, _] = do
+  -- TODO: size check in safe mode
+  --hdr <- getObjectHeader buf
+  --size <- mkAnd hdr (ConstI64 0xffffffff)
+  maxSize <- unboxInt' sizeObj
+  call {t=I64} "ccc" "@idris_rts_write_buffer_to_file" [toIR fname, toIR buf, toIR maxSize]
+
+mk_prim__nullAnyPtr : Vect 1 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__nullAnyPtr [p] = do
+  ptrAsInt <- SSA I64 <$> assignSSA ("ptrtoint " ++ toIR p ++ " to i64")
+  ptrIsZero <- icmp "eq" (ConstI64 0) ptrAsInt
+  result <- cgMkInt !(mkZext ptrIsZero)
+  store result (reg2val RVal)
+
+mk_prim__currentDir : Vect 1 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__currentDir [_] = do
+  dummy <- mkStr 1 "/tmp"
+  store dummy (reg2val RVal)
+
+
 mkSupport : {n : Nat} -> Name -> (Vect n (IRValue IRObjPtr) -> Codegen ()) -> String
-mkSupport {n} name f = "define private fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ toList $ map toIR args) ++ ") {\n" ++ funcEntry ++ runCodegen (f args) ++ funcReturn ++ "\n}\n" where
+mkSupport {n} name f = runCodegen (do
+          appendCode ("define private fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ toList $ map toIR args) ++ ") {")
+          appendCode funcEntry
+          f args
+          appendCode funcReturn
+          appendCode "\n}\n"
+          )
+  where
   args : Vect n (IRValue IRObjPtr)
   args = map (\i => SSA IRObjPtr $ "%arg" ++ show (finToNat i)) range
 
@@ -1230,11 +1267,14 @@ supportPrelude = fastAppend [
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__setInt32")) mk_prim__bufferSetInt32
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__getString")) mk_prim__bufferGetString
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__setString")) mk_prim__bufferSetString
+  , mkSupport (NS ["Buffer", "Data"] (UN "prim__writeBuffer")) mk_prim__bufferWriteToFile
+  , mkSupport (NS ["Directory", "System"] (UN "prim_currentDir")) mk_prim__currentDir
+  , mkSupport (NS ["PrimIO"] (UN "prim__nullAnyPtr")) mk_prim__nullAnyPtr
   ]
 
 export
 getVMIR : Bool -> (Int, (Name, VMDef)) -> String
-getVMIR debug (i, n, MkVMFun args body) = runCodegen $ getFunIR debug i n (map Loc args) body
+getVMIR debug (i, n, MkVMFun args body) = runCodegen $ getFunIR debug (i+1000) n (map Loc args) body
 getVMIR _ _ = ""
 
 funcPtrTypes : String
