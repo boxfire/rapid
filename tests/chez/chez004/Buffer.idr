@@ -29,14 +29,14 @@ main
 
          Right _ <- writeBufferToFile "test.buf" buf 100
              | Left err => putStrLn "Buffer write fail"
-         --Right buf2 <- createBufferFromFile "test.buf"
-             --| Left err => putStrLn "Buffer read fail"
+         Right buf2 <- createBufferFromFile "test.buf"
+             | Left err => putStrLn "Buffer read fail"
 
-         --ds <- bufferData buf2
-         --printLn ds
+         ds <- bufferData buf2
+         printLn ds
 
          freeBuffer buf
-         --freeBuffer buf2
+         freeBuffer buf2
 
 -- Put back when the File API is moved to C and these can work again
 --          Right f <- openBinaryFile "test.buf" Read

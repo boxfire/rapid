@@ -52,6 +52,10 @@ void idris_rts_gc(long arg0) {
   exit(2);
 }
 
+void *rapid_C_allocate(Idris_TSO *base, int64_t size) {
+  return GC_malloc(size);
+}
+
 int64_t idris_rts_int_to_str(char *dst, int64_t val) {
   int64_t size = snprintf(dst, 24, "%lld", val);
   return size;
