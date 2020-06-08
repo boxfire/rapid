@@ -27,7 +27,8 @@ set -x
 (cd "$fdir" && "$root/build/exec/rapid2-fe" "${fbase}")
 ./build/exec/rapid2-cg "${workfile}.sexp"
 cat support.ll "${workfile}.sexp.output.ll" > "${workfile}.full.ll"
-opt "${workfile}.full.ll" $optimize | tee "${workfile}.bc" >/dev/null # | llc -o "${workfile}.s"
+opt "${workfile}.full.ll" $optimize | tee "${workfile}.bc" >/dev/null
+llc -o "${workfile}.s" "${workfile}.bc"
 
 set +x
 
