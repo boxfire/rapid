@@ -146,27 +146,34 @@ data IRValue : IRType -> Type where
   ConstI64 : Integer -> IRValue I64
   ConstF64 : Double -> IRValue F64
   SSA : (t : IRType) ->  String -> IRValue t
+  IRDiscard : IRValue (Pointer IRObjPtr)
 
 ToIR (IRValue t) where
   toIR {t} (SSA t s) = (show t) ++ " " ++ s
   toIR (ConstI64 i) = "i64 " ++ (show i)
   toIR (ConstF64 f) = "double 0x" ++ (doubleToHex f)
+  toIR (IRDiscard) = "ERROR: trying to use DISCARD with type"
 
   showWithoutType (SSA _ n) = n
   showWithoutType (ConstI64 i) = show i
   showWithoutType (ConstF64 f) = "0x" ++ (doubleToHex f)
+  showWithoutType (IRDiscard) = "ERROR: trying to use DISCARD without type"
 
 reg2val : Reg -> IRValue (Pointer IRObjPtr)
 reg2val (Loc i) = SSA (Pointer IRObjPtr) ("%v" ++ show i ++ "Var")
 reg2val RVal = SSA (Pointer IRObjPtr) ("%rvalVar")
-reg2val Discard = SSA (Pointer IRObjPtr) "undef"
+reg2val Discard = IRDiscard -- idris_crash "trying to use DISCARD pseudo-register" --SSA (Pointer IRObjPtr) "undef"
 
 load : {t : IRType} -> IRValue (Pointer t) -> Codegen (IRValue t)
+-- can be changed to undef if we're not in SAFE mode
+--load IRDiscard = pure $ SSA IRObjPtr "undef"
+load IRDiscard = pure $ SSA IRObjPtr "null"
 load {t} mv = do
   loaded <- assignSSA $ "load " ++ (show t) ++ ", " ++ (toIR mv)
   pure $ SSA t loaded
 
 store : {t : IRType} -> IRValue t -> IRValue (Pointer t) -> Codegen ()
+store _ IRDiscard = pure ()
 store {t} v dst = do
   appendCode $ "  store " ++ (toIR v) ++ ", " ++ (toIR dst)
 

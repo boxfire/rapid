@@ -30,3 +30,12 @@ printBool x
     = if x
          then putStrLn !(fakeGetLine "True")
          else putStrLn !(fakeGetLine "False")
+
+main : IO ()
+main = do
+  printLn $ addm1 (Just 3) (Just 4)
+  printLn $ addm2 (Just 3) (Just 4)
+  printThing1
+  printThing2
+  printBool True
+  printBool False
