@@ -1,15 +1,19 @@
 module Main
 
 import Data.List
+import Data.SortedMap
 import Data.Strings
 import System
 import System.File
 
+import Core.Name
+import Compiler.VMCode
+
 import Data.Sexp
 import Data.Sexp.Lexer
 import Data.Sexp.Parser
-import Compiler.VMCode
 import Compiler.VMCodeSexp
+import Compiler.PrepareCode
 import Compiler.SteamCG
 
 debug : Bool
@@ -34,7 +38,8 @@ main = do
          (Right support) <- readFile "support.ll"
          | Left _ => pure ()
          let support = ""
-         let ir = fastAppend $ [support, closureHelper] ++ (map (getVMIR debug) $ enumerate vmcode)
+         let nameMap = getNameMap $ map snd vmcode
+         let ir = fastAppend $ [support, closureHelper] ++ (map (getVMIR debug nameMap) $ enumerate vmcode)
          _ <- writeFile (filename ++ ".output.ll") ir
          pure ()
        Left e => putStrLn $ "error" ++ e

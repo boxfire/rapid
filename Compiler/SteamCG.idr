@@ -4,6 +4,7 @@ import Data.Buffer
 import Data.Either
 import Data.List
 import Data.Maybe
+import Data.SortedMap
 import Data.Strings
 import Data.Vect
 
@@ -1295,9 +1296,9 @@ supportPrelude = fastAppend [
   ]
 
 export
-getVMIR : Bool -> (Int, (Name, VMDef)) -> String
-getVMIR debug (i, n, MkVMFun args body) = runCodegen $ getFunIR debug (i+1000) n (map Loc args) body
-getVMIR _ _ = ""
+getVMIR : Bool -> SortedMap Name Int -> (Int, (Name, VMDef)) -> String
+getVMIR debug conNames (i, n, MkVMFun args body) = runCodegen $ getFunIR debug (i+1000) n (map Loc args) body
+getVMIR _ _ _ = ""
 
 funcPtrTypes : String
 funcPtrTypes = unlines $ map funcPtr (rangeFromTo 0 CLOSURE_MAX_ARGS) where
