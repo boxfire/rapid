@@ -453,16 +453,25 @@ stringCompare op r1 r2 = do
 
   minLength <- mkMin l1 l2
 
-  str1 <- getObjectSlotAddr {t=I8} o1 1
-  str2 <- getObjectSlotAddr {t=I8} o2 1
-
+  lblSizeCompare <- genLabel "strcompare_size"
   lblCmpStart <- genLabel "strcompare_start"
   lblPrefixEq <- genLabel "strcompare_prefix_eq"
   lblPrefixNotEq <- genLabel "strcompare_prefix_neq"
   lblEnd <- genLabel "strcompare_end"
 
-  jump lblCmpStart
+  jump lblSizeCompare
+  beginLabel lblSizeCompare
+  lengthsEqual <- icmp "eq" l1 l2
+
+  let startCommand = case op of
+                          EQ => (branch lengthsEqual lblCmpStart lblEnd)
+                          _ => (branch (Const I1 1) lblCmpStart lblEnd)
+
+  startCommand
   beginLabel lblCmpStart
+
+  str1 <- getObjectSlotAddr {t=I8} o1 1
+  str2 <- getObjectSlotAddr {t=I8} o2 1
   cmpResult32 <- call {t=I32} "fastcc" "@rapid.memcmp" [toIR str1, toIR str2, toIR minLength]
   cmpResult <- mkSext cmpResult32
   cmpResultIsEq <- icmp "eq" cmpResult (ConstI64 0)
@@ -473,7 +482,6 @@ stringCompare op r1 r2 = do
   string1ShorterOrEqual <- icmp "sle" l1 l2
   string2Shorter <- icmp "slt" l2 l1
   string2ShorterOrEqual <- icmp "sle" l2 l1
-  lengthsEqual <- icmp "eq" l1 l2
   let result : IRValue I1
       result =  case op of
                      LT  => string1Shorter
@@ -495,7 +503,7 @@ stringCompare op r1 r2 = do
   jump lblEnd
   beginLabel lblEnd
 
-  finalResult <- phi [(result, lblPrefixEq), (result2, lblPrefixNotEq)]
+  finalResult <- phi [(result, lblPrefixEq), (result2, lblPrefixNotEq), (Const I1 0, lblSizeCompare)]
   cgMkInt !(mkZext finalResult)
 
 mkStr : Int -> String -> Codegen (IRValue IRObjPtr)
