@@ -214,6 +214,9 @@ mkAnd = mkBinOp "and"
 mkAdd : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
 mkAdd = mkBinOp "add"
 
+mkAddNoWrap : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
+mkAddNoWrap = mkBinOp "add nuw nsw"
+
 mkMul : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
 mkMul = mkBinOp "mul"
 
@@ -222,6 +225,12 @@ mkSub = mkBinOp "sub"
 
 mkSDiv : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
 mkSDiv = mkBinOp "sdiv"
+
+mkSRem : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
+mkSRem = mkBinOp "srem"
+
+mkShiftL : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
+mkShiftL = mkBinOp "shl"
 
 unlikely : IRValue I1 -> Codegen (IRValue I1)
 unlikely cond = (SSA I1) <$> assignSSA (" call ccc i1 @llvm.expect.i1(" ++ toIR cond ++ ", i1 0)")
@@ -305,7 +314,7 @@ funcReturn = "
 
 dynamicAllocate : IRValue I64 -> Codegen (IRValue IRObjPtr)
 dynamicAllocate payloadSize = do
-  totalSize <- SSA I64 <$> assignSSA ("add " ++ (toIR payloadSize) ++ ", " ++ HEADER_SIZE)
+  totalSize <- SSA I64 <$> assignSSA ("add nsw nuw " ++ (toIR payloadSize) ++ ", " ++ HEADER_SIZE)
 
   hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
   hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
@@ -368,11 +377,11 @@ applyClosureHelperFunc = do
   appendCode $ labelName ++ "_no:"
 
   --appliedArgCount <- SSA I64 <$> assignSSA ("add i64 " ++ argCount ++ ", 1")
-  appliedArgCount <- mkAdd (SSA I64 argCount) (ConstI64 1)
+  appliedArgCount <- mkAddNoWrap (SSA I64 argCount) (ConstI64 1)
   newArgsSize <- mkMul appliedArgCount (ConstI64 8)
   -- add 8 bytes for entry func ptr
-  newPayloadSize <- mkAdd newArgsSize (ConstI64 8)
-  newClosureTotalSize <- mkAdd newPayloadSize (ConstI64 $ cast HEADER_SIZE)
+  newPayloadSize <- mkAddNoWrap newArgsSize (ConstI64 8)
+  newClosureTotalSize <- mkAddNoWrap newPayloadSize (ConstI64 $ cast HEADER_SIZE)
   newClosure <- dynamicAllocate newPayloadSize
 
   let newHeader = ConstI64 $ header OBJECT_TYPE_ID_CLOSURE
@@ -385,7 +394,7 @@ applyClosureHelperFunc = do
   appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR newClosure ++ ", " ++ toIR closureObj ++ ", " ++ toIR newClosureTotalSize ++ ", i1 false)"
   putObjectHeader newClosure newHeader''
 
-  newArgSlotNumber <- mkAdd appliedArgCount (ConstI64 1)
+  newArgSlotNumber <- mkAddNoWrap appliedArgCount (ConstI64 1)
   putObjectSlotG newClosure newArgSlotNumber argValue
 
   store newClosure (reg2val RVal)
@@ -668,7 +677,7 @@ getInstIR i (OP r StrAppend [r1, r2]) = do
   h2 <- getObjectHeader o2
   l1 <- mkBinOp "and" (ConstI64 0xffffffff) h1
   l2 <- mkBinOp "and" (ConstI64 0xffffffff) h2
-  newLength <- mkAdd l1 l2
+  newLength <- mkAddNoWrap l1 l2
   newStr <- dynamicAllocate newLength
   newHeader <- mkBinOp "or" newLength (ConstI64 $ header OBJECT_TYPE_ID_STR)
 
@@ -694,7 +703,7 @@ getInstIR i (OP r StrCons [r1, r2]) = do
   charVal64 <- mkBinOp "and" (ConstI64 0xff) h1
   charVal <- mkTrunc {to=I8} charVal64
   l2 <- mkBinOp "and" (ConstI64 0xffffffff) h2
-  newLength <- mkAdd (ConstI64 1) l2
+  newLength <- mkAddNoWrap (ConstI64 1) l2
   newStr <- dynamicAllocate newLength
   newHeader <- mkBinOp "or" newLength (ConstI64 $ header OBJECT_TYPE_ID_STR)
 
@@ -740,7 +749,7 @@ getInstIR i (OP r (Cast IntegerType StringType) [r1]) = do
   newStr <- dynamicAllocate (ConstI64 24)
   strPayload <- getObjectSlotAddr {t=I8} newStr 1
   length <- (SSA I64) <$> assignSSA ("call ccc i64 @idris_rts_int_to_str(" ++ toIR strPayload ++ ", " ++ toIR theInt ++ ")")
-  newHeader <- mkAdd (ConstI64 $ header OBJECT_TYPE_ID_STR) length
+  newHeader <- mkOr (ConstI64 $ header OBJECT_TYPE_ID_STR) length
   putObjectHeader newStr newHeader
   store newStr (reg2val r)
 
@@ -752,7 +761,7 @@ getInstIR i (OP r (Cast IntType StringType) [r1]) = do
   newStr <- dynamicAllocate (ConstI64 24)
   strPayload <- getObjectSlotAddr {t=I8} newStr 1
   length <- (SSA I64) <$> assignSSA ("call ccc i64 @idris_rts_int_to_str(" ++ toIR strPayload ++ ", " ++ toIR theInt ++ ")")
-  newHeader <- mkAdd (ConstI64 $ header OBJECT_TYPE_ID_STR) length
+  newHeader <- mkOr (ConstI64 $ header OBJECT_TYPE_ID_STR) length
   putObjectHeader newStr newHeader
   store newStr (reg2val r)
 getInstIR i (OP r (Cast DoubleType StringType) [r1]) = do
@@ -762,12 +771,12 @@ getInstIR i (OP r (Cast DoubleType StringType) [r1]) = do
   -- call once with nullptr as dest, to get required length
   length <- (SSA I64) <$> assignSSA ("call ccc i64 @idris_rts_double_to_str(i8* null, i64 0, " ++ toIR theDouble ++ ")")
   -- snprintf writes an additional NUL byte to terminate the cstr
-  lengthPlus1 <- mkAdd length (ConstI64 1)
+  lengthPlus1 <- mkAddNoWrap length (ConstI64 1)
 
   newStr <- dynamicAllocate lengthPlus1
   strPayload <- getObjectSlotAddr {t=I8} newStr 1
   length <- (SSA I64) <$> assignSSA ("call ccc i64 @idris_rts_double_to_str(" ++ toIR strPayload ++ ", " ++ toIR lengthPlus1 ++ ", " ++ toIR theDouble ++ ")")
-  newHeader <- mkAdd (ConstI64 $ header OBJECT_TYPE_ID_STR) length
+  newHeader <- mkOr (ConstI64 $ header OBJECT_TYPE_ID_STR) length
   putObjectHeader newStr newHeader
   store newStr (reg2val r)
 getInstIR i (OP r (Cast DoubleType IntType) [r1]) = do
@@ -833,6 +842,11 @@ getInstIR i (OP r (Div IntType) [r1, r2]) = do
   i2 <- unboxInt (reg2val r2)
   obj <- cgMkInt !(mkSDiv i1 i2)
   store obj (reg2val r)
+getInstIR i (OP r (Mod IntType) [r1, r2]) = do
+  i1 <- unboxInt (reg2val r1)
+  i2 <- unboxInt (reg2val r2)
+  obj <- cgMkInt !(mkSRem i1 i2)
+  store obj (reg2val r)
 
 getInstIR i (OP r (Add IntegerType) [r1, r2]) = do
   -- FIXME: we treat Integers as bounded Ints -> should use GMP
@@ -857,6 +871,18 @@ getInstIR i (OP r (Div IntegerType) [r1, r2]) = do
   i1 <- unboxInt (reg2val r1)
   i2 <- unboxInt (reg2val r2)
   obj <- cgMkInt !(mkSDiv i1 i2)
+  store obj (reg2val r)
+getInstIR i (OP r (Mod IntegerType) [r1, r2]) = do
+  -- FIXME: we treat Integers as bounded Ints -> should use GMP
+  i1 <- unboxInt (reg2val r1)
+  i2 <- unboxInt (reg2val r2)
+  obj <- cgMkInt !(mkSRem i1 i2)
+  store obj (reg2val r)
+getInstIR i (OP r (ShiftL IntegerType) [r1, r2]) = do
+  -- FIXME: we treat Integers as bounded Ints -> should use GMP
+  i1 <- unboxInt (reg2val r1)
+  i2 <- unboxInt (reg2val r2)
+  obj <- cgMkInt !(mkShiftL i1 i2)
   store obj (reg2val r)
 
 getInstIR i (OP r (LTE CharType) [r1, r2]) = do
@@ -904,6 +930,13 @@ getInstIR i (OP r (EQ IntType) [r1, r2]) = do
   i1 <- unboxInt (reg2val r1)
   i2 <- unboxInt (reg2val r2)
   vsum_i1 <- icmp "eq" i1 i2
+  vsum_i64 <- mkZext {to=I64} vsum_i1
+  obj <- cgMkInt vsum_i64
+  store obj (reg2val r)
+getInstIR i (OP r (LT IntType) [r1, r2]) = do
+  i1 <- unboxInt (reg2val r1)
+  i2 <- unboxInt (reg2val r2)
+  vsum_i1 <- icmp "slt" i1 i2
   vsum_i64 <- mkZext {to=I64} vsum_i1
   obj <- cgMkInt vsum_i64
   store obj (reg2val r)

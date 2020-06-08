@@ -50,10 +50,37 @@ loop:
 
 loopend:
   %continue = icmp ule i64 %i, %size
-  %iPlus = add i64 %i, 1
+  %iPlus = add nuw nsw i64 %i, 1
   br i1 %continue, label %loop, label %finished
 finished:
   ret i1 %beq
+}
+
+define private fastcc i32 @rapid.memcmp(i8* %v1, i8* %v2, i64 %size) alwaysinline optsize nounwind {
+entry:
+  br label %loop
+loop:
+  %i = phi i64 [%iPlus, %loopend], [0, %entry]
+
+  %p1 = getelementptr inbounds i8, i8* %v1, i64 %i
+  %p2 = getelementptr inbounds i8, i8* %v2, i64 %i
+  %b1 = load i8, i8* %p1
+  %b2 = load i8, i8* %p2
+  %beq = icmp eq i8 %b1, %b2
+
+  br i1 %beq, label %loopend, label %finished_neq
+
+loopend:
+  %continue = icmp ule i64 %i, %size
+  %iPlus = add nuw nsw i64 %i, 1
+  br i1 %continue, label %loop, label %finished_eq
+finished_neq:
+  %bcmp = icmp ult i8 %b1, %b2
+  %result = select i1 %bcmp, i32 -1, i32 1
+  ret i32 %result
+
+finished_eq:
+  ret i32 0
 }
 
 define external fastcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
