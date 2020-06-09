@@ -8,6 +8,8 @@ target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
 %VoidReturn = type {%RuntimePtr, %RuntimePtr, %RuntimePtr}
 %Return1 = type {%RuntimePtr, %RuntimePtr, %ObjPtr}
 
+%FuncPtrClosureEntry = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr)*
+
 declare ccc void @idris_rts_gc(i8*)
 declare ccc void @idris_rts_crash(i64)
 declare ccc void @idris_rts_crash_msg(%ObjPtr)

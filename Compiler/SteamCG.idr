@@ -45,7 +45,11 @@ OBJECT_TYPE_ID_BUFFER : Int
 OBJECT_TYPE_ID_BUFFER = 6
 
 CLOSURE_MAX_ARGS : Int
-CLOSURE_MAX_ARGS = 32
+CLOSURE_MAX_ARGS = 1024
+
+-- A "fat" closure is always invoked via its "closure entry" function
+FAT_CLOSURE_LIMIT : Int
+FAT_CLOSURE_LIMIT = 8
 
 repeatStr : String -> Nat -> String
 repeatStr s 0 = ""
@@ -360,7 +364,7 @@ applyClosureHelperFunc : Codegen ()
 applyClosureHelperFunc = do
   appendCode $ funcEntry
 
-  let maxArgs = CLOSURE_MAX_ARGS
+  let maxArgs = FAT_CLOSURE_LIMIT
 
   let closureObj = SSA IRObjPtr "%closureObjArg"
   let argValue = SSA IRObjPtr "%argumentObjArg"
@@ -370,18 +374,23 @@ applyClosureHelperFunc = do
   missingArgCount <- assignSSA $ "lshr i64 " ++ missingArgCountShifted ++ ", 16"
   isSaturated <- assignSSA $ "icmp eq i64 1, " ++ missingArgCount
   labelName <- mkVarName "closure_saturated"
-  appendCode $ "br i1 " ++ isSaturated ++ ", label %" ++ labelName ++ "_yes, label %" ++ labelName ++ "_no"
+  lblUnsaturated <- genLabel "closure_unsaturated"
+  appendCode $ "br i1 " ++ isSaturated ++ ", label %" ++ labelName ++ "_yes, " ++ toIR lblUnsaturated
   appendCode $ labelName ++ "_yes:"
-  funcPtrI64 <- getObjectSlot closureObj 1
-  func <- assignSSA $ "inttoptr " ++ (toIR funcPtrI64) ++ " to %FuncPtrArgs" ++ show (maxArgs+1)
+  funcPtr <- getObjectSlotT {t=FuncPtr} closureObj 1
 
   let hp = "%RuntimePtr %HpArg"
   let base = "%RuntimePtr %BaseArg"
   let hpLim = "%RuntimePtr %HpLimArg"
 
+  lblApplyViaClosureEntry <- genLabel "apply_via_closure_entry"
+
   applyClosure <- mkVarName "apply_closure_"
-  appendCode $ "  switch i64 " ++ argCount ++ ", label %" ++ applyClosure ++ "_error [\n  " ++
-  (showSep "\n  " $ (flip map) (rangeFromTo 0 maxArgs) (\i => "i64 " ++ show i ++ ", label %" ++ applyClosure ++ "_" ++ show i)) ++
+  -- if the closure requires a total number of arguments <= FAT_CLOSURE_LIMIT
+  -- (i.e. storedArgs <= (FAT_CLOSURE_LIMIT - 1)), it is invoked directly
+  -- otherwise it is called via its "$$closureEntry" function
+  appendCode $ "  switch i64 " ++ argCount ++ ", " ++ toIR lblApplyViaClosureEntry ++ " [\n  " ++
+  (showSep "\n  " $ (flip map) (rangeFromTo 0 (maxArgs - 1)) (\i => "i64 " ++ show i ++ ", label %" ++ applyClosure ++ "_" ++ show i)) ++
   "]"
 
   for_ (rangeFromTo 0 maxArgs) (\i => do
@@ -392,14 +401,13 @@ applyClosureHelperFunc = do
                       pure $ (toIR argItem)
                       )
     let argList = [hp, base, hpLim] ++ storedArgs ++ [toIR argValue]
-    --appendCode $ labelName ++ "_do_call:"
-    let undefs = repeatStr ", %ObjPtr undef" (minus (integerToNat $ cast maxArgs) (integerToNat $ cast i))
-    callRes <- assignSSA $ "tail call fastcc %Return1 " ++ func ++ "(" ++ (showSep ", " argList) ++ undefs ++ ")"
+    func <- assignSSA $ "bitcast " ++ (toIR funcPtr) ++ " to %FuncPtrArgs" ++ show (i+1)
+    callRes <- assignSSA $ "tail call fastcc %Return1 " ++ func ++ "(" ++ (showSep ", " argList) ++ ")"
     appendCode $ "ret %Return1 " ++ callRes
     )
-  appendCode $ labelName ++ "_no:"
 
-  --appliedArgCount <- SSA I64 <$> assignSSA ("add i64 " ++ argCount ++ ", 1")
+  beginLabel lblUnsaturated
+
   appliedArgCount <- mkAddNoWrap (SSA I64 argCount) (ConstI64 1)
   newArgsSize <- mkMul appliedArgCount (ConstI64 8)
   -- add 8 bytes for entry func ptr
@@ -414,6 +422,7 @@ applyClosureHelperFunc = do
   newHeader' <- mkOr newHeader newMissingArgsShifted
   newHeader'' <- mkOr newHeader' appliedArgCount
 
+  -- FIXME: "to copy" size is probably 8 bytes too big
   appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR newClosure ++ ", " ++ toIR closureObj ++ ", " ++ toIR newClosureTotalSize ++ ", i1 false)"
   putObjectHeader newClosure newHeader''
 
@@ -424,9 +433,14 @@ applyClosureHelperFunc = do
 
   appendCode $ funcReturn
 
-  appendCode $ applyClosure ++ "_error:"
+  beginLabel lblApplyViaClosureEntry
+  closureEntryPtr <- assignSSA $ "bitcast " ++ (toIR funcPtr) ++ " to %FuncPtrClosureEntry"
+  let argList = [hp, base, hpLim, toIR closureObj, toIR argValue]
+  callRes <- assignSSA $ "tail call fastcc %Return1 " ++ closureEntryPtr ++ "(" ++ (showSep ", " argList) ++ ")"
+  appendCode $ "ret %Return1 " ++ callRes
+
   appendCode $ "call ccc void @idris_rts_crash(i64 13)"
-  appendCode $ "ret %Return1 undef"
+  appendCode "unreachable"
 
 cgMkInt : IRValue I64 -> Codegen (IRValue IRObjPtr)
 cgMkInt val = do
@@ -804,7 +818,7 @@ getInstIR i (OP r StrTail [r1]) = do
   jump strTailFinished
 
   beginLabel strTailError
-  appendCode $ "call ccc void @idris_rts_crash(i64 13) noreturn"
+  appendCode $ "call ccc void @idris_rts_crash(i64 17) noreturn"
   appendCode $ "unreachable"
 
   beginLabel strTailFinished
@@ -1228,7 +1242,13 @@ getInstIR i (MKCLOSURE r n missingN args) = do
   let header = (header OBJECT_TYPE_ID_CLOSURE) + (missing * 0x10000) + len
   newObj <- dynamicAllocate $ ConstI64 (8 + 8 * len)
   putObjectHeader newObj (ConstI64 $ header)
-  funcPtr <- assignSSA $ "bitcast %Return1 (%RuntimePtr,%RuntimePtr,%RuntimePtr" ++ (repeatStr ", %ObjPtr" (integerToNat totalArgsExpected)) ++ ")* @" ++ (safeName n) ++ " to %FuncPtr"
+  funcPtr <- (if (totalArgsExpected <= (cast FAT_CLOSURE_LIMIT))
+             then
+               assignSSA $ "bitcast %FuncPtrArgs" ++ show totalArgsExpected ++ " @" ++ (safeName n) ++ " to %FuncPtr"
+             else do
+               assignSSA $ "bitcast %FuncPtrClosureEntry @" ++ (safeName n) ++ "$$closureEntry to %FuncPtr"
+               )
+
   putObjectSlot newObj 1 (SSA FuncPtr funcPtr)
   for_ (enumerate args) (\iv => do
       let (i, arg) = iv
@@ -1368,9 +1388,28 @@ getFunIR debug conNames i n args body = do
     appendCode "}\n"
   where
     copyArg : Reg -> String
-    copyArg (Loc i) = let r = show i in "\n  %v" ++ r ++ "Var = alloca %ObjPtr
-  store %ObjPtr %v" ++ r ++ ", %ObjPtr* %v" ++ r ++ "Var
-"
+    copyArg (Loc i) = let r = show i in "  %v" ++ r ++ "Var = alloca %ObjPtr\n  store %ObjPtr %v" ++ r ++ ", %ObjPtr* %v" ++ r ++ "Var"
+    copyArg _ = idris_crash "not an argument"
+
+getFunIRClosureEntry : Bool -> SortedMap Name Int -> Int -> Name -> (args : List Int) -> {auto ok : NonEmpty args} -> List VMInst -> Codegen ()
+getFunIRClosureEntry debug conNames i n args body = do
+    let visibility = if debug then "external" else "private"
+    appendCode ("\n\ndefine " ++ visibility ++ " fastcc %Return1 @" ++ safeName n ++ "$$closureEntry(" ++ (showSep ", " $ prepareArgCallConv ["%ObjPtr %clObj", "%ObjPtr %lastArg"]) ++ ") {")
+    appendCode "entry:"
+    appendCode funcEntry
+    traverse_ copyArg (enumerate $ init args)
+    appendCode $ "  %v" ++ (show $ last args) ++ "Var = alloca %ObjPtr"
+    store (SSA IRObjPtr "%lastArg") (reg2val $ Loc $ last args)
+    traverse_ (getInstIRWithComment i) body
+    appendCode funcReturn
+    appendCode "}\n"
+  where
+    copyArg : (Int, Int) -> Codegen ()
+    copyArg (index, i) =
+      let clObj = SSA IRObjPtr "%clObj" in do
+        appendCode $ "  %v" ++ show i ++ "Var = alloca %ObjPtr"
+        arg <- getObjectSlotT clObj (index + 2)
+        store arg (reg2val (Loc i))
     copyArg _ = idris_crash "not an argument"
 
 mk_prim__bufferNew : Vect 2 (IRValue IRObjPtr) -> Codegen ()
@@ -1573,11 +1612,15 @@ supportPrelude = fastAppend [
 
 export
 getVMIR : Bool -> SortedMap Name Int -> (Int, (Name, VMDef)) -> String
-getVMIR debug conNames (i, n, MkVMFun args body) = runCodegen $ getFunIR debug conNames (i+1000) n (map Loc args) body
+getVMIR debug conNames (i, n, MkVMFun args body) = (runCodegen $ getFunIR debug conNames ((2*i)+1000) n (map Loc args) body) ++ closureEntry where
+  closureEntry : String
+  closureEntry = case args of
+                      [] => ""
+                      neArgs@(_::_) => runCodegen $ getFunIRClosureEntry debug conNames ((2*i + 1)+1000) n neArgs body
 getVMIR _ _ _ = ""
 
 funcPtrTypes : String
-funcPtrTypes = fastAppend $ map funcPtr (rangeFromTo 0 CLOSURE_MAX_ARGS) where
+funcPtrTypes = fastAppend $ map funcPtr (rangeFromTo 0 FAT_CLOSURE_LIMIT) where
   funcPtr : Int -> String
   funcPtr i = "%FuncPtrArgs" ++ (show (i + 1)) ++ " = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr" ++ repeatStr ", %ObjPtr" (integerToNat $ cast (i+1)) ++ ")*\n"
 
