@@ -23,6 +23,7 @@ declare ccc void @rapid_strreverse(i8*, i8*, i64)
 
 declare ccc %ObjPtr @idris_rts_read_buffer_from_file(%RuntimePtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_system_file_open(%RuntimePtr, %ObjPtr, %ObjPtr)
+declare ccc void @rapid_system_file_close(%ObjPtr)
 
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind

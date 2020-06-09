@@ -9,6 +9,9 @@
 const size_t IDRIS_ALIGNMENT = 8;
 const size_t NURSERY_SIZE = 1 * 1024 * 1024;
 
+const int HEADER_SIZE = 8;
+const int POINTER_SIZE = sizeof(void*);
+
 const int64_t OBJ_TYPE_BUFFER = 0x06;
 const int64_t OBJ_TYPE_OPAQUE = 0x07;
 
@@ -28,6 +31,10 @@ typedef struct __attribute__((packed, aligned(1))) {
 } RapidObject_t;
 
 typedef RapidObject_t *ObjPtr;
+
+static inline uint32_t OBJ_TYPE(ObjPtr p) {
+  return ((p->hdr >> 32) & 0xffffffff);
+}
 
 static inline uint32_t OBJ_SIZE(ObjPtr p) {
   return ((p->hdr) & 0xffffffff);
@@ -184,8 +191,8 @@ end:
 }
 
 ObjPtr rapid_system_file_open(Idris_TSO *base, ObjPtr fnameObj, ObjPtr modeObj) {
-  ObjPtr ptrObj = rapid_C_allocate(base, 16);
-  ptrObj->hdr = MAKE_HEADER(OBJ_TYPE_OPAQUE, 8);
+  ObjPtr ptrObj = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
+  ptrObj->hdr = MAKE_HEADER(OBJ_TYPE_OPAQUE, POINTER_SIZE);
 
   int length = OBJ_SIZE(fnameObj);
   const char *str = (const char *)OBJ_PAYLOAD(fnameObj);
@@ -207,6 +214,15 @@ ObjPtr rapid_system_file_open(Idris_TSO *base, ObjPtr fnameObj, ObjPtr modeObj) 
 
   ptrObj->data = f;
   return ptrObj;
+}
+
+void rapid_system_file_close(ObjPtr filePtrObj) {
+  if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
+    rapid_C_crash("invalid object apssed to file_close");
+  }
+
+  FILE *f = *(FILE **)OBJ_PAYLOAD(filePtrObj);
+  fclose(f);
 }
 
 int main(int argc, char **argv) {

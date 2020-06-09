@@ -1599,6 +1599,10 @@ mk_prim__fileOpen [fileName, mode, _, _] = do
   result <- foreignCall "@rapid_system_file_open" [toIR fileName, toIR mode]
   store result (reg2val RVal)
 
+mk_prim__fileClose : Vect 2 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__fileClose [filePtr, _] = do
+  voidCall "ccc" "@rapid_system_file_close" [toIR filePtr]
+
 mk_prim__fileErrno : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__fileErrno [_] = do
   tsoObj <- assignSSA "bitcast %RuntimePtr %BaseArg to %Idris_TSO.struct*"
@@ -1638,6 +1642,7 @@ supportPrelude = fastAppend [
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__isBuffer")) mk_prim__isBuffer
   , mkSupport (NS ["Directory", "System"] (UN "prim_currentDir")) mk_prim__currentDir
   , mkSupport (NS ["File", "System"] (UN "prim__open")) mk_prim__fileOpen
+  , mkSupport (NS ["File", "System"] (UN "prim__close")) mk_prim__fileClose
   , mkSupport (NS ["File", "System"] (UN "prim_fileErrno")) mk_prim__fileErrno
   , mkSupport (NS ["PrimIO"] (UN "prim__nullAnyPtr")) mk_prim__nullAnyPtr
   ]
