@@ -25,6 +25,8 @@ typedef struct {
 
 typedef uint64_t RapidObjectHeader;
 
+typedef uint64_t Word;
+
 typedef struct __attribute__((packed, aligned(1))) {
   RapidObjectHeader hdr;
   void *data;
@@ -223,6 +225,30 @@ void rapid_system_file_close(ObjPtr filePtrObj) {
 
   FILE *f = *(FILE **)OBJ_PAYLOAD(filePtrObj);
   fclose(f);
+}
+
+Word rapid_system_file_write_string(ObjPtr filePtrObj, ObjPtr strObj) {
+  if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
+    rapid_C_crash("invalid object apssed to file_close");
+  }
+
+  FILE *f = *(FILE **)OBJ_PAYLOAD(filePtrObj);
+  const void *str = OBJ_PAYLOAD(strObj);
+  size_t size = OBJ_SIZE(strObj);
+  size_t written = fwrite(str, 1, size, f);
+  if (written != size) {
+    return 1;
+  }
+  return 0;
+}
+
+Word rapid_system_file_eof(ObjPtr filePtrObj) {
+  if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
+    rapid_C_crash("invalid object apssed to file_eof");
+  }
+
+  FILE *f = *(FILE **)OBJ_PAYLOAD(filePtrObj);
+  return (0 != feof(f));
 }
 
 int main(int argc, char **argv) {

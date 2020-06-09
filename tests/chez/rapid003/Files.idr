@@ -8,6 +8,9 @@ main = do
   case fr of
        Right f => do
          putStrLn "file opened"
+         fPutStr f "FileWriteNumber1"
+         fPutStr f "FileWriteNumber2"
+         putStrLn "written twice"
          closeFile f
          putStrLn "file closed"
          fr2 <- openFile "/thisShouldNotWork/invalidPath/rapid003_testfile.txt" WriteTruncate

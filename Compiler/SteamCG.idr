@@ -1603,6 +1603,12 @@ mk_prim__fileClose : Vect 2 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__fileClose [filePtr, _] = do
   voidCall "ccc" "@rapid_system_file_close" [toIR filePtr]
 
+mk_prim__fileEof : Vect 2 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__fileEof [filePtr, _] = do
+  result <- call {t=I64} "ccc" "@rapid_system_file_eof" [toIR filePtr]
+  resultObj <- cgMkInt result
+  store resultObj (reg2val RVal)
+
 mk_prim__fileErrno : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__fileErrno [_] = do
   tsoObj <- assignSSA "bitcast %RuntimePtr %BaseArg to %Idris_TSO.struct*"
@@ -1610,6 +1616,17 @@ mk_prim__fileErrno [_] = do
   errnoValue <- load errnoAddr
   errnoObj <- cgMkInt !(mkZext errnoValue)
   store errnoObj (reg2val RVal)
+
+mk_prim__fileWriteLine : Vect 3 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__fileWriteLine [filePtr, strObj, _] = do
+  result <- call {t=I64} "ccc" "@rapid_system_file_write_string" [toIR filePtr, toIR strObj]
+  resultObj <- cgMkInt result
+  store resultObj (reg2val RVal)
+
+mk_prim__fileReadLine : Vect 3 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__fileReadLine [filePtr, strObj, _] = do
+  appendCode "call ccc void @idris_rts_crash(i64 16)"
+  appendCode "unreachable"
 
 
 mkSupport : {n : Nat} -> Name -> (Vect n (IRValue IRObjPtr) -> Codegen ()) -> String
@@ -1643,6 +1660,9 @@ supportPrelude = fastAppend [
   , mkSupport (NS ["Directory", "System"] (UN "prim_currentDir")) mk_prim__currentDir
   , mkSupport (NS ["File", "System"] (UN "prim__open")) mk_prim__fileOpen
   , mkSupport (NS ["File", "System"] (UN "prim__close")) mk_prim__fileClose
+  , mkSupport (NS ["File", "System"] (UN "prim__eof")) mk_prim__fileEof
+  , mkSupport (NS ["File", "System"] (UN "prim__writeLine")) mk_prim__fileWriteLine
+  , mkSupport (NS ["File", "System"] (UN "prim__readLine")) mk_prim__fileReadLine
   , mkSupport (NS ["File", "System"] (UN "prim_fileErrno")) mk_prim__fileErrno
   , mkSupport (NS ["PrimIO"] (UN "prim__nullAnyPtr")) mk_prim__nullAnyPtr
   ]
