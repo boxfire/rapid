@@ -1011,13 +1011,6 @@ getInstIR i (OP r (EQ CharType) [r1, r2]) = do
   obj <- cgMkInt (SSA I64 cmp_i64)
   store obj (reg2val r)
 
-getInstIR i (OP r (EQ IntType) [r1, r2]) = do
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  vsum_i1 <- icmp "eq" i1 i2
-  vsum_i64 <- mkZext {to=I64} vsum_i1
-  obj <- cgMkInt vsum_i64
-  store obj (reg2val r)
 getInstIR i (OP r (LT IntType) [r1, r2]) = do
   i1 <- unboxInt (reg2val r1)
   i2 <- unboxInt (reg2val r2)
@@ -1025,10 +1018,31 @@ getInstIR i (OP r (LT IntType) [r1, r2]) = do
   vsum_i64 <- mkZext {to=I64} vsum_i1
   obj <- cgMkInt vsum_i64
   store obj (reg2val r)
+getInstIR i (OP r (LTE IntType) [r1, r2]) = do
+  i1 <- unboxInt (reg2val r1)
+  i2 <- unboxInt (reg2val r2)
+  vsum_i1 <- icmp "sle" i1 i2
+  vsum_i64 <- mkZext {to=I64} vsum_i1
+  obj <- cgMkInt vsum_i64
+  store obj (reg2val r)
+getInstIR i (OP r (EQ IntType) [r1, r2]) = do
+  i1 <- unboxInt (reg2val r1)
+  i2 <- unboxInt (reg2val r2)
+  vsum_i1 <- icmp "eq" i1 i2
+  vsum_i64 <- mkZext {to=I64} vsum_i1
+  obj <- cgMkInt vsum_i64
+  store obj (reg2val r)
 getInstIR i (OP r (GTE IntType) [r1, r2]) = do
   i1 <- unboxInt (reg2val r1)
   i2 <- unboxInt (reg2val r2)
   vsum_i1 <- icmp "sge" i1 i2
+  vsum_i64 <- mkZext {to=I64} vsum_i1
+  obj <- cgMkInt vsum_i64
+  store obj (reg2val r)
+getInstIR i (OP r (GT IntType) [r1, r2]) = do
+  i1 <- unboxInt (reg2val r1)
+  i2 <- unboxInt (reg2val r2)
+  vsum_i1 <- icmp "sgt" i1 i2
   vsum_i64 <- mkZext {to=I64} vsum_i1
   obj <- cgMkInt vsum_i64
   store obj (reg2val r)
