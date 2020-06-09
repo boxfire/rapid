@@ -1623,9 +1623,14 @@ mk_prim__fileWriteLine [filePtr, strObj, _] = do
   resultObj <- cgMkInt result
   store resultObj (reg2val RVal)
 
-mk_prim__fileReadLine : Vect 3 (IRValue IRObjPtr) -> Codegen ()
-mk_prim__fileReadLine [filePtr, strObj, _] = do
+mk_prim__fileReadLine : Vect 2 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__fileReadLine [filePtr, _] = do
   appendCode "call ccc void @idris_rts_crash(i64 16)"
+  appendCode "unreachable"
+
+mk_prim__getArgs : Vect 1 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__getArgs [_] = do
+  appendCode "call ccc void @idris_rts_crash(i64 26)"
   appendCode "unreachable"
 
 
@@ -1664,6 +1669,7 @@ supportPrelude = fastAppend [
   , mkSupport (NS ["File", "System"] (UN "prim__writeLine")) mk_prim__fileWriteLine
   , mkSupport (NS ["File", "System"] (UN "prim__readLine")) mk_prim__fileReadLine
   , mkSupport (NS ["File", "System"] (UN "prim_fileErrno")) mk_prim__fileErrno
+  , mkSupport (NS ["System"] (UN "prim__getArgs")) mk_prim__getArgs
   , mkSupport (NS ["PrimIO"] (UN "prim__nullAnyPtr")) mk_prim__nullAnyPtr
   ]
 
