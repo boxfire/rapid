@@ -1577,10 +1577,16 @@ getVMIR debug conNames (i, n, MkVMFun args body) = runCodegen $ getFunIR debug c
 getVMIR _ _ _ = ""
 
 funcPtrTypes : String
-funcPtrTypes = unlines $ map funcPtr (rangeFromTo 0 CLOSURE_MAX_ARGS) where
+funcPtrTypes = fastAppend $ map funcPtr (rangeFromTo 0 CLOSURE_MAX_ARGS) where
   funcPtr : Int -> String
-  funcPtr i = "%FuncPtrArgs" ++ (show (i + 1)) ++ " = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr" ++ repeatStr ", %ObjPtr" (integerToNat $ cast (i+1)) ++ ")*"
+  funcPtr i = "%FuncPtrArgs" ++ (show (i + 1)) ++ " = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr" ++ repeatStr ", %ObjPtr" (integerToNat $ cast (i+1)) ++ ")*\n"
 
 export
 closureHelper : String
-closureHelper = funcPtrTypes ++ "\ndefine fastcc %Return1 @idris_apply_closure(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %closureObjArg, %ObjPtr %argumentObjArg) {\n" ++ runCodegen applyClosureHelperFunc ++ "\n}\n\n" ++ supportPrelude
+closureHelper = fastAppend [
+  funcPtrTypes,
+  "\ndefine fastcc %Return1 @idris_apply_closure(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %closureObjArg, %ObjPtr %argumentObjArg) {\n",
+  runCodegen applyClosureHelperFunc,
+  "\n}\n\n",
+  supportPrelude
+  ]

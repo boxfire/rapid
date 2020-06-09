@@ -40,7 +40,21 @@ main = do
          | Left _ => pure ()
          let support = ""
          let nameMap = getNameMap $ map snd vmcode
-         let ir = fastAppend $ [support, closureHelper] ++ (map (getVMIR debug nameMap) $ enumerate vmcode)
-         _ <- writeFile (filename ++ ".output.ll") ir
+         let indexedCode = enumerate vmcode
+         let funCode = map (getVMIR debug nameMap) indexedCode
+         --funCode <- for indexedCode (\c => do when verbose $ putStrLn $ "compile fun: " ++ safeName (fst (snd c))
+                                              --pure $ getVMIR debug nameMap c
+                                          --)
+         putStrLn $ "codegen complete: " ++ show (length funCode)
+         putStrLn $ "result size: " ++ show (sum' (map (prim__strLength) funCode))
+         (Right outFile) <- openFile (filename ++ ".output.ll") WriteTruncate
+         | Left err => putStrLn $ "error: " ++ show err
+         fPutStr outFile support
+         fPutStr outFile closureHelper
+         traverse_ (fPutStr outFile) funCode
+         closeFile outFile
+         --let ir = fastAppend $ [support, closureHelper] ++ funCode
+         --putStrLn "fastAppend complete"
+         --_ <- writeFile (filename ++ ".output.ll") ir
          pure ()
        Left e => putStrLn $ "error" ++ e
