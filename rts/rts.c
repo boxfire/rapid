@@ -58,6 +58,13 @@ void rapid_C_crash(const char *msg) {
   exit(5);
 }
 
+void rapid_strreverse(char *dst, const char *src, int64_t size) {
+  // FIXME: this reverses bytes, not characters (i.e. works only for ASCII)
+  for (int64_t i = 0; i < size; ++i) {
+    dst[size - 1 - i] = src[i];
+  }
+}
+
 void idris_rts_gc(long arg0) {
   printf("GC called: 0x%016lx\n", arg0);
   exit(2);

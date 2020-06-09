@@ -17,6 +17,8 @@ declare ccc double @idris_rts_str_to_double(%ObjPtr)
 declare ccc i64 @idris_rts_str_to_int(%ObjPtr)
 declare ccc i64 @idris_rts_write_buffer_to_file(%ObjPtr, %ObjPtr, i64)
 
+declare ccc void @rapid_strreverse(i8*, i8*, i64)
+
 declare ccc %ObjPtr @idris_rts_read_buffer_from_file(%RuntimePtr, %ObjPtr)
 
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind

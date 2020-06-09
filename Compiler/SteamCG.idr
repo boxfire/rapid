@@ -835,6 +835,22 @@ getInstIR i (OP r StrAppend [r1, r2]) = do
 
   store newStr (reg2val r)
 
+getInstIR i (OP r StrReverse [r1]) = do
+  strObj <- load (reg2val r1)
+  hdr <- getObjectHeader strObj
+  length <- mkBinOp "and" (ConstI64 0xffffffff) hdr
+  newStr <- dynamicAllocate length
+  newHeader <- mkBinOp "or" length (ConstI64 $ header OBJECT_TYPE_ID_STR)
+
+  origPayload <- getObjectSlotAddr {t=I8} strObj 1
+  newStrPayload <- getObjectSlotAddr {t=I8} newStr 1
+
+  appendCode $ "  call ccc void @rapid_strreverse(" ++ toIR newStrPayload ++ ", " ++ toIR origPayload ++ ", " ++ toIR length ++ ")"
+
+  putObjectHeader newStr newHeader
+
+  store newStr (reg2val r)
+
 getInstIR i (OP r StrCons [r1, r2]) = do
   o1 <- load (reg2val r1)
   o2 <- load (reg2val r2)

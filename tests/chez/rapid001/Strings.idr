@@ -58,3 +58,6 @@ main = do
   putStrLn $ "neg2: " ++ (prim__strSubstr 4 (-17) alphabet)
   putStrLn $ "neg3: " ++ (prim__strSubstr (-13) (-5) alphabet)
   putStrLn $ "neg4: " ++ (prim__strSubstr 28 (-4) alphabet)
+  putStrLn $ "rev1: " ++ (prim__strReverse "")
+  putStrLn $ "rev2: " ++ (prim__strReverse "x")
+  putStrLn $ "rev3: " ++ (prim__strReverse alphabet)
