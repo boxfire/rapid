@@ -259,6 +259,15 @@ mkMin {t} a b = do
   aSmaller <- icmp "slt" a b
   (SSA t) <$> assignSSA ("select " ++ toIR aSmaller ++ ", " ++ toIR a ++ ", " ++ toIR b)
 
+mkMax : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
+mkMax {t} a b = do
+  aLarger <- icmp "sgt" a b
+  (SSA t) <$> assignSSA ("select " ++ toIR aLarger ++ ", " ++ toIR a ++ ", " ++ toIR b)
+
+voidCall : String -> String -> Vect n String -> Codegen ()
+voidCall cconv name args =
+  appendCode $ "  call " ++ cconv ++ " void " ++ name ++ "(" ++ (showSep ", " (toList args)) ++ ")"
+
 call : {t : IRType} -> String -> String -> Vect n String -> Codegen (IRValue t)
 call {t} cconv name args = do
   SSA t <$> (assignSSA $ "  call " ++ cconv ++ " " ++ show t ++ " " ++ name ++ "(" ++ (showSep ", " (toList args)) ++ ")")
@@ -506,6 +515,29 @@ stringCompare op r1 r2 = do
   finalResult <- phi [(result, lblPrefixEq), (result2, lblPrefixNotEq), (Const I1 0, lblSizeCompare)]
   cgMkInt !(mkZext finalResult)
 
+mkSubstring : IRValue IRObjPtr -> IRValue I64 -> IRValue I64 -> Codegen (IRValue IRObjPtr)
+mkSubstring strObj startIndexRaw length = do
+  -- FIXME: this assumes ASCII
+  hdr <- getObjectHeader strObj
+  strLen <- mkBinOp "and" (ConstI64 0xffffffff) hdr
+
+  startIndex <- mkMax startIndexRaw (Const I64 0)
+
+  maxResultLength <- mkSub strLen startIndex
+  resultLengthRaw <- mkMin maxResultLength length
+  resultLength <- mkMax (Const I64 0) resultLengthRaw
+
+  newStr <- dynamicAllocate resultLength
+  newHeader <- mkBinOp "or" resultLength (ConstI64 $ header OBJECT_TYPE_ID_STR)
+  putObjectHeader newStr newHeader
+  newStrPayload <- getObjectSlotAddr {t=I8} newStr 1
+
+  strPayloadStart <- getObjectSlotAddr {t=I8} strObj 1
+  strCopyRangeStart <- getElementPtr strPayloadStart startIndex
+
+  voidCall "ccc" "@llvm.memcpy.p0i8.p0i8.i64" [toIR newStrPayload, toIR strCopyRangeStart, toIR resultLength, toIR (Const I1 0)]
+  pure newStr
+
 mkStr : Int -> String -> Codegen (IRValue IRObjPtr)
 mkStr i s = do
   let len = cast {to=Integer} $ length s
@@ -748,6 +780,36 @@ getInstIR i (OP r StrHead [r1]) = do
   appendCode $ "unreachable"
 
   beginLabel strHeadFinished
+
+getInstIR i (OP r StrTail [r1]) = do
+  o1 <- load (reg2val r1)
+  objHeader <- getObjectHeader o1
+  strLength <- mkAnd objHeader (Const I64 0xffffffff)
+  strIsZero <- unlikely !(icmp "eq" strLength (Const I64 0))
+  strTailOk <- genLabel "strtail_ok"
+  strTailError <- genLabel "strtail_err"
+  strTailFinished <- genLabel "strtail_finished"
+
+  branch strIsZero strTailError strTailOk
+  beginLabel strTailOk
+
+  subStr <- mkSubstring o1 (Const I64 1) !(mkSub strLength (Const I64 1))
+
+  store subStr (reg2val r)
+  jump strTailFinished
+
+  beginLabel strTailError
+  appendCode $ "call ccc void @idris_rts_crash(i64 13) noreturn"
+  appendCode $ "unreachable"
+
+  beginLabel strTailFinished
+
+getInstIR i (OP r StrSubstr [r1, r2, r3]) = do
+  o1 <- load (reg2val r3)
+  offset <- unboxInt (reg2val r1)
+  length <- unboxInt (reg2val r2)
+  subStr <- mkSubstring o1 offset length
+  store subStr (reg2val r)
 
 getInstIR i (OP r StrAppend [r1, r2]) = do
   o1 <- load (reg2val r1)

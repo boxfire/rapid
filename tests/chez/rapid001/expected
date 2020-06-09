@@ -95,3 +95,16 @@ not equal
 "zzz" == "zzz" = True
 "zzz" >= "zzz" = True
 "zzz" >  "zzz" = False
+substrings:
+BCDEFGHIJKLMNOPQRSTUVWXYZ
+
+ABCDEFGHIJKLMNOPQRSTUVWXY
+ABCDEFGHIJKLMNOPQRSTUVWXYZ
+ABCDEFGHIJKLMNOPQRSTUVWXYZ
+JKL
+JKLMNOPQRSTUVWXYZ
+
+neg1: ABCDEFGH
+neg2: 
+neg3: 
+neg4: 

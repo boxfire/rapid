@@ -170,6 +170,7 @@ FromSexp (PrimFn 2) where
 
 export
 FromSexp (PrimFn 3) where
+  fromSexp (SList [SAtom "StrSubstr"])  = pure $ StrSubstr
   fromSexp (SList [SAtom "BelieveMe"]) = pure $ BelieveMe
   fromSexp s = Left $ "invalid PrimFn 3: " ++ show s
 
