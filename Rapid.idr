@@ -21,6 +21,7 @@ debug = True
 
 main : IO ()
 main = do
+  let verbose = False
   (_::filename::_) <- getArgs
   | _ => putStrLn "missing argument"
   putStrLn $ "reading input from: " ++ filename

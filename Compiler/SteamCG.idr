@@ -61,6 +61,7 @@ isSafeChar '.' = True
 isSafeChar '_' = True
 isSafeChar c = isAlphaNum c
 
+export
 safeName : Name -> String
 safeName s = concatMap okchar (unpack $ fullShow s)
   where
@@ -749,6 +750,10 @@ getInstIR i (OP r Crash [r1, r2]) = do
   msg <- load (reg2val r2)
   appendCode $ "  call ccc void @idris_rts_crash_msg(" ++ toIR msg ++ ") noreturn"
   appendCode $ "unreachable"
+getInstIR i (ERROR s) = do
+  msg <- mkStr i s
+  appendCode $ "  call ccc void @idris_rts_crash_msg(" ++ toIR msg ++ ") noreturn"
+  appendCode $ "unreachable"
 getInstIR i (OP r BelieveMe [_, _, v]) = do
   store !(load (reg2val v)) (reg2val r)
 
@@ -980,6 +985,36 @@ getInstIR i (OP r (Cast CharType IntType) [r1]) = do
   newInt <- cgMkInt charVal
   store newInt (reg2val r)
 
+getInstIR i (OP r (Cast IntType CharType) [r1]) = do
+  ival <- unboxInt (reg2val r1)
+  truncated <- mkAnd (Const I64 0xffffffff) ival
+  newCharObj <- dynamicAllocate (Const I64 0)
+  hdr <- mkOr (truncated) (Const I64 $ header OBJECT_TYPE_ID_CHAR)
+  putObjectHeader newCharObj hdr
+  store newCharObj (reg2val r)
+getInstIR i (OP r (Cast IntegerType CharType) [r1]) = do
+  ival <- unboxInt (reg2val r1)
+  truncated <- mkAnd (Const I64 0xffffffff) ival
+  newCharObj <- dynamicAllocate (Const I64 0)
+  hdr <- mkOr (truncated) (Const I64 $ header OBJECT_TYPE_ID_CHAR)
+  putObjectHeader newCharObj hdr
+  store newCharObj (reg2val r)
+
+getInstIR i (OP r (Cast CharType StringType) [r1]) = do
+  o1 <- load (reg2val r1)
+  h1 <- getObjectHeader o1
+  -- FIXME: this assumes ASCII
+  -- FIXME: handle characters that need to be escaped
+  charVal64 <- mkBinOp "and" (ConstI64 0xff) h1
+  charVal <- mkTrunc {to=I8} charVal64
+  let newLength = (ConstI64 1)
+  newStr <- dynamicAllocate newLength
+  newHeader <- mkBinOp "or" newLength (ConstI64 $ header OBJECT_TYPE_ID_STR)
+  newStrPayload1 <- getObjectSlotAddr {t=I8} newStr 1
+  store charVal newStrPayload1
+  putObjectHeader newStr newHeader
+  store newStr (reg2val r)
+
 getInstIR i (OP r (Cast IntegerType IntType) [r1]) = do
   store !(load (reg2val r1)) (reg2val r)
 getInstIR i (OP r (Cast IntType IntegerType) [r1]) = do
@@ -1048,6 +1083,16 @@ getInstIR i (OP r (ShiftL IntegerType) [r1, r2]) = do
   obj <- cgMkInt !(mkShiftL i1 i2)
   store obj (reg2val r)
 
+getInstIR i (OP r (LT CharType) [r1, r2]) = do
+  -- compare Chars by comparing their headers
+  o1 <- load (reg2val r1)
+  o2 <- load (reg2val r2)
+  i1 <- getObjectHeader o1
+  i2 <- getObjectHeader o2
+  cmp_i1 <- icmp "ult" i1 i2
+  cmp_i64 <- assignSSA $ "zext " ++ toIR cmp_i1 ++ " to i64"
+  obj <- cgMkInt (SSA I64 cmp_i64)
+  store obj (reg2val r)
 getInstIR i (OP r (LTE CharType) [r1, r2]) = do
   -- compare Chars by comparing their headers
   o1 <- load (reg2val r1)
