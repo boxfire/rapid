@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/errno.h>
 
 #include <gc/gc.h>
 
@@ -9,11 +10,14 @@ const size_t IDRIS_ALIGNMENT = 8;
 const size_t NURSERY_SIZE = 1 * 1024 * 1024;
 
 const int64_t OBJ_TYPE_BUFFER = 0x06;
+const int64_t OBJ_TYPE_OPAQUE = 0x07;
 
 typedef struct {
   void *nurseryStart;
   void *nurseryNext;
   void *nurseryEnd;
+
+  int rapid_errno;
 } Idris_TSO;
 
 typedef uint64_t RapidObjectHeader;
@@ -172,10 +176,37 @@ end:
     }
   }
 
-  // create a "null" obj to signify error
+  // create a "null" obj to signify error (because the "isBuffer" check will
+  // fail, if the object type is set to zero)
   ObjPtr nullObj = rapid_C_allocate(base, 8);
   nullObj->hdr = 0x0ull;
   return nullObj;
+}
+
+ObjPtr rapid_system_file_open(Idris_TSO *base, ObjPtr fnameObj, ObjPtr modeObj) {
+  ObjPtr ptrObj = rapid_C_allocate(base, 16);
+  ptrObj->hdr = MAKE_HEADER(OBJ_TYPE_OPAQUE, 8);
+
+  int length = OBJ_SIZE(fnameObj);
+  const char *str = (const char *)OBJ_PAYLOAD(fnameObj);
+  char *fnameCstr = (char *)alloca(length + 1);
+  memcpy(fnameCstr, str, length);
+  fnameCstr[length] = '\0';
+
+  str = (const char *)OBJ_PAYLOAD(modeObj);
+  char *modeCstr = (char *)alloca(length + 1);
+  memcpy(modeCstr, str, length);
+  modeCstr[length] = '\0';
+
+  FILE *f = fopen(fnameCstr, modeCstr);
+  if (f) {
+    base->rapid_errno = 0;
+  } else {
+    base->rapid_errno = errno;
+  }
+
+  ptrObj->data = f;
+  return ptrObj;
 }
 
 int main(int argc, char **argv) {
@@ -185,6 +216,7 @@ int main(int argc, char **argv) {
   tso->nurseryStart = malloc(NURSERY_SIZE);
   tso->nurseryNext = tso->nurseryStart;
   tso->nurseryEnd = (void *)((long int)tso->nurseryStart + NURSERY_SIZE);
+  tso->rapid_errno = 1;
 
   return idris_enter(tso);
 }

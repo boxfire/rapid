@@ -56,3 +56,5 @@ Opaque Data:
   ObjTyp : 5 == IORef
   ObjTyp : 6 == IOBuffer
     HEADER (4 bytes type `<<` 32, 4 bytes size (number of bytes))
+  ObjTyp : 7 == C opaque data
+    HEADER (4 bytes type `<<` 32, 4 bytes size (number of bytes))

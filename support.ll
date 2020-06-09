@@ -22,6 +22,7 @@ declare ccc i64 @idris_rts_write_buffer_to_file(%ObjPtr, %ObjPtr, i64)
 declare ccc void @rapid_strreverse(i8*, i8*, i64)
 
 declare ccc %ObjPtr @idris_rts_read_buffer_from_file(%RuntimePtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_system_file_open(%RuntimePtr, %ObjPtr, %ObjPtr)
 
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind
@@ -210,9 +211,10 @@ define private fastcc i64 @idris_enter_stackbridge(i8* %BaseTSO, i8* %heapStart,
 }
 
 %Idris_TSO.struct = type {
-  i8*, ; nurseryStart
-  i8*, ; nurseryNext
-  i8*  ; nurseryEnd
+    i8* ; nurseryStart
+  , i8* ; nurseryNext
+  , i8* ; nurseryEnd
+  , i32 ; errno
 }
 
 define external ccc i64 @idris_enter(%Idris_TSO.struct* %BaseTSO) {

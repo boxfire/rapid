@@ -1559,9 +1559,26 @@ mk_prim__bufferReadFromFile [_, fname, _] = do
 
 mk_prim__nullAnyPtr : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__nullAnyPtr [p] = do
-  ptrAsInt <- SSA I64 <$> assignSSA ("ptrtoint " ++ toIR p ++ " to i64")
-  ptrIsZero <- icmp "eq" (ConstI64 0) ptrAsInt
-  result <- cgMkInt !(mkZext ptrIsZero)
+  lblStart <- genLabel "nullAnyPtr_start"
+  lblInside <- genLabel "nullAnyPtr_inside"
+  lblEnd <- genLabel "nullAnyPtr_end"
+
+  jump lblStart
+  beginLabel lblStart
+
+  ptrObjAsInt <- SSA I64 <$> assignSSA ("ptrtoint " ++ toIR p ++ " to i64")
+  ptrObjIsZero <- icmp "eq" (ConstI64 0) ptrObjAsInt
+  branch ptrObjIsZero lblEnd lblInside
+
+  beginLabel lblInside
+  payload <- getObjectSlotT {t=I64} p 1
+  payloadIsZero <- icmp "eq" (ConstI64 0) payload
+
+  jump lblEnd
+
+  beginLabel lblEnd
+  isNullPtr <- phi [(ptrObjIsZero, lblStart), (payloadIsZero, lblInside)]
+  result <- cgMkInt !(mkZext isNullPtr)
   store result (reg2val RVal)
 
 mk_prim__isBuffer : Vect 1 (IRValue IRObjPtr) -> Codegen ()
@@ -1576,6 +1593,19 @@ mk_prim__currentDir : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__currentDir [_] = do
   dummy <- mkStr 1 "/tmp"
   store dummy (reg2val RVal)
+
+mk_prim__fileOpen : Vect 4 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__fileOpen [fileName, mode, _, _] = do
+  result <- foreignCall "@rapid_system_file_open" [toIR fileName, toIR mode]
+  store result (reg2val RVal)
+
+mk_prim__fileErrno : Vect 1 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__fileErrno [_] = do
+  tsoObj <- assignSSA "bitcast %RuntimePtr %BaseArg to %Idris_TSO.struct*"
+  errnoAddr <- SSA (Pointer I32) <$> assignSSA ("getelementptr inbounds %Idris_TSO.struct, %Idris_TSO.struct* " ++ tsoObj ++ ", i32 0, i32 3")
+  errnoValue <- load errnoAddr
+  errnoObj <- cgMkInt !(mkZext errnoValue)
+  store errnoObj (reg2val RVal)
 
 
 mkSupport : {n : Nat} -> Name -> (Vect n (IRValue IRObjPtr) -> Codegen ()) -> String
@@ -1607,6 +1637,8 @@ supportPrelude = fastAppend [
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__readBufferFromFile")) mk_prim__bufferReadFromFile
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__isBuffer")) mk_prim__isBuffer
   , mkSupport (NS ["Directory", "System"] (UN "prim_currentDir")) mk_prim__currentDir
+  , mkSupport (NS ["File", "System"] (UN "prim__open")) mk_prim__fileOpen
+  , mkSupport (NS ["File", "System"] (UN "prim_fileErrno")) mk_prim__fileErrno
   , mkSupport (NS ["PrimIO"] (UN "prim__nullAnyPtr")) mk_prim__nullAnyPtr
   ]
 
