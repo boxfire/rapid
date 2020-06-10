@@ -38,7 +38,7 @@ typedef uint64_t RapidObjectHeader;
 
 typedef uint64_t Word;
 
-typedef struct __attribute__((packed, aligned(1))) {
+typedef struct {
   RapidObjectHeader hdr;
   void *data;
 } RapidObject_t;
