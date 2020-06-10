@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,9 @@ const size_t NURSERY_SIZE = 1 * 1024 * 1024;
 const int HEADER_SIZE = 8;
 const int POINTER_SIZE = sizeof(void*);
 
+const int64_t OBJ_TYPE_CON_NO_ARGS = 0x00;
+const int64_t OBJ_TYPE_STRING = 0x02;
+const int64_t OBJ_TYPE_CHAR   = 0x04;
 const int64_t OBJ_TYPE_BUFFER = 0x06;
 const int64_t OBJ_TYPE_OPAQUE = 0x07;
 
@@ -40,6 +44,18 @@ static inline uint32_t OBJ_TYPE(ObjPtr p) {
 
 static inline uint32_t OBJ_SIZE(ObjPtr p) {
   return ((p->hdr) & 0xffffffff);
+}
+
+static inline uint32_t OBJ_TAG(ObjPtr p) {
+  return ((p->hdr) & 0xffffffff);
+}
+
+static inline ObjPtr OBJ_PROJECT(ObjPtr p, int32_t pos) {
+  return ((ObjPtr*)&p->data)[pos];
+}
+
+static inline void OBJ_PUT_SLOT(ObjPtr p, int32_t pos, ObjPtr d) {
+  ((ObjPtr*)&p->data)[pos] = d;
 }
 
 static inline void *OBJ_PAYLOAD(ObjPtr p) {
@@ -249,6 +265,66 @@ Word rapid_system_file_eof(ObjPtr filePtrObj) {
 
   FILE *f = *(FILE **)OBJ_PAYLOAD(filePtrObj);
   return (0 != feof(f));
+}
+
+const int TAG_LIST_NIL = 0;
+const int TAG_LIST_CONS = 1;
+
+ObjPtr rapid_fast_pack(Idris_TSO *base, ObjPtr charListObj) {
+  // FIXME: only works for ASCII
+  int32_t strLength = 0;
+  ObjPtr cursor = charListObj;
+  while (OBJ_TAG(cursor) == TAG_LIST_CONS) {
+    strLength += 1;
+    cursor = OBJ_PROJECT(cursor, 1);
+  }
+
+  ObjPtr newStr = rapid_C_allocate(base, HEADER_SIZE + strLength);
+  newStr->hdr = MAKE_HEADER(OBJ_TYPE_STRING, strLength);
+
+  int32_t strPos = 0;
+  char *dst = OBJ_PAYLOAD(newStr);
+  cursor = charListObj;
+  while (OBJ_TAG(cursor) == TAG_LIST_CONS) {
+    assert(strPos < strLength);
+    ObjPtr charObj = OBJ_PROJECT(cursor, 0);
+    assert(OBJ_TYPE(charObj) == OBJ_TYPE_CHAR);
+    dst[strPos] = OBJ_SIZE(charObj) & 0xff;
+    strPos += 1;
+    cursor = OBJ_PROJECT(cursor, 1);
+  }
+  return newStr;
+}
+
+ObjPtr rapid_fast_append(Idris_TSO *base, ObjPtr strListObj) {
+  int32_t strLength = 0;
+  ObjPtr cursor = strListObj;
+  while (OBJ_TAG(cursor) == TAG_LIST_CONS) {
+    ObjPtr partObj = OBJ_PROJECT(cursor, 0);
+    assert(OBJ_TYPE(partObj) == OBJ_TYPE_STRING);
+    strLength += OBJ_SIZE(partObj);
+
+    cursor = OBJ_PROJECT(cursor, 1);
+  }
+
+  ObjPtr newStr = rapid_C_allocate(base, HEADER_SIZE + strLength);
+  newStr->hdr = MAKE_HEADER(OBJ_TYPE_STRING, strLength);
+
+  int32_t strPos = 0;
+  char *dst = OBJ_PAYLOAD(newStr);
+  cursor = strListObj;
+  while (OBJ_TAG(cursor) == TAG_LIST_CONS) {
+    assert(strPos < strLength);
+    ObjPtr partObj = OBJ_PROJECT(cursor, 0);
+    assert(OBJ_TYPE(partObj) == OBJ_TYPE_STRING);
+    int32_t partLength = OBJ_SIZE(partObj);
+
+    memcpy(&dst[strPos], OBJ_PAYLOAD(partObj), partLength);
+
+    strPos += partLength;
+    cursor = OBJ_PROJECT(cursor, 1);
+  }
+  return newStr;
 }
 
 int main(int argc, char **argv) {

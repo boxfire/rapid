@@ -28,6 +28,8 @@ declare ccc %ObjPtr @rapid_system_file_open(%RuntimePtr, %ObjPtr, %ObjPtr)
 declare ccc void @rapid_system_file_close(%ObjPtr)
 declare ccc %Word @rapid_system_file_eof(%ObjPtr)
 declare ccc %Word @rapid_system_file_write_string(%ObjPtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_fast_pack(%RuntimePtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_fast_append(%RuntimePtr, %ObjPtr)
 ;declare ccc %Word @rapid_system_file_read_line(%RuntimePtr, %ObjPtr, %ObjPtr)
 
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind

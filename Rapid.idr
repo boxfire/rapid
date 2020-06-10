@@ -19,6 +19,15 @@ import Compiler.SteamCG
 debug : Bool
 debug = True
 
+isBlacklisted : (Name, a) -> Bool
+isBlacklisted ((NS ["PrimIO"] (UN "schemeCall")), _) = True
+isBlacklisted ((NS ["PrimIO"] (UN "prim__schemeCall")), _) = True
+isBlacklisted ((NS ["Prelude"] (UN "fastPack")), _) = True
+isBlacklisted ((NS ["Prelude"] (MN "fastPack" _)), _) = True
+isBlacklisted ((NS ["Strings", "Data"] (UN "fastAppend")), _) = True
+isBlacklisted ((NS ["Strings", "Data"] (MN "fastAppend" _)), _) = True
+isBlacklisted _ = False
+
 main : IO ()
 main = do
   let verbose = False
@@ -33,7 +42,8 @@ main = do
   case result of
        Right parsed => do
          --putStrLn $ show $ parsed
-         let vmcode = getVMDefs (filter isVmdef parsed)
+         let vmcodeAll = getVMDefs (filter isVmdef parsed)
+         let vmcode = filter (not . isBlacklisted) vmcodeAll
          let foreigns = (filter isForeignDecl parsed)
          --putStrLn $ show $ vmcode
          (Right support) <- readFile "support.ll"

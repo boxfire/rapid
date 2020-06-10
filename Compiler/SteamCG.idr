@@ -1633,6 +1633,16 @@ mk_prim__getArgs [_] = do
   appendCode "call ccc void @idris_rts_crash(i64 26)"
   appendCode "unreachable"
 
+mk_prelude_fastPack : Vect 1 (IRValue IRObjPtr) -> Codegen ()
+mk_prelude_fastPack [charListObj] = do
+  newObj <- foreignCall {t=IRObjPtr} "@rapid_fast_pack" [toIR charListObj]
+  store newObj (reg2val RVal)
+
+mk_prelude_fastAppend : Vect 1 (IRValue IRObjPtr) -> Codegen ()
+mk_prelude_fastAppend [stringListObj] = do
+  newObj <- foreignCall {t=IRObjPtr} "@rapid_fast_append" [toIR stringListObj]
+  store newObj (reg2val RVal)
+
 
 mkSupport : {n : Nat} -> Name -> (Vect n (IRValue IRObjPtr) -> Codegen ()) -> String
 mkSupport {n} name f = runCodegen (do
@@ -1671,6 +1681,8 @@ supportPrelude = fastAppend [
   , mkSupport (NS ["File", "System"] (UN "prim_fileErrno")) mk_prim__fileErrno
   , mkSupport (NS ["System"] (UN "prim__getArgs")) mk_prim__getArgs
   , mkSupport (NS ["PrimIO"] (UN "prim__nullAnyPtr")) mk_prim__nullAnyPtr
+  , mkSupport (NS ["Strings", "Data"] (UN "fastAppend")) mk_prelude_fastAppend
+  , mkSupport (NS ["Prelude"] (UN "fastPack")) mk_prelude_fastPack
   ]
 
 export
