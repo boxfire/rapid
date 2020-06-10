@@ -27,6 +27,9 @@ typedef struct {
   int rapid_errno;
 } Idris_TSO;
 
+static int rapid_global_argc = 0;
+static char **rapid_global_argv = NULL;
+
 typedef uint64_t RapidObjectHeader;
 
 typedef uint64_t Word;
@@ -270,6 +273,20 @@ Word rapid_system_file_eof(ObjPtr filePtrObj) {
 const int TAG_LIST_NIL = 0;
 const int TAG_LIST_CONS = 1;
 
+static inline ObjPtr MK_LIST_NIL(Idris_TSO *base) {
+  ObjPtr p = rapid_C_allocate(base, HEADER_SIZE);
+  p->hdr = MAKE_HEADER(OBJ_TYPE_CON_NO_ARGS, TAG_LIST_NIL);
+  return p;
+}
+
+static inline ObjPtr MK_LIST_CONS(Idris_TSO *base, ObjPtr head, ObjPtr tail) {
+  ObjPtr p = rapid_C_allocate(base, HEADER_SIZE + 2 * POINTER_SIZE);
+  p->hdr = MAKE_HEADER(OBJ_TYPE_CON_NO_ARGS, TAG_LIST_CONS);
+  OBJ_PUT_SLOT(p, 0, head);
+  OBJ_PUT_SLOT(p, 1, tail);
+  return p;
+}
+
 ObjPtr rapid_fast_pack(Idris_TSO *base, ObjPtr charListObj) {
   // FIXME: only works for ASCII
   int32_t strLength = 0;
@@ -327,8 +344,27 @@ ObjPtr rapid_fast_append(Idris_TSO *base, ObjPtr strListObj) {
   return newStr;
 }
 
+ObjPtr rapid_system_getargs(Idris_TSO *base, Word _dummy) {
+  ObjPtr result = MK_LIST_NIL(base);
+
+  for (int i = rapid_global_argc - 1; i >= 0; --i) {
+    char *thisArg = rapid_global_argv[i];
+    size_t thisLength = strlen(thisArg);
+    ObjPtr argStrObj = rapid_C_allocate(base, HEADER_SIZE + thisLength);
+    argStrObj->hdr = MAKE_HEADER(OBJ_TYPE_STRING, thisLength);
+    memcpy(OBJ_PAYLOAD(argStrObj), thisArg, thisLength);
+
+    result = MK_LIST_CONS(base, argStrObj, result);
+  }
+
+  return result;
+}
+
 int main(int argc, char **argv) {
   GC_init();
+
+  rapid_global_argc = argc;
+  rapid_global_argv = argv;
 
   Idris_TSO *tso = malloc(sizeof(Idris_TSO));
   tso->nurseryStart = malloc(NURSERY_SIZE);

@@ -1630,8 +1630,8 @@ mk_prim__fileReadLine [filePtr, _] = do
 
 mk_prim__getArgs : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__getArgs [_] = do
-  appendCode "call ccc void @idris_rts_crash(i64 26)"
-  appendCode "unreachable"
+  result <- foreignCall {t=IRObjPtr} "@rapid_system_getargs" [toIR (Const I64 0)]
+  store result (reg2val RVal)
 
 mk_prelude_fastPack : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prelude_fastPack [charListObj] = do
