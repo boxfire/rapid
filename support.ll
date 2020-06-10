@@ -28,10 +28,10 @@ declare ccc %ObjPtr @rapid_system_file_open(%RuntimePtr, %ObjPtr, %ObjPtr)
 declare ccc void @rapid_system_file_close(%ObjPtr)
 declare ccc %Word @rapid_system_file_eof(%ObjPtr)
 declare ccc %Word @rapid_system_file_write_string(%ObjPtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_system_file_read_line(%RuntimePtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_system_getargs(%RuntimePtr, %Word)
 declare ccc %ObjPtr @rapid_fast_pack(%RuntimePtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_fast_append(%RuntimePtr, %ObjPtr)
-;declare ccc %Word @rapid_system_file_read_line(%RuntimePtr, %ObjPtr, %ObjPtr)
 
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind
@@ -152,15 +152,6 @@ define private fastcc %Return1 @PrimIO.prim__putStr(%RuntimePtr %HpArg, %Runtime
   %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimArg, 1
   ;%packed3 = insertvalue %Return1 %packed2, %RuntimePtr %HpPtrArg, 3
   ret %Return1 %packed2
-}
-
-define private fastcc %Return1 @PrimIO.prim__getString(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %unused0) {
-; TODO: implement
-  %nullptr = inttoptr i64 0 to %ObjPtr
-  %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpArg, 0
-  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimArg, 1
-  %packed3 = insertvalue %Return1 %packed2, %ObjPtr %nullptr, 2
-  ret %Return1 %packed3
 }
 
 define private fastcc %Return1 @_extprim_Data.IORef.prim__newIORef(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %val, %ObjPtr %world) {

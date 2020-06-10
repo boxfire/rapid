@@ -14,10 +14,14 @@ const int HEADER_SIZE = 8;
 const int POINTER_SIZE = sizeof(void*);
 
 const int64_t OBJ_TYPE_CON_NO_ARGS = 0x00;
-const int64_t OBJ_TYPE_STRING = 0x02;
-const int64_t OBJ_TYPE_CHAR   = 0x04;
-const int64_t OBJ_TYPE_BUFFER = 0x06;
-const int64_t OBJ_TYPE_OPAQUE = 0x07;
+const int64_t OBJ_TYPE_INT         = 0x01;
+const int64_t OBJ_TYPE_STRING      = 0x02;
+const int64_t OBJ_TYPE_CLOSURE     = 0x03;
+const int64_t OBJ_TYPE_CHAR        = 0x04;
+const int64_t OBJ_TYPE_IOREF       = 0x05;
+const int64_t OBJ_TYPE_BUFFER      = 0x06;
+const int64_t OBJ_TYPE_OPAQUE      = 0x07;
+const int64_t OBJ_TYPE_PTR         = 0x08;
 
 typedef struct {
   void *nurseryStart;
@@ -261,6 +265,33 @@ Word rapid_system_file_write_string(ObjPtr filePtrObj, ObjPtr strObj) {
   return 0;
 }
 
+// return type: Ptr String
+ObjPtr rapid_system_file_read_line(Idris_TSO *base, ObjPtr filePtrObj) {
+  if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
+    rapid_C_crash("invalid object apssed to file_close");
+  }
+
+  FILE *f = *(FILE **)OBJ_PAYLOAD(filePtrObj);
+  size_t length = 0;
+  char *buffer = fgetln(f, &length);
+  if (errno != 0) {
+    base->rapid_errno = errno;
+    rapid_C_crash("getline failed");
+  }
+
+  ObjPtr newStr = rapid_C_allocate(base, HEADER_SIZE + length);
+  newStr->hdr = MAKE_HEADER(OBJ_TYPE_STRING, length);
+  memcpy(OBJ_PAYLOAD(newStr), buffer, length);
+
+  fprintf(stderr, "read_line read %lld bytes\n", length);
+
+  ObjPtr newPtr = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
+  newPtr->hdr = MAKE_HEADER(OBJ_TYPE_PTR, 1);
+  OBJ_PUT_SLOT(newPtr, 0, newStr);
+
+  return newPtr;
+}
+
 Word rapid_system_file_eof(ObjPtr filePtrObj) {
   if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
     rapid_C_crash("invalid object apssed to file_eof");
@@ -314,9 +345,10 @@ ObjPtr rapid_fast_pack(Idris_TSO *base, ObjPtr charListObj) {
 }
 
 ObjPtr rapid_fast_append(Idris_TSO *base, ObjPtr strListObj) {
-  int32_t strLength = 0;
+  uint64_t strLength = 0;
   ObjPtr cursor = strListObj;
   while (OBJ_TAG(cursor) == TAG_LIST_CONS) {
+    assert(OBJ_TYPE(cursor) == OBJ_TYPE_CON_NO_ARGS);
     ObjPtr partObj = OBJ_PROJECT(cursor, 0);
     assert(OBJ_TYPE(partObj) == OBJ_TYPE_STRING);
     strLength += OBJ_SIZE(partObj);
@@ -324,19 +356,25 @@ ObjPtr rapid_fast_append(Idris_TSO *base, ObjPtr strListObj) {
     cursor = OBJ_PROJECT(cursor, 1);
   }
 
+  if (strLength > 0xffffffffull) {
+    rapid_C_crash("fastAppend string is too large");
+  }
+
   ObjPtr newStr = rapid_C_allocate(base, HEADER_SIZE + strLength);
   newStr->hdr = MAKE_HEADER(OBJ_TYPE_STRING, strLength);
 
-  int32_t strPos = 0;
+  uint32_t strPos = 0;
   char *dst = OBJ_PAYLOAD(newStr);
   cursor = strListObj;
   while (OBJ_TAG(cursor) == TAG_LIST_CONS) {
-    assert(strPos < strLength);
     ObjPtr partObj = OBJ_PROJECT(cursor, 0);
     assert(OBJ_TYPE(partObj) == OBJ_TYPE_STRING);
     int32_t partLength = OBJ_SIZE(partObj);
 
-    memcpy(&dst[strPos], OBJ_PAYLOAD(partObj), partLength);
+    if (partLength > 0) {
+      assert(strPos < strLength);
+      memcpy(&dst[strPos], OBJ_PAYLOAD(partObj), partLength);
+    }
 
     strPos += partLength;
     cursor = OBJ_PROJECT(cursor, 1);

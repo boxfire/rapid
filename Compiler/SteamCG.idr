@@ -1581,6 +1581,11 @@ mk_prim__nullAnyPtr [p] = do
   result <- cgMkInt !(mkZext isNullPtr)
   store result (reg2val RVal)
 
+mk_prim__getString : Vect 1 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__getString [p] = do
+  payload <- getObjectSlotT {t=IRObjPtr} p 1
+  store payload (reg2val RVal)
+
 mk_prim__isBuffer : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__isBuffer [obj] = do
   hdr <- getObjectHeader obj
@@ -1625,8 +1630,8 @@ mk_prim__fileWriteLine [filePtr, strObj, _] = do
 
 mk_prim__fileReadLine : Vect 2 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__fileReadLine [filePtr, _] = do
-  appendCode "call ccc void @idris_rts_crash(i64 16)"
-  appendCode "unreachable"
+  result <- foreignCall {t=IRObjPtr} "@rapid_system_file_read_line" [toIR filePtr]
+  store result (reg2val RVal)
 
 mk_prim__getArgs : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__getArgs [_] = do
@@ -1681,6 +1686,7 @@ supportPrelude = fastAppend [
   , mkSupport (NS ["File", "System"] (UN "prim_fileErrno")) mk_prim__fileErrno
   , mkSupport (NS ["System"] (UN "prim__getArgs")) mk_prim__getArgs
   , mkSupport (NS ["PrimIO"] (UN "prim__nullAnyPtr")) mk_prim__nullAnyPtr
+  , mkSupport (NS ["PrimIO"] (UN "prim__getString")) mk_prim__getString
   , mkSupport (NS ["Strings", "Data"] (UN "fastAppend")) mk_prelude_fastAppend
   , mkSupport (NS ["Prelude"] (UN "fastPack")) mk_prelude_fastPack
   ]
