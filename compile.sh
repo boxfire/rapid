@@ -27,10 +27,8 @@ set -x
 (cd "$fdir" && "$root/build/exec/rapid2-fe" "${fbase}")
 ./build/exec/rapid2-cg "${workfile}.sexp"
 cat support.ll "${workfile}.sexp.output.ll" > "${workfile}.full.ll"
-opt "${workfile}.full.ll" $optimize | tee "${workfile}.bc" >/dev/null
-llc -o "${workfile}.s" "${workfile}.bc"
-
-set +x
+opt "${workfile}.full.ll" $optimize | tee "${workfile}.bc" | llc -tailcallopt -o "${workfile}.s"
 
 clang -flto -c -I /usr/local/include -o rts/rts.bc rts/rts.c
-clang -g -o "${workfile}.native" "${workfile}.bc" rts/rts.bc -L /usr/local/lib -lgc
+clang -c -o "${workfile}.o" "${workfile}.s"
+clang -g -o "${workfile}.native" "${workfile}.o" rts/rts.bc -L /usr/local/lib -lgc

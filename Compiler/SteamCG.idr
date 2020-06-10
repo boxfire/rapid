@@ -1338,7 +1338,11 @@ getInstIR i (CALL r tailpos n args) =
      hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
      hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
      let base = "%RuntimePtr %BaseArg"
-     result <- assignSSA $ "call fastcc %Return1 @" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
+
+     let tailStr = if tailpos then "tail " else ""
+     result <- assignSSA $ tailStr ++ "call fastcc %Return1 @" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
+
+     when tailpos $ appendCode $ "ret %Return1 " ++ result
 
      newHp <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 0"
      appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpVar"
