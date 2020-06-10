@@ -283,8 +283,6 @@ ObjPtr rapid_system_file_read_line(Idris_TSO *base, ObjPtr filePtrObj) {
   newStr->hdr = MAKE_HEADER(OBJ_TYPE_STRING, length);
   memcpy(OBJ_PAYLOAD(newStr), buffer, length);
 
-  fprintf(stderr, "read_line read %lld bytes\n", length);
-
   ObjPtr newPtr = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
   newPtr->hdr = MAKE_HEADER(OBJ_TYPE_PTR, 1);
   OBJ_PUT_SLOT(newPtr, 0, newStr);
