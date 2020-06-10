@@ -42,5 +42,5 @@ sexpMain = some oneSexp
 export
 parseSexp : List Token -> Either (String) (List Sexp)
 parseSexp toks = case parse sexpMain toks of
-                      Left (Error s toks) => Left $ "parse error: " ++ s ++ (show toks)
+                      Left (Error s remaining) => Left $ "parse error: \"" ++ s ++ "\"\nremaining tokens: " ++ (show remaining)
                       Right (e, toks) => Right e
