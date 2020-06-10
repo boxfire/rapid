@@ -13,9 +13,13 @@ workfile="$workdir/$fbase"
 mkdir -p "$workdir"
 
 opt="${2:-}"
+debug=
 optimize=
 optimizeO1="-mem2reg -inline -dce"
 optimizeO2="$optimizeO1 -functionattrs -ipsccp -sccp -simplifycfg -gvn -ipconstprop -constprop -constmerge -adce -die -dse -deadargelim -globaldce"
+if [ -z "$opt" ]; then
+  debug="--debug"
+fi
 if [ "$opt" = "-O1" ]; then
   optimize="$optimizeO1 -O1"
 fi
@@ -25,7 +29,7 @@ fi
 
 set -x
 (cd "$fdir" && "$root/build/exec/rapid2-fe" "${fbase}")
-./build/exec/rapid2-cg "${workfile}.sexp"
+./build/exec/rapid2-cg $debug "${workfile}.sexp"
 cat support.ll "${workfile}.sexp.output.ll" > "${workfile}.full.ll"
 opt "${workfile}.full.ll" $optimize | tee "${workfile}.bc" | llc -tailcallopt -o "${workfile}.s"
 

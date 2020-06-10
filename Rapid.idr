@@ -16,9 +16,6 @@ import Compiler.VMCodeSexp
 import Compiler.PrepareCode
 import Compiler.SteamCG
 
-debug : Bool
-debug = True
-
 isBlacklisted : (Name, a) -> Bool
 isBlacklisted ((NS ["PrimIO"] (UN "schemeCall")), _) = True
 isBlacklisted ((NS ["PrimIO"] (UN "prim__schemeCall")), _) = True
@@ -28,11 +25,29 @@ isBlacklisted ((NS ["Strings", "Data"] (UN "fastAppend")), _) = True
 isBlacklisted ((NS ["Strings", "Data"] (MN "fastAppend" _)), _) = True
 isBlacklisted _ = False
 
+record CliOptions where
+  constructor MkOptions
+  debugEnabled : Bool
+  inputFilename : String
+
+emptyOpts : CliOptions
+emptyOpts = MkOptions False ""
+
+parseCliArgs : List String -> Either String CliOptions
+parseCliArgs [] = Left "missing argument"
+parseCliArgs (_::args) = go args emptyOpts where
+  go : List String -> CliOptions -> Either String CliOptions
+  go [] opts = if inputFilename opts /= "" then Right opts else Left "missing input filename"
+  go ("--debug"::rest) opts = go rest $ record { debugEnabled = True } opts
+  go (fname::rest) opts = go rest $ record { inputFilename = fname } opts
+
 main : IO ()
 main = do
-  let verbose = False
-  (_::filename::_) <- getArgs
-  | _ => putStrLn "missing argument"
+  args <- getArgs
+  (Right opts) <- pure $ parseCliArgs args
+  | Left e => putStrLn e
+  let debug = debugEnabled opts
+  let filename = inputFilename opts
   putStrLn $ "reading input from: " ++ filename
   (Right input) <- readFile filename
   | Left _ => putStrLn "read file error"
