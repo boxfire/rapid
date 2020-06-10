@@ -39,6 +39,16 @@ addConstant i v = do
   pure name
 
 export
+addMetadata : Int -> String -> Codegen String
+addMetadata i v = do
+  u <- getUnique
+  let mdId = u * 0x10000 + i
+  let name = "!" ++ show mdId
+  (MkCGBuf i c l) <- get
+  put (MkCGBuf i ((name, v)::c) l)
+  pure name
+
+export
 runCodegen : Codegen () -> String
 runCodegen r = let (MkCGBuf _ cs ls) = snd $ runState r emptyCG in
                     fastAppend $ intersperse "\n" $ (map (\(n,v) => n ++ " = " ++ v) $ reverse cs) ++ reverse ls

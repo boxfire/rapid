@@ -82,4 +82,4 @@ main = do
          --putStrLn "fastAppend complete"
          --_ <- writeFile (filename ++ ".output.ll") ir
          pure ()
-       Left e => putStrLn $ "error" ++ e
+       Left e => putStrLn $ "error:\n" ++ e

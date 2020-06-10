@@ -20,7 +20,7 @@ HEADER_SIZE : String
 HEADER_SIZE = "8"
 
 OBJECT_TYPE_ID_CON_NO_ARGS : Int
-OBJECT_TYPE_ID_CON_NO_ARGS = 0
+OBJECT_TYPE_ID_CON_NO_ARGS = 0xfefe
 
 OBJECT_TYPE_ID_INT : Int
 OBJECT_TYPE_ID_INT = 1
@@ -576,7 +576,8 @@ mkCon : Int -> List Reg -> Codegen (IRValue IRObjPtr)
 mkCon tag args = do
   newObj <- dynamicAllocate (ConstI64 $ cast (8 * (length args)))
   -- TODO: add object type to header for GC
-  putObjectHeader newObj (ConstI64 $ cast tag)
+  hdr <- mkOr (Const I64 $ header OBJECT_TYPE_ID_CON_NO_ARGS) (ConstI64 $ cast tag)
+  putObjectHeader newObj hdr
   let enumArgs = enumerate args
   for enumArgs (\x => let (i, arg) = x in do
                             arg <- load (reg2val arg)
@@ -679,7 +680,7 @@ unboxChar objPtr = do
 mutual
 getInstForConstCaseChar : {auto conNames : SortedMap Name Int} -> Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
 getInstForConstCaseChar i r alts def =
-  do let def' = fromMaybe [] def
+  do let def' = fromMaybe [(ERROR $ "no default in const case (char)")] def
      caseId <- mkVarName "case_"
      let labelEnd = caseId ++ "_end"
      scrutinee <- unboxChar (reg2val r)
@@ -701,8 +702,8 @@ getInstForConstCaseChar i r alts def =
 
 getInstForConstCaseInt : {auto conNames : SortedMap Name Int} -> Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
 getInstForConstCaseInt i r alts def =
-  do let def' = fromMaybe [] def
-     caseId <- mkVarName "case_"
+  do caseId <- mkVarName "case_"
+     let def' = fromMaybe [(ERROR $ "no default in const case (int)" ++ caseId)] def
      let labelEnd = caseId ++ "_end"
      scrutinee <- unboxInt (reg2val r)
      appendCode $ "  switch " ++ toIR scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeConstCaseLabel caseId) alts)) ++ " ]"
@@ -723,7 +724,7 @@ getInstForConstCaseInt i r alts def =
 
 getInstForConstCaseString : {auto conNames : SortedMap Name Int} -> Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
 getInstForConstCaseString i r alts def =
-  do let def' = fromMaybe [] def
+  do let def' = fromMaybe [(ERROR $ "no default in const case (string)")] def
      scrutinee <- load (reg2val r)
      let numAlts = enumerate alts
      caseId <- mkVarName "case_"
@@ -1289,7 +1290,6 @@ getInstIR i (MKCONSTANT r (BI c)) = do
   obj <- cgMkInt (ConstI64 $ c)
   store obj (reg2val r)
 getInstIR i (MKCONSTANT r (Db d)) = do
-  -- TODO: implement
   obj <- cgMkDouble (ConstF64 d)
   store obj (reg2val r)
 getInstIR i (MKCONSTANT r WorldVal) = do
@@ -1304,7 +1304,7 @@ getInstIR i (CONSTCASE r alts def) = case findConstCaseType alts of
                                           CharType => getInstForConstCaseChar i r alts def
 
 getInstIR {conNames} i (CASE r alts def) =
-  do let def' = fromMaybe [] def
+  do let def' = fromMaybe [(ERROR $ "no default in CASE")] def
      caseId <- mkVarName "case_"
      let labelEnd = caseId ++ "_end"
      o1 <- load $ reg2val r

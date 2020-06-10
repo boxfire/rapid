@@ -13,7 +13,7 @@ const size_t NURSERY_SIZE = 1 * 1024 * 1024;
 const int HEADER_SIZE = 8;
 const int POINTER_SIZE = sizeof(void*);
 
-const int64_t OBJ_TYPE_CON_NO_ARGS = 0x00;
+const int64_t OBJ_TYPE_CON_NO_ARGS = 0xfefe;
 const int64_t OBJ_TYPE_INT         = 0x01;
 const int64_t OBJ_TYPE_STRING      = 0x02;
 const int64_t OBJ_TYPE_CLOSURE     = 0x03;
