@@ -20,7 +20,7 @@ HEADER_SIZE : String
 HEADER_SIZE = "8"
 
 OBJECT_TYPE_ID_CON_NO_ARGS : Int
-OBJECT_TYPE_ID_CON_NO_ARGS = 0xfefe
+OBJECT_TYPE_ID_CON_NO_ARGS = 0xff
 
 OBJECT_TYPE_ID_INT : Int
 OBJECT_TYPE_ID_INT = 1
@@ -245,6 +245,9 @@ mkSRem = mkBinOp "srem"
 mkShiftL : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
 mkShiftL = mkBinOp "shl"
 
+mkShiftR : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
+mkShiftR = mkBinOp "lshr"
+
 unlikely : IRValue I1 -> Codegen (IRValue I1)
 unlikely cond = (SSA I1) <$> assignSSA (" call ccc i1 @llvm.expect.i1(" ++ toIR cond ++ ", i1 0)")
 
@@ -359,88 +362,6 @@ mkTrunc {to} val = (SSA to) <$> assignSSA ("trunc " ++ toIR val ++ " to " ++ sho
 
 header : Int -> Integer
 header i = (cast i) `prim__shl_Integer` 32
-
-applyClosureHelperFunc : Codegen ()
-applyClosureHelperFunc = do
-  appendCode $ funcEntry
-
-  let maxArgs = FAT_CLOSURE_LIMIT
-
-  let closureObj = SSA IRObjPtr "%closureObjArg"
-  let argValue = SSA IRObjPtr "%argumentObjArg"
-  closureHeader <- getObjectHeader closureObj
-  argCount <- assignSSA $ "and i64 65535, " ++ showWithoutType closureHeader
-  missingArgCountShifted <- assignSSA $ "and i64 4294901760, " ++ showWithoutType closureHeader
-  missingArgCount <- assignSSA $ "lshr i64 " ++ missingArgCountShifted ++ ", 16"
-  isSaturated <- assignSSA $ "icmp eq i64 1, " ++ missingArgCount
-  labelName <- mkVarName "closure_saturated"
-  lblUnsaturated <- genLabel "closure_unsaturated"
-  appendCode $ "br i1 " ++ isSaturated ++ ", label %" ++ labelName ++ "_yes, " ++ toIR lblUnsaturated
-  appendCode $ labelName ++ "_yes:"
-  funcPtr <- getObjectSlotT {t=FuncPtr} closureObj 1
-
-  let hp = "%RuntimePtr %HpArg"
-  let base = "%RuntimePtr %BaseArg"
-  let hpLim = "%RuntimePtr %HpLimArg"
-
-  lblApplyViaClosureEntry <- genLabel "apply_via_closure_entry"
-
-  applyClosure <- mkVarName "apply_closure_"
-  -- if the closure requires a total number of arguments <= FAT_CLOSURE_LIMIT
-  -- (i.e. storedArgs <= (FAT_CLOSURE_LIMIT - 1)), it is invoked directly
-  -- otherwise it is called via its "$$closureEntry" function
-  appendCode $ "  switch i64 " ++ argCount ++ ", " ++ toIR lblApplyViaClosureEntry ++ " [\n  " ++
-  (showSep "\n  " $ (flip map) (rangeFromTo 0 (maxArgs - 1)) (\i => "i64 " ++ show i ++ ", label %" ++ applyClosure ++ "_" ++ show i)) ++
-  "]"
-
-  for_ (rangeFromTo 0 maxArgs) (\i => do
-    let labelName = applyClosure ++ "_" ++ show i
-    appendCode $ labelName ++ ":"
-    storedArgs <- for (rangeFromThenTo 0 1 (i-1)) (\i => do
-                      argItem <- getObjectSlotT {t=IRObjPtr} closureObj (2+i)
-                      pure $ (toIR argItem)
-                      )
-    let argList = [hp, base, hpLim] ++ storedArgs ++ [toIR argValue]
-    func <- assignSSA $ "bitcast " ++ (toIR funcPtr) ++ " to %FuncPtrArgs" ++ show (i+1)
-    callRes <- assignSSA $ "tail call fastcc %Return1 " ++ func ++ "(" ++ (showSep ", " argList) ++ ")"
-    appendCode $ "ret %Return1 " ++ callRes
-    )
-
-  beginLabel lblUnsaturated
-
-  appliedArgCount <- mkAddNoWrap (SSA I64 argCount) (ConstI64 1)
-  newArgsSize <- mkMul appliedArgCount (ConstI64 8)
-  -- add 8 bytes for entry func ptr
-  newPayloadSize <- mkAddNoWrap newArgsSize (ConstI64 8)
-  newClosureTotalSize <- mkAddNoWrap newPayloadSize (ConstI64 $ cast HEADER_SIZE)
-  newClosure <- dynamicAllocate newPayloadSize
-
-  let newHeader = ConstI64 $ header OBJECT_TYPE_ID_CLOSURE
-  newMissingArgs <- mkSub (SSA I64 missingArgCount) (ConstI64 1)
-  newMissingArgsShifted <- mkBinOp "shl" newMissingArgs (ConstI64 16)
-
-  newHeader' <- mkOr newHeader newMissingArgsShifted
-  newHeader'' <- mkOr newHeader' appliedArgCount
-
-  -- FIXME: "to copy" size is probably 8 bytes too big
-  appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR newClosure ++ ", " ++ toIR closureObj ++ ", " ++ toIR newClosureTotalSize ++ ", i1 false)"
-  putObjectHeader newClosure newHeader''
-
-  newArgSlotNumber <- mkAddNoWrap appliedArgCount (ConstI64 1)
-  putObjectSlotG newClosure newArgSlotNumber argValue
-
-  store newClosure (reg2val RVal)
-
-  appendCode $ funcReturn
-
-  beginLabel lblApplyViaClosureEntry
-  closureEntryPtr <- assignSSA $ "bitcast " ++ (toIR funcPtr) ++ " to %FuncPtrClosureEntry"
-  let argList = [hp, base, hpLim, toIR closureObj, toIR argValue]
-  callRes <- assignSSA $ "tail call fastcc %Return1 " ++ closureEntryPtr ++ "(" ++ (showSep ", " argList) ++ ")"
-  appendCode $ "ret %Return1 " ++ callRes
-
-  appendCode $ "call ccc void @idris_rts_crash(i64 13)"
-  appendCode "unreachable"
 
 cgMkInt : IRValue I64 -> Codegen (IRValue IRObjPtr)
 cgMkInt val = do
@@ -635,7 +556,9 @@ prepareArgCallConv : List String -> List String
 prepareArgCallConv l = prepareArgCallConv' l
 
 prepareArg : Reg -> Codegen String
-prepareArg Discard = pure $ "%ObjPtr undef"
+-- can be changed to undef
+--prepareArg Discard = pure $ "%ObjPtr undef"
+prepareArg Discard = pure $ "%ObjPtr null"
 prepareArg (Loc i) = do
   tmp <- assignSSA $ "load %ObjPtr, %ObjPtr* %v" ++ (show i) ++ "Var"
   pure $ "%ObjPtr " ++ tmp
@@ -677,10 +600,30 @@ unboxChar objPtr = do
   chVal32 <- mkTrunc {to=I32} chVal64
   pure chVal32
 
+assertObjectType' : IRValue IRObjPtr -> Int -> Codegen ()
+assertObjectType' o t = do
+  let tVal = (Const I64 $ cast t)
+  typeOk <- genLabel "typecheck_ok"
+  typeError <- genLabel "typecheck_error"
+  typeEnd <- genLabel "typecheck_end"
+
+  hdr <- getObjectHeader o
+  hdrTyp <- mkShiftR hdr (Const I64 32)
+  hdrTypOk <- icmp "eq" tVal hdrTyp
+  branch hdrTypOk typeOk typeError
+  beginLabel typeError
+  appendCode $ "call ccc void @idris_rts_crash_typecheck(" ++ showSep ", " [toIR o, toIR tVal] ++ ") noreturn"
+  appendCode $ "unreachable"
+  beginLabel typeOk
+
+assertObjectType : Reg -> Int -> Codegen ()
+assertObjectType r t = assertObjectType' !(load (reg2val r)) t
+
 mutual
 getInstForConstCaseChar : {auto conNames : SortedMap Name Int} -> Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
 getInstForConstCaseChar i r alts def =
   do let def' = fromMaybe [(ERROR $ "no default in const case (char)")] def
+     assertObjectType r OBJECT_TYPE_ID_CHAR
      caseId <- mkVarName "case_"
      let labelEnd = caseId ++ "_end"
      scrutinee <- unboxChar (reg2val r)
@@ -703,6 +646,7 @@ getInstForConstCaseChar i r alts def =
 getInstForConstCaseInt : {auto conNames : SortedMap Name Int} -> Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
 getInstForConstCaseInt i r alts def =
   do caseId <- mkVarName "case_"
+     assertObjectType r OBJECT_TYPE_ID_INT
      let def' = fromMaybe [(ERROR $ "no default in const case (int)" ++ caseId)] def
      let labelEnd = caseId ++ "_end"
      scrutinee <- unboxInt (reg2val r)
@@ -725,6 +669,7 @@ getInstForConstCaseInt i r alts def =
 getInstForConstCaseString : {auto conNames : SortedMap Name Int} -> Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
 getInstForConstCaseString i r alts def =
   do let def' = fromMaybe [(ERROR $ "no default in const case (string)")] def
+     assertObjectType r OBJECT_TYPE_ID_STR
      scrutinee <- load (reg2val r)
      let numAlts = enumerate alts
      caseId <- mkVarName "case_"
@@ -756,7 +701,9 @@ getInstForConstCaseString i r alts def =
     makeCaseAlt _ _ _ (_, c, _) = appendCode $ "ERROR: constcase must be Str, got: " ++ show c
 
 getInstIR : {auto conNames : SortedMap Name Int} -> Int -> VMInst -> Codegen ()
-getInstIR i (DECLARE (Loc r)) = appendCode $ "  %v" ++ show r ++ "Var = alloca %ObjPtr"
+getInstIR i (DECLARE (Loc r)) = do
+  appendCode $ "  %v" ++ show r ++ "Var = alloca %ObjPtr"
+  appendCode $ "  store %ObjPtr null, %ObjPtr* %v" ++ show r ++ "Var"
 getInstIR i (ASSIGN r src) = do
   value <- assignSSA $ "load %ObjPtr, %ObjPtr* " ++ toIR src ++ "Var"
   appendCode $ "  store %ObjPtr " ++ value ++ ", %ObjPtr* " ++ toIR r ++ "Var"
@@ -1305,6 +1252,7 @@ getInstIR i (CONSTCASE r alts def) = case findConstCaseType alts of
 
 getInstIR {conNames} i (CASE r alts def) =
   do let def' = fromMaybe [(ERROR $ "no default in CASE")] def
+     assertObjectType r OBJECT_TYPE_ID_CON_NO_ARGS
      caseId <- mkVarName "case_"
      let labelEnd = caseId ++ "_end"
      o1 <- load $ reg2val r
@@ -1353,6 +1301,7 @@ getInstIR i (CALL r tailpos n args) =
      pure ()
 
 getInstIR i (PROJECT r o pos) = do
+  assertObjectType o OBJECT_TYPE_ID_CON_NO_ARGS
   obj <- load {t=IRObjPtr} (reg2val o)
   slot <- getObjectSlotT {t=IRObjPtr} obj (pos+1)
   store slot (reg2val r)
@@ -1708,6 +1657,92 @@ funcPtrTypes : String
 funcPtrTypes = fastAppend $ map funcPtr (rangeFromTo 0 FAT_CLOSURE_LIMIT) where
   funcPtr : Int -> String
   funcPtr i = "%FuncPtrArgs" ++ (show (i + 1)) ++ " = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr" ++ repeatStr ", %ObjPtr" (integerToNat $ cast (i+1)) ++ ")*\n"
+
+applyClosureHelperFunc : Codegen ()
+applyClosureHelperFunc = do
+  appendCode $ funcEntry
+
+  let maxArgs = FAT_CLOSURE_LIMIT
+
+  let closureObj = SSA IRObjPtr "%closureObjArg"
+  let argValue = SSA IRObjPtr "%argumentObjArg"
+
+  assertObjectType' closureObj OBJECT_TYPE_ID_CLOSURE
+
+  closureHeader <- getObjectHeader closureObj
+  argCount <- assignSSA $ "and i64 65535, " ++ showWithoutType closureHeader
+  missingArgCountShifted <- assignSSA $ "and i64 4294901760, " ++ showWithoutType closureHeader
+  missingArgCount <- assignSSA $ "lshr i64 " ++ missingArgCountShifted ++ ", 16"
+  isSaturated <- assignSSA $ "icmp eq i64 1, " ++ missingArgCount
+  labelName <- mkVarName "closure_saturated"
+  lblUnsaturated <- genLabel "closure_unsaturated"
+  appendCode $ "br i1 " ++ isSaturated ++ ", label %" ++ labelName ++ "_yes, " ++ toIR lblUnsaturated
+  appendCode $ labelName ++ "_yes:"
+  funcPtr <- getObjectSlotT {t=FuncPtr} closureObj 1
+
+  let hp = "%RuntimePtr %HpArg"
+  let base = "%RuntimePtr %BaseArg"
+  let hpLim = "%RuntimePtr %HpLimArg"
+
+  lblApplyViaClosureEntry <- genLabel "apply_via_closure_entry"
+
+  applyClosure <- mkVarName "apply_closure_"
+  -- if the closure requires a total number of arguments <= FAT_CLOSURE_LIMIT
+  -- (i.e. storedArgs <= (FAT_CLOSURE_LIMIT - 1)), it is invoked directly
+  -- otherwise it is called via its "$$closureEntry" function
+  appendCode $ "  switch i64 " ++ argCount ++ ", " ++ toIR lblApplyViaClosureEntry ++ " [\n  " ++
+  (showSep "\n  " $ (flip map) (rangeFromTo 0 (maxArgs - 1)) (\i => "i64 " ++ show i ++ ", label %" ++ applyClosure ++ "_" ++ show i)) ++
+  "]"
+
+  for_ (rangeFromTo 0 (maxArgs - 1)) (\i => do
+    let labelName = applyClosure ++ "_" ++ show i
+    appendCode $ labelName ++ ":"
+    storedArgs <- for (rangeFromThenTo 0 1 (i-1)) (\i => do
+                      argItem <- getObjectSlotT {t=IRObjPtr} closureObj (2+i)
+                      pure $ (toIR argItem)
+                      )
+    let argList = [hp, base, hpLim] ++ storedArgs ++ [toIR argValue]
+    func <- assignSSA $ "bitcast " ++ (toIR funcPtr) ++ " to %FuncPtrArgs" ++ show (i+1)
+    callRes <- assignSSA $ "tail call fastcc %Return1 " ++ func ++ "(" ++ (showSep ", " argList) ++ ")"
+    appendCode $ "ret %Return1 " ++ callRes
+    )
+
+  beginLabel lblUnsaturated
+
+  appliedArgCount <- mkAddNoWrap (SSA I64 argCount) (ConstI64 1)
+  newArgsSize <- mkMul appliedArgCount (ConstI64 8)
+  -- add 8 bytes for entry func ptr
+  newPayloadSize <- mkAddNoWrap newArgsSize (ConstI64 8)
+  newClosureTotalSize <- mkAddNoWrap newPayloadSize (ConstI64 $ cast HEADER_SIZE)
+  newClosure <- dynamicAllocate newPayloadSize
+
+  let newHeader = ConstI64 $ header OBJECT_TYPE_ID_CLOSURE
+  newMissingArgs <- mkSub (SSA I64 missingArgCount) (ConstI64 1)
+  newMissingArgsShifted <- mkBinOp "shl" newMissingArgs (ConstI64 16)
+
+  newHeader' <- mkOr newHeader newMissingArgsShifted
+  newHeader'' <- mkOr newHeader' appliedArgCount
+
+  -- FIXME: "to copy" size is probably 8 bytes too big
+  --appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR newClosure ++ ", " ++ toIR closureObj ++ ", " ++ toIR newClosureTotalSize ++ ", i1 false)"
+  appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR newClosure ++ ", " ++ toIR closureObj ++ ", " ++ toIR newClosureTotalSize ++ ", i1 false)"
+  putObjectHeader newClosure newHeader''
+
+  newArgSlotNumber <- mkAddNoWrap appliedArgCount (ConstI64 1)
+  putObjectSlotG newClosure newArgSlotNumber argValue
+
+  store newClosure (reg2val RVal)
+
+  appendCode $ funcReturn
+
+  beginLabel lblApplyViaClosureEntry
+  closureEntryPtr <- assignSSA $ "bitcast " ++ (toIR funcPtr) ++ " to %FuncPtrClosureEntry"
+  let argList = [hp, base, hpLim, toIR closureObj, toIR argValue]
+  callRes <- assignSSA $ "tail call fastcc %Return1 " ++ closureEntryPtr ++ "(" ++ (showSep ", " argList) ++ ")"
+  appendCode $ "ret %Return1 " ++ callRes
+
+  appendCode $ "call ccc void @idris_rts_crash(i64 13)"
+  appendCode "unreachable"
 
 export
 closureHelper : String

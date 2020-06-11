@@ -21,6 +21,7 @@ if [ -z "$opt" ]; then
   debug="--debug"
 fi
 if [ "$opt" = "-O1" ]; then
+  debug="--debug"
   optimize="$optimizeO1 -O1"
 fi
 if [ "$opt" = "-O2" ]; then

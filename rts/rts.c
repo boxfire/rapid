@@ -13,7 +13,7 @@ const size_t NURSERY_SIZE = 1 * 1024 * 1024;
 const int HEADER_SIZE = 8;
 const int POINTER_SIZE = sizeof(void*);
 
-const int64_t OBJ_TYPE_CON_NO_ARGS = 0xfefe;
+const int64_t OBJ_TYPE_CON_NO_ARGS = 0xff;
 const int64_t OBJ_TYPE_INT         = 0x01;
 const int64_t OBJ_TYPE_STRING      = 0x02;
 const int64_t OBJ_TYPE_CLOSURE     = 0x03;
@@ -87,6 +87,13 @@ void idris_rts_crash_msg(ObjPtr msg) {
   fwrite(str, length, 1, stderr);
   fprintf(stderr, "\n");
   exit(4);
+}
+
+void idris_rts_crash_typecheck(ObjPtr obj, int64_t expectedType) {
+  fprintf(stderr, "Object failed typecheck, expected type: %04llx\n", expectedType);
+  fprintf(stderr, "  object address: %p\n", obj);
+  fprintf(stderr, "  object header:  0x%016llx\n", obj->hdr);
+  exit(123);
 }
 
 void rapid_C_crash(const char *msg) {

@@ -15,6 +15,7 @@ target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
 declare ccc void @idris_rts_gc(i8*)
 declare ccc void @idris_rts_crash(i64)
 declare ccc void @idris_rts_crash_msg(%ObjPtr)
+declare ccc void @idris_rts_crash_typecheck(%ObjPtr, i64)
 declare ccc i64 @idris_rts_int_to_str(i8*, i64)
 declare ccc i64 @idris_rts_double_to_str(i8*, i64, double)
 declare ccc double @idris_rts_str_to_double(%ObjPtr)
