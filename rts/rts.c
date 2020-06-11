@@ -46,7 +46,8 @@ typedef struct {
 typedef RapidObject_t *ObjPtr;
 
 static inline uint32_t OBJ_TYPE(ObjPtr p) {
-  return ((p->hdr >> 32) & 0xffffffff);
+  //return ((p->hdr >> 32) & 0xffffffff);
+  return ((p->hdr >> 32) & 0xff);
 }
 
 static inline uint32_t OBJ_SIZE(ObjPtr p) {
@@ -63,6 +64,10 @@ static inline ObjPtr OBJ_PROJECT(ObjPtr p, int32_t pos) {
 
 static inline void OBJ_PUT_SLOT(ObjPtr p, int32_t pos, ObjPtr d) {
   ((ObjPtr*)&p->data)[pos] = d;
+}
+
+static inline ObjPtr OBJ_GET_SLOT(ObjPtr p, int32_t pos) {
+  return ((ObjPtr*)&p->data)[pos];
 }
 
 static inline void *OBJ_PAYLOAD(ObjPtr p) {
@@ -87,13 +92,6 @@ void idris_rts_crash_msg(ObjPtr msg) {
   fwrite(str, length, 1, stderr);
   fprintf(stderr, "\n");
   exit(4);
-}
-
-void idris_rts_crash_typecheck(ObjPtr obj, int64_t expectedType) {
-  fprintf(stderr, "Object failed typecheck, expected type: %04llx\n", expectedType);
-  fprintf(stderr, "  object address: %p\n", obj);
-  fprintf(stderr, "  object header:  0x%016llx\n", obj->hdr);
-  exit(123);
 }
 
 void rapid_C_crash(const char *msg) {
@@ -317,7 +315,7 @@ static inline ObjPtr MK_LIST_NIL(Idris_TSO *base) {
 
 static inline ObjPtr MK_LIST_CONS(Idris_TSO *base, ObjPtr head, ObjPtr tail) {
   ObjPtr p = rapid_C_allocate(base, HEADER_SIZE + 2 * POINTER_SIZE);
-  p->hdr = MAKE_HEADER(OBJ_TYPE_CON_NO_ARGS, TAG_LIST_CONS);
+  p->hdr = MAKE_HEADER(OBJ_TYPE_CON_NO_ARGS | (2 << 8), TAG_LIST_CONS);
   OBJ_PUT_SLOT(p, 0, head);
   OBJ_PUT_SLOT(p, 1, tail);
   return p;
@@ -401,6 +399,53 @@ ObjPtr rapid_system_getargs(Idris_TSO *base, Word _dummy) {
   }
 
   return result;
+}
+
+void *log_GC_malloc(int64_t size) {
+  void *mem = GC_malloc(size);
+  fprintf(stderr, "GC_malloc: %p (%lld)\n", mem, size);
+  return mem;
+}
+
+#define INDENT(i) for(int indent_i=0;indent_i<i;++indent_i){fprintf(stderr, "  ");};
+int dump_obj_i(ObjPtr o, int indent) {
+  INDENT(indent); fprintf(stderr, "DUMP OBJ AT %p\n", (void *)o);
+  if (o == NULL) {
+    return 0;
+  }
+  INDENT(indent); fprintf(stderr, "header: 0x%016llx\n", o->hdr);
+  if (OBJ_TYPE(o) == OBJ_TYPE_CON_NO_ARGS) {
+    int64_t num_args = o->hdr >> 40;
+    for (int i = 0; i < num_args; ++i) {
+      INDENT(indent); fprintf(stderr, "CON ARG %d:\n", i);
+      dump_obj_i(OBJ_GET_SLOT(o, i), indent+1);
+    }
+  }
+  if (OBJ_TYPE(o) == OBJ_TYPE_CLOSURE) {
+    int64_t num_args = o->hdr & 0xffff;
+    INDENT(indent); fprintf(stderr, "CLOSURE func: %p\n", (void *)OBJ_GET_SLOT(o, 0));
+    for (int i = 0; i < num_args; ++i) {
+      INDENT(indent); fprintf(stderr, "CLOSURE ARG %d:\n", i);
+      dump_obj_i(OBJ_GET_SLOT(o, i+1), indent+1);
+    }
+  }
+  if (OBJ_TYPE(o) == OBJ_TYPE_INT) {
+    INDENT(indent); fprintf(stderr, "INT value: %lld\n", (int64_t)OBJ_GET_SLOT(o, 0));
+  }
+  return 0;
+}
+
+int dump_obj(ObjPtr o) {
+  dump_obj_i(o, 0);
+  return 0;
+}
+
+void idris_rts_crash_typecheck(ObjPtr obj, int64_t expectedType) {
+  fprintf(stderr, "Object failed typecheck, expected type: %04llx\n", expectedType);
+  fprintf(stderr, "  object address: %p\n", (void *)obj);
+  fprintf(stderr, "  object header:  0x%016llx\n", obj->hdr);
+  dump_obj(obj);
+  exit(123);
 }
 
 int main(int argc, char **argv) {

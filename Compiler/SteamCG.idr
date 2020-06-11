@@ -498,7 +498,8 @@ mkCon tag args = do
   newObj <- dynamicAllocate (ConstI64 $ cast (8 * (length args)))
   -- TODO: add object type to header for GC
   hdr <- mkOr (Const I64 $ header OBJECT_TYPE_ID_CON_NO_ARGS) (ConstI64 $ cast tag)
-  putObjectHeader newObj hdr
+  hdrWithArgCount <- mkOr hdr (Const I64 ((cast $ length args) `prim__shl_Integer` 40))
+  putObjectHeader newObj hdrWithArgCount
   let enumArgs = enumerate args
   for enumArgs (\x => let (i, arg) = x in do
                             arg <- load (reg2val arg)
@@ -608,7 +609,8 @@ assertObjectType' o t = do
   typeEnd <- genLabel "typecheck_end"
 
   hdr <- getObjectHeader o
-  hdrTyp <- mkShiftR hdr (Const I64 32)
+  hdrTypFull <- mkShiftR hdr (Const I64 32)
+  hdrTyp <- mkAnd (Const I64 0xff) hdrTypFull
   hdrTypOk <- icmp "eq" tVal hdrTyp
   branch hdrTypOk typeOk typeError
   beginLabel typeError
@@ -720,6 +722,7 @@ getInstIR i (OP r BelieveMe [_, _, v]) = do
   store !(load (reg2val v)) (reg2val r)
 
 getInstIR i (OP r StrHead [r1]) = do
+  assertObjectType r1 OBJECT_TYPE_ID_STR
   o1 <- load (reg2val r1)
   objHeader <- getObjectHeader o1
   let zeroStrHeader = (ConstI64 $ header OBJECT_TYPE_ID_STR)
@@ -749,6 +752,7 @@ getInstIR i (OP r StrHead [r1]) = do
   beginLabel strHeadFinished
 
 getInstIR i (OP r StrTail [r1]) = do
+  assertObjectType r1 OBJECT_TYPE_ID_STR
   o1 <- load (reg2val r1)
   objHeader <- getObjectHeader o1
   strLength <- mkAnd objHeader (Const I64 0xffffffff)
@@ -772,6 +776,9 @@ getInstIR i (OP r StrTail [r1]) = do
   beginLabel strTailFinished
 
 getInstIR i (OP r StrSubstr [r1, r2, r3]) = do
+  assertObjectType r1 OBJECT_TYPE_ID_INT
+  assertObjectType r2 OBJECT_TYPE_ID_INT
+  assertObjectType r3 OBJECT_TYPE_ID_STR
   o1 <- load (reg2val r3)
   offset <- unboxInt (reg2val r1)
   length <- unboxInt (reg2val r2)
@@ -779,6 +786,8 @@ getInstIR i (OP r StrSubstr [r1, r2, r3]) = do
   store subStr (reg2val r)
 
 getInstIR i (OP r StrAppend [r1, r2]) = do
+  assertObjectType r1 OBJECT_TYPE_ID_STR
+  assertObjectType r2 OBJECT_TYPE_ID_STR
   o1 <- load (reg2val r1)
   o2 <- load (reg2val r2)
   h1 <- getObjectHeader o1
@@ -803,6 +812,7 @@ getInstIR i (OP r StrAppend [r1, r2]) = do
   store newStr (reg2val r)
 
 getInstIR i (OP r StrReverse [r1]) = do
+  assertObjectType r1 OBJECT_TYPE_ID_STR
   strObj <- load (reg2val r1)
   hdr <- getObjectHeader strObj
   length <- mkBinOp "and" (ConstI64 0xffffffff) hdr
@@ -819,6 +829,8 @@ getInstIR i (OP r StrReverse [r1]) = do
   store newStr (reg2val r)
 
 getInstIR i (OP r StrCons [r1, r2]) = do
+  assertObjectType r1 OBJECT_TYPE_ID_CHAR
+  assertObjectType r2 OBJECT_TYPE_ID_STR
   o1 <- load (reg2val r1)
   o2 <- load (reg2val r2)
   h1 <- getObjectHeader o1
@@ -844,11 +856,14 @@ getInstIR i (OP r StrCons [r1, r2]) = do
   store newStr (reg2val r)
 
 getInstIR i (OP r StrLength [r1]) = do
+  assertObjectType r1 OBJECT_TYPE_ID_STR
   h1 <- getObjectHeader !(load (reg2val r1))
   l1 <- mkBinOp "and" (ConstI64 0xffffffff) h1
   sizeIntObj <- cgMkInt l1
   store sizeIntObj (reg2val r)
 getInstIR i (OP r StrIndex [r1, r2]) = do
+  assertObjectType r1 OBJECT_TYPE_ID_STR
+  assertObjectType r2 OBJECT_TYPE_ID_INT
   o1 <- load (reg2val r1)
   objHeader <- getObjectHeader o1
   payload0 <- getObjectSlotAddr {t=I8} o1 1

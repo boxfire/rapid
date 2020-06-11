@@ -49,8 +49,8 @@ compileMain fname = do
   --defs <- get Ctxt
   addPkgDir "prelude"
   addPkgDir "base"
-  addPkgDir "contrib"
   addPkgDir "idris2"
+  addPkgDir "contrib"
 
   addLibDir "."
 

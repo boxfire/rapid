@@ -49,6 +49,7 @@ define private ccc %Return1 @rapid_gc_enter() noinline {
 declare ccc i1 @llvm.expect.i1(i1, i1)
 
 declare ccc %ObjPtr @GC_malloc(i64)
+declare ccc %ObjPtr @log_GC_malloc(i64)
 
 define private fastcc i1 @mem_eq(i8* %v1, i8* %v2, i64 %size) alwaysinline optsize nounwind {
 entry:
@@ -101,8 +102,8 @@ finished_eq:
 }
 
 define external fastcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
-  %addr = call ccc %ObjPtr @GC_malloc(i64 %size)
-  ;%addr = call ccc %ObjPtr @malloc(i64 %size)
+  ;%addr = call ccc %ObjPtr @log_GC_malloc(i64 %size)
+  %addr = call ccc %ObjPtr @malloc(i64 %size)
 
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpPtrArg, 0
   %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 1
