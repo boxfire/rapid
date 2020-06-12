@@ -13,20 +13,20 @@ target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
 %FuncPtrClosureEntry = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr)*
 
 declare ccc void @idris_rts_gc(i8*)
-declare ccc void @idris_rts_crash(i64)
-declare ccc void @idris_rts_crash_msg(%ObjPtr)
-declare ccc void @idris_rts_crash_typecheck(%ObjPtr, i64)
+declare ccc void @idris_rts_crash(i64) noreturn
+declare ccc void @idris_rts_crash_msg(%ObjPtr) noreturn
+declare ccc void @idris_rts_crash_typecheck(%ObjPtr, i64) noreturn
 
 declare ccc void @idris_mkcon_ok(%ObjPtr)
 declare ccc void @idris_mkcon_arg_ok(%ObjPtr, i64)
 
-declare ccc i64 @idris_rts_int_to_str(i8*, i64)
-declare ccc i64 @idris_rts_double_to_str(i8*, i64, double)
-declare ccc double @idris_rts_str_to_double(%ObjPtr)
-declare ccc i64 @idris_rts_str_to_int(%ObjPtr)
+declare ccc i64 @idris_rts_int_to_str(i8* noalias nocapture nofree nonnull, i64) readonly argmemonly
+declare ccc i64 @idris_rts_double_to_str(i8* noalias nocapture nofree writeonly, i64, double) argmemonly
+declare ccc double @idris_rts_str_to_double(%ObjPtr noalias nocapture nofree nonnull) readonly argmemonly
+declare ccc i64 @idris_rts_str_to_int(%ObjPtr noalias nocapture nofree nonnull) readonly argmemonly
 declare ccc i64 @idris_rts_write_buffer_to_file(%ObjPtr, %ObjPtr, i64)
 
-declare ccc void @rapid_strreverse(i8*, i8*, i64)
+declare ccc void @rapid_strreverse(i8* noalias nocapture nofree nonnull writeonly, i8* noalias nocapture nofree nonnull readonly, i64) argmemonly
 
 declare ccc %ObjPtr @idris_rts_read_buffer_from_file(%RuntimePtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_system_file_open(%RuntimePtr, %ObjPtr, %ObjPtr)
@@ -52,10 +52,10 @@ define private ccc %Return1 @rapid_gc_enter() noinline {
 
 declare ccc i1 @llvm.expect.i1(i1, i1)
 
-declare ccc %ObjPtr @GC_malloc(i64)
-declare ccc %ObjPtr @log_GC_malloc(i64)
+declare ccc noalias %ObjPtr @GC_malloc(i64)
+declare ccc noalias %ObjPtr @log_GC_malloc(i64)
 
-define private fastcc i1 @mem_eq(i8* %v1, i8* %v2, i64 %size) alwaysinline optsize nounwind {
+define private fastcc i1 @mem_eq(i8* noalias nocapture nofree nonnull %v1, i8* noalias nocapture nofree nonnull %v2, i64 %size) argmemonly readonly nounwind {
 entry:
   br label %loop
 loop:
@@ -77,8 +77,8 @@ finished:
   ret i1 %beq
 }
 
-;define private fastcc i32 @rapid.memcmp(i8* %v1, i8* %v2, i64 %size) inline optsize nounwind {
-define external fastcc i32 @rapid.memcmp(i8* %v1, i8* %v2, i64 %size) noinline optsize nounwind {
+define private fastcc i32 @rapid.memcmp(i8* noalias nocapture nofree nonnull %v1, i8* noalias nocapture nofree nonnull %v2, i64 %size) argmemonly readonly nounwind {
+;define external fastcc i32 @rapid.memcmp(i8* %v1, i8* %v2, i64 %size) noinline optsize nounwind {
 entry:
   br label %loop
 loop:
@@ -105,9 +105,9 @@ finished_eq:
   ret i32 0
 }
 
-define external fastcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
+define external fastcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) allocsize(3) alwaysinline optsize nounwind {
   ;%addr = call ccc %ObjPtr @log_GC_malloc(i64 %size)
-  %addr = call ccc %ObjPtr @GC_malloc(i64 %size)
+  %addr = call ccc noalias %ObjPtr @GC_malloc(i64 %size)
 
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpPtrArg, 0
   %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 1
@@ -116,7 +116,7 @@ define external fastcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %Runtime
 }
 
 define external fastcc %Return1 @rapid_allocate_mutable (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
-  %addr = call ccc %ObjPtr @GC_malloc(i64 %size)
+  %addr = call ccc noalias %ObjPtr @GC_malloc(i64 %size)
 
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpPtrArg, 0
   %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 1

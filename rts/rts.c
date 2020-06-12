@@ -122,7 +122,7 @@ void rapid_C_crash(const char *msg) {
   exit(5);
 }
 
-void rapid_strreverse(char *dst, const char *src, int64_t size) {
+void rapid_strreverse(char *restrict dst, const char *restrict src, int64_t size) {
   // FIXME: this reverses bytes, not characters (i.e. works only for ASCII)
   for (int64_t i = 0; i < size; ++i) {
     dst[size - 1 - i] = src[i];

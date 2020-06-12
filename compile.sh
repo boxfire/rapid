@@ -18,6 +18,7 @@ debug=
 optimize=
 optimizeO1="-mem2reg -inline -dce"
 optimizeO2="$optimizeO1 -functionattrs -ipsccp -sccp -simplifycfg -gvn -ipconstprop -constprop -constmerge -adce -die -dse -deadargelim -globaldce"
+optimizeO3="$optimizeO2"
 if [ -z "$opt" ]; then
   debug="--debug"
 fi
@@ -27,6 +28,9 @@ if [ "$opt" = "-O1" ]; then
 fi
 if [ "$opt" = "-O2" ]; then
   optimize="$optimizeO2 -O2"
+fi
+if [ "$opt" = "-O3" ]; then
+  optimize="$optimizeO3 -O3"
 fi
 
 set -x
