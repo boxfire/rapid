@@ -601,8 +601,11 @@ unboxChar objPtr = do
   chVal32 <- mkTrunc {to=I32} chVal64
   pure chVal32
 
+TRACE : Bool
+TRACE = False
+
 assertObjectTypeAny : IRValue IRObjPtr -> Integer -> Codegen ()
-assertObjectTypeAny o msg = do
+assertObjectTypeAny o msg = when TRACE $ do
   let tVal = (Const I64 (0x10000 + msg))
   typeOk <- genLabel "typecheck_ok"
   typeError <- genLabel "typecheck_error"
@@ -619,7 +622,7 @@ assertObjectTypeAny o msg = do
   beginLabel typeOk
 
 assertObjectType' : IRValue IRObjPtr -> Int -> Codegen ()
-assertObjectType' o t = do
+assertObjectType' o t = when TRACE $ do
   let tVal = (Const I64 $ cast t)
   typeOk <- genLabel "typecheck_ok"
   typeError <- genLabel "typecheck_error"
@@ -636,7 +639,7 @@ assertObjectType' o t = do
   beginLabel typeOk
 
 assertObjectType : Reg -> Int -> Codegen ()
-assertObjectType r t = assertObjectType' !(load (reg2val r)) t
+assertObjectType r t = when TRACE $ assertObjectType' !(load (reg2val r)) t
 
 mkCon : Int -> List Reg -> Codegen (IRValue IRObjPtr)
 mkCon tag args = do
