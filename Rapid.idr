@@ -41,6 +41,7 @@ parseCliArgs (_::args) = go args emptyOpts where
   go ("--debug"::rest) opts = go rest $ record { debugEnabled = True } opts
   go (fname::rest) opts = go rest $ record { inputFilename = fname } opts
 
+partial
 main : IO ()
 main = do
   args <- getArgs

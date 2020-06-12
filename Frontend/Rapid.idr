@@ -17,10 +17,11 @@ import Data.Sexp.Parser
 import Data.Sexp.Lexer
 import Frontend.Compile
 
+%default partial
+
 debug : Bool
 debug = True
 
-partial
 verify : (Name, VMDef) -> String -> Bool
 verify d input =
   let lexed = lexSexp input in
@@ -35,16 +36,15 @@ verify d input =
        Left e =>
              idris_crash ("error parsing generated sexp: " ++ show e)
 
-compile : String -> IO()
-compile filename =
-  do compiled <- runCore (compileMain filename)
-     case compiled of
-          (Right cd) => do
-            let foreignDecls = map dumpFgn (namedDefs cd)
-            let compiledFunctions = map (if debug then dumpDefWithCheck else dumpDef) (vmcode cd)
-            writeFile ("build/rapid/" ++ filename ++ ".sexp") (fastAppend (foreignDecls ++ compiledFunctions))
-            pure ()
-          (Left e) => (putStrLn ("error: " ++ show e) >>= \_ => exitFailure)
+handleError : Error -> IO ()
+handleError e = printLn e
+--(\e => (putStrLn ("error: " ++ show e) >>= \_ => exitFailure))
+
+output : String -> CompileData -> IO ()
+output filename cd = do let foreignDecls = map dumpFgn (namedDefs cd)
+                        let compiledFunctions = map (if debug then dumpDefWithCheck else dumpDef) (vmcode cd)
+                        writeFile ("build/rapid/" ++ filename ++ ".sexp") (fastAppend (foreignDecls ++ compiledFunctions))
+                        pure ()
   where
     dumpFgn : (Name, FC, NamedDef) -> String
     dumpFgn (n, _, def@(MkNmForeign cs args ret)) = show (toSexp (n, def)) ++ "\n" --";FOREIGN: " ++ show n ++ " = " ++ show cs ++ " (" ++ show args ++ ") -> " ++ show ret ++ "\n"
@@ -59,6 +59,11 @@ compile filename =
                                sexp ++ "\n\n"
                              else
                                idris_crash "error while verifying generated Sexp"
+
+
+compile : String -> IO ()
+compile filename = do coreRun (compileMain filename) handleError (output filename)
+                      pure ()
 
 main : IO ()
 main = do
