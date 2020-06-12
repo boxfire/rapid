@@ -5,8 +5,6 @@ import Data.Maybe
 import Data.Strings
 import Text.Lexer
 
-import Parser.Support
-
 %default covering
 
 public export
@@ -53,6 +51,26 @@ quotedAtom = stringLit <+> many space
 
 removeQuotes : String -> String
 removeQuotes s = assert_total $ reverse $ strTail $ reverse $ strTail s
+
+escape : String -> Maybe String
+escape s = map (fastPack . reverse) $ escape' (unpack s) [] where
+  escape' : List Char -> List Char -> Maybe (List Char)
+  escape' [] acc = Just acc
+  escape' ('\\'::'\\'::rest) acc = escape' rest ('\\'::acc)
+  escape' ('\\'::'a'::rest) acc = escape' rest ('\a'::acc)
+  escape' ('\\'::'b'::rest) acc = escape' rest ('\b'::acc)
+  escape' ('\\'::'f'::rest) acc = escape' rest ('\f'::acc)
+  escape' ('\\'::'n'::rest) acc = escape' rest ('\n'::acc)
+  escape' ('\\'::'r'::rest) acc = escape' rest ('\r'::acc)
+  escape' ('\\'::'t'::rest) acc = escape' rest ('\t'::acc)
+  escape' ('\\'::'v'::rest) acc = escape' rest ('\v'::acc)
+  escape' ('\\'::'"'::rest) acc = escape' rest ('"'::acc)
+  escape' ('\\'::'D'::'E'::'L'::rest) acc = escape' rest ('\DEL'::acc)
+  escape' ('\\'::'S'::'O'::rest) acc = escape' rest ('\SO'::acc)
+  escape' ('\\'::xs) acc = case span isDigit xs of
+           ([], rest) => escape' rest acc
+           (ds, rest) => escape' rest (cast (cast {to=Int} (fastPack ds)) :: acc)
+  escape' (c::rest) acc = escape' rest (c::acc)
 
 tokenMap : TokenMap Token
 tokenMap = [

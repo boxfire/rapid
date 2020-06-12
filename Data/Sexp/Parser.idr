@@ -2,7 +2,6 @@ module Data.Sexp.Parser
 
 import Text.Parser
 
-import Compiler.VMCode
 import Data.Sexp
 import Data.Sexp.Lexer
 

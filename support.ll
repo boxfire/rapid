@@ -16,6 +16,10 @@ declare ccc void @idris_rts_gc(i8*)
 declare ccc void @idris_rts_crash(i64)
 declare ccc void @idris_rts_crash_msg(%ObjPtr)
 declare ccc void @idris_rts_crash_typecheck(%ObjPtr, i64)
+
+declare ccc void @idris_mkcon_ok(%ObjPtr)
+declare ccc void @idris_mkcon_arg_ok(%ObjPtr, i64)
+
 declare ccc i64 @idris_rts_int_to_str(i8*, i64)
 declare ccc i64 @idris_rts_double_to_str(i8*, i64, double)
 declare ccc double @idris_rts_str_to_double(%ObjPtr)
@@ -103,7 +107,7 @@ finished_eq:
 
 define external fastcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
   ;%addr = call ccc %ObjPtr @log_GC_malloc(i64 %size)
-  %addr = call ccc %ObjPtr @malloc(i64 %size)
+  %addr = call ccc %ObjPtr @GC_malloc(i64 %size)
 
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpPtrArg, 0
   %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 1
@@ -204,8 +208,6 @@ define private fastcc %Return1 @_extprim_Data.IORef.prim__writeIORef(%RuntimePtr
   %packed3 = insertvalue %Return1 %packed2, %ObjPtr %nullptr, 2
   ret %Return1 %packed3
 }
-
-declare ccc i8* @malloc(i64)
 
 define private fastcc i64 @idris_enter_stackbridge(i8* %BaseTSO, i8* %heapStart, i8* %heapEnd) {
   call fastcc %Return1 @$7b__mainExpression$3a0$7d(%RuntimePtr %heapStart, %RuntimePtr %BaseTSO, %RuntimePtr %heapEnd)

@@ -45,6 +45,9 @@ typedef struct {
 
 typedef RapidObject_t *ObjPtr;
 
+int dump_obj(ObjPtr o);
+int dump_obj_i(ObjPtr o, int indent);
+
 static inline uint32_t OBJ_TYPE(ObjPtr p) {
   //return ((p->hdr >> 32) & 0xffffffff);
   return ((p->hdr >> 32) & 0xff);
@@ -79,6 +82,15 @@ static inline RapidObjectHeader MAKE_HEADER(int64_t objType, int32_t sizeOrTag) 
 }
 
 extern long idris_enter(void *baseTSO);
+
+void idris_mkcon_ok(ObjPtr o) {
+  fprintf(stderr, "MKCON ok: %p\n", (void *)o);
+}
+
+void idris_mkcon_arg_ok(ObjPtr o, int64_t idx) {
+  fprintf(stderr, "MKCON arg ok: %lld -> %p\n", idx, (void *)OBJ_GET_SLOT(o, idx));
+  dump_obj_i(OBJ_GET_SLOT(o, idx), 0);
+}
 
 void idris_rts_crash(long arg0) {
   printf("CRASH called: %ld\n", arg0);
@@ -243,6 +255,7 @@ ObjPtr rapid_system_file_open(Idris_TSO *base, ObjPtr fnameObj, ObjPtr modeObj) 
   }
 
   ptrObj->data = f;
+
   return ptrObj;
 }
 
@@ -273,7 +286,7 @@ Word rapid_system_file_write_string(ObjPtr filePtrObj, ObjPtr strObj) {
 // return type: Ptr String
 ObjPtr rapid_system_file_read_line(Idris_TSO *base, ObjPtr filePtrObj) {
   if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
-    rapid_C_crash("invalid object apssed to file_close");
+    rapid_C_crash("invalid object passed to file_close");
   }
 
   FILE *f = *(FILE **)OBJ_PAYLOAD(filePtrObj);
@@ -297,7 +310,7 @@ ObjPtr rapid_system_file_read_line(Idris_TSO *base, ObjPtr filePtrObj) {
 
 Word rapid_system_file_eof(ObjPtr filePtrObj) {
   if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
-    rapid_C_crash("invalid object apssed to file_eof");
+    rapid_C_crash("invalid object passed to file_eof");
   }
 
   FILE *f = *(FILE **)OBJ_PAYLOAD(filePtrObj);
@@ -322,10 +335,13 @@ static inline ObjPtr MK_LIST_CONS(Idris_TSO *base, ObjPtr head, ObjPtr tail) {
 }
 
 ObjPtr rapid_fast_pack(Idris_TSO *base, ObjPtr charListObj) {
+  assert(OBJ_TYPE(charListObj) == OBJ_TYPE_CON_NO_ARGS);
+
   // FIXME: only works for ASCII
   int32_t strLength = 0;
   ObjPtr cursor = charListObj;
   while (OBJ_TAG(cursor) == TAG_LIST_CONS) {
+    assert(OBJ_TYPE(cursor) == OBJ_TYPE_CON_NO_ARGS);
     strLength += 1;
     cursor = OBJ_PROJECT(cursor, 1);
   }
@@ -337,6 +353,7 @@ ObjPtr rapid_fast_pack(Idris_TSO *base, ObjPtr charListObj) {
   char *dst = OBJ_PAYLOAD(newStr);
   cursor = charListObj;
   while (OBJ_TAG(cursor) == TAG_LIST_CONS) {
+    assert(OBJ_TYPE(cursor) == OBJ_TYPE_CON_NO_ARGS);
     assert(strPos < strLength);
     ObjPtr charObj = OBJ_PROJECT(cursor, 0);
     assert(OBJ_TYPE(charObj) == OBJ_TYPE_CHAR);
@@ -409,6 +426,11 @@ void *log_GC_malloc(int64_t size) {
 
 #define INDENT(i) for(int indent_i=0;indent_i<i;++indent_i){fprintf(stderr, "  ");};
 int dump_obj_i(ObjPtr o, int indent) {
+  if (indent > 4) {
+    fprintf(stderr, "MAX DEPTH REACHED\n");
+    return 0;
+  }
+
   INDENT(indent); fprintf(stderr, "DUMP OBJ AT %p\n", (void *)o);
   if (o == NULL) {
     return 0;
@@ -432,6 +454,13 @@ int dump_obj_i(ObjPtr o, int indent) {
   if (OBJ_TYPE(o) == OBJ_TYPE_INT) {
     INDENT(indent); fprintf(stderr, "INT value: %lld\n", (int64_t)OBJ_GET_SLOT(o, 0));
   }
+  if (OBJ_TYPE(o) == OBJ_TYPE_STRING) {
+    char *strCopy = malloc(1 + OBJ_SIZE(o));
+    memcpy(strCopy, OBJ_PAYLOAD(o), OBJ_SIZE(o));
+    strCopy[OBJ_SIZE(o)] = '\0';
+    INDENT(indent); fprintf(stderr, "STRING(%d): \"%s\"\n", OBJ_SIZE(o), strCopy);
+    free(strCopy);
+  }
   return 0;
 }
 
@@ -449,7 +478,7 @@ void idris_rts_crash_typecheck(ObjPtr obj, int64_t expectedType) {
 }
 
 int main(int argc, char **argv) {
-  GC_init();
+  GC_INIT();
 
   rapid_global_argc = argc;
   rapid_global_argv = argv;
@@ -460,5 +489,7 @@ int main(int argc, char **argv) {
   tso->nurseryEnd = (void *)((long int)tso->nurseryStart + NURSERY_SIZE);
   tso->rapid_errno = 1;
 
-  return idris_enter(tso);
+  idris_enter(tso);
+
+  return 0;
 }

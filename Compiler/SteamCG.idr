@@ -44,6 +44,12 @@ OBJECT_TYPE_ID_IOREF = 5
 OBJECT_TYPE_ID_BUFFER : Int
 OBJECT_TYPE_ID_BUFFER = 6
 
+OBJECT_TYPE_ID_OPAQUE : Int
+OBJECT_TYPE_ID_OPAQUE = 0x07
+
+OBJECT_TYPE_ID_POINTER : Int
+OBJECT_TYPE_ID_POINTER = 0x08
+
 CLOSURE_MAX_ARGS : Int
 CLOSURE_MAX_ARGS = 1024
 
@@ -168,6 +174,10 @@ ToIR (IRValue t) where
   showWithoutType (ConstI64 i) = show i
   showWithoutType (ConstF64 f) = "0x" ++ (assert_total $ doubleToHex f)
   showWithoutType (IRDiscard) = "ERROR: trying to use DISCARD without type"
+
+isReturn : Reg -> Bool
+isReturn RVal = True
+isReturn _ = False
 
 reg2val : Reg -> IRValue (Pointer IRObjPtr)
 reg2val (Loc i) = SSA (Pointer IRObjPtr) ("%v" ++ show i ++ "Var")
@@ -493,20 +503,6 @@ enumerate l = enumerate' 0 l where
   enumerate' _ [] = []
   enumerate' i (x::xs) = (i, x)::(enumerate' (i+1) xs)
 
-mkCon : Int -> List Reg -> Codegen (IRValue IRObjPtr)
-mkCon tag args = do
-  newObj <- dynamicAllocate (ConstI64 $ cast (8 * (length args)))
-  -- TODO: add object type to header for GC
-  hdr <- mkOr (Const I64 $ header OBJECT_TYPE_ID_CON_NO_ARGS) (ConstI64 $ cast tag)
-  hdrWithArgCount <- mkOr hdr (Const I64 ((cast $ length args) `prim__shl_Integer` 40))
-  putObjectHeader newObj hdrWithArgCount
-  let enumArgs = enumerate args
-  for enumArgs (\x => let (i, arg) = x in do
-                            arg <- load (reg2val arg)
-                            putObjectSlotG newObj (ConstI64 $ cast (1+i)) arg
-                          )
-  pure newObj
-
 unboxInt : IRValue (Pointer IRObjPtr) -> Codegen (IRValue I64)
 unboxInt src = getObjectSlotT {t=I64} !(load src) 1
 
@@ -559,7 +555,11 @@ prepareArgCallConv l = prepareArgCallConv' l
 prepareArg : Reg -> Codegen String
 -- can be changed to undef
 --prepareArg Discard = pure $ "%ObjPtr undef"
-prepareArg Discard = pure $ "%ObjPtr null"
+prepareArg Discard = do
+  discard <- assignSSA $ "inttoptr " ++ (toIR $ Const I64 0x987654321) ++ " to %ObjPtr"
+  pure ("%ObjPtr " ++ discard)
+  --pure $ "%ObjPtr null"
+  --pure $ "%ObjPtr null"
 prepareArg (Loc i) = do
   tmp <- assignSSA $ "load %ObjPtr, %ObjPtr* %v" ++ (show i) ++ "Var"
   pure $ "%ObjPtr " ++ tmp
@@ -601,6 +601,23 @@ unboxChar objPtr = do
   chVal32 <- mkTrunc {to=I32} chVal64
   pure chVal32
 
+assertObjectTypeAny : IRValue IRObjPtr -> Integer -> Codegen ()
+assertObjectTypeAny o msg = do
+  let tVal = (Const I64 (0x10000 + msg))
+  typeOk <- genLabel "typecheck_ok"
+  typeError <- genLabel "typecheck_error"
+  typeEnd <- genLabel "typecheck_end"
+
+  hdr <- getObjectHeader o
+  hdrTypFull <- mkShiftR hdr (Const I64 32)
+  hdrTyp <- mkAnd (Const I64 0xff) hdrTypFull
+  hdrTypOk <- icmp "ne" (Const I64 0) hdrTyp
+  branch hdrTypOk typeOk typeError
+  beginLabel typeError
+  appendCode $ "call ccc void @idris_rts_crash_typecheck(" ++ showSep ", " [toIR o, toIR tVal] ++ ") noreturn"
+  appendCode $ "unreachable"
+  beginLabel typeOk
+
 assertObjectType' : IRValue IRObjPtr -> Int -> Codegen ()
 assertObjectType' o t = do
   let tVal = (Const I64 $ cast t)
@@ -620,6 +637,23 @@ assertObjectType' o t = do
 
 assertObjectType : Reg -> Int -> Codegen ()
 assertObjectType r t = assertObjectType' !(load (reg2val r)) t
+
+mkCon : Int -> List Reg -> Codegen (IRValue IRObjPtr)
+mkCon tag args = do
+  newObj <- dynamicAllocate (ConstI64 $ cast (8 * (length args)))
+  -- TODO: add object type to header for GC
+  hdr <- mkOr (Const I64 $ header OBJECT_TYPE_ID_CON_NO_ARGS) (ConstI64 $ cast tag)
+  hdrWithArgCount <- mkOr hdr (Const I64 ((cast $ length args) `prim__shl_Integer` 40))
+  putObjectHeader newObj hdrWithArgCount
+  let enumArgs = enumerate args
+  for enumArgs (\x => let (i, arg) = x in do
+                            arg <- load (reg2val arg)
+                            assertObjectTypeAny arg (cast i+1)
+                            putObjectSlotG newObj (ConstI64 $ cast (1+i)) arg
+                            --when TRACE $ appendCode $ "call ccc void @idris_mkcon_arg_ok(" ++ showSep ", " [toIR newObj, toIR (Const I64 $ cast i)] ++ ")"
+                          )
+  --when TRACE $ appendCode $ "call ccc void @idris_mkcon_ok(" ++ showSep ", " [toIR newObj] ++ ")"
+  pure newObj
 
 mutual
 getInstForConstCaseChar : {auto conNames : SortedMap Name Int} -> Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
@@ -705,7 +739,8 @@ getInstForConstCaseString i r alts def =
 getInstIR : {auto conNames : SortedMap Name Int} -> Int -> VMInst -> Codegen ()
 getInstIR i (DECLARE (Loc r)) = do
   appendCode $ "  %v" ++ show r ++ "Var = alloca %ObjPtr"
-  appendCode $ "  store %ObjPtr null, %ObjPtr* %v" ++ show r ++ "Var"
+  weird <- assignSSA $ "inttoptr " ++ (toIR (Const I64 0xf7f7f7f7f4f3f2f1)) ++ " to %ObjPtr"
+  appendCode $ "  store %ObjPtr " ++ weird ++ ", %ObjPtr* %v" ++ show r ++ "Var"
 getInstIR i (ASSIGN r src) = do
   value <- assignSSA $ "load %ObjPtr, %ObjPtr* " ++ toIR src ++ "Var"
   appendCode $ "  store %ObjPtr " ++ value ++ ", %ObjPtr* " ++ toIR r ++ "Var"
@@ -1229,7 +1264,13 @@ getInstIR i (APPLY r fun arg) = do
   funV <- ((++) "%FuncPtr ") <$> (assignSSA $ "load %FuncPtr, %FuncPtr* " ++ toIR fun ++ "Var")
   argV <- load (reg2val arg)
 
-  result <- assignSSA $ "call fastcc %Return1 @idris_apply_closure(" ++ showSep ", " [hp, base, hpLim, funV, toIR argV] ++ ")"
+  let tailpos = isReturn r
+  let tailStr = if tailpos then "tail " else ""
+
+  result <- assignSSA $ tailStr ++ "call fastcc %Return1 @idris_apply_closure(" ++ showSep ", " [hp, base, hpLim, funV, toIR argV] ++ ")"
+
+  when tailpos $ appendCode $ "ret %Return1 " ++ result
+  when tailpos $appendCode $ "unreachable"
 
   newHp <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 0"
   appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpVar"
@@ -1306,6 +1347,7 @@ getInstIR i (CALL r tailpos n args) =
      result <- assignSSA $ tailStr ++ "call fastcc %Return1 @" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
 
      when tailpos $ appendCode $ "ret %Return1 " ++ result
+     when tailpos $ appendCode $ "unreachable"
 
      newHp <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 0"
      appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpVar"
@@ -1319,6 +1361,7 @@ getInstIR i (PROJECT r o pos) = do
   assertObjectType o OBJECT_TYPE_ID_CON_NO_ARGS
   obj <- load {t=IRObjPtr} (reg2val o)
   slot <- getObjectSlotT {t=IRObjPtr} obj (pos+1)
+  assertObjectTypeAny slot 0xf0
   store slot (reg2val r)
 
 getInstIR i (EXTPRIM r n args) =
@@ -1551,7 +1594,9 @@ mk_prim__nullAnyPtr [p] = do
 
 mk_prim__getString : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__getString [p] = do
+  assertObjectType' p OBJECT_TYPE_ID_POINTER
   payload <- getObjectSlotT {t=IRObjPtr} p 1
+  assertObjectType' payload OBJECT_TYPE_ID_STR
   store payload (reg2val RVal)
 
 mk_prim__isBuffer : Vect 1 (IRValue IRObjPtr) -> Codegen ()
@@ -1565,7 +1610,10 @@ mk_prim__isBuffer [obj] = do
 mk_prim__currentDir : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__currentDir [_] = do
   dummy <- mkStr 1 "/tmp"
-  store dummy (reg2val RVal)
+  newPtr <- dynamicAllocate (Const I64 8)
+  putObjectHeader newPtr (Const I64 $ header $ OBJECT_TYPE_ID_POINTER)
+  putObjectSlot newPtr 1 dummy
+  store newPtr (reg2val RVal)
 
 mk_prim__fileOpen : Vect 4 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__fileOpen [fileName, mode, _, _] = do
@@ -1599,6 +1647,7 @@ mk_prim__fileWriteLine [filePtr, strObj, _] = do
 mk_prim__fileReadLine : Vect 2 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__fileReadLine [filePtr, _] = do
   result <- foreignCall {t=IRObjPtr} "@rapid_system_file_read_line" [toIR filePtr]
+  assertObjectType' result OBJECT_TYPE_ID_POINTER
   store result (reg2val RVal)
 
 mk_prim__getArgs : Vect 1 (IRValue IRObjPtr) -> Codegen ()
@@ -1619,7 +1668,7 @@ mk_prelude_fastAppend [stringListObj] = do
 
 mkSupport : {n : Nat} -> Name -> (Vect n (IRValue IRObjPtr) -> Codegen ()) -> String
 mkSupport {n} name f = runCodegen (do
-          appendCode ("define private fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ toList $ map toIR args) ++ ") {")
+          appendCode ("define external fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ toList $ map toIR args) ++ ") {")
           appendCode funcEntry
           f args
           appendCode funcReturn
@@ -1709,17 +1758,18 @@ applyClosureHelperFunc = do
   (showSep "\n  " $ (flip map) (rangeFromTo 0 (maxArgs - 1)) (\i => "i64 " ++ show i ++ ", label %" ++ applyClosure ++ "_" ++ show i)) ++
   "]"
 
-  for_ (rangeFromTo 0 (maxArgs - 1)) (\i => do
-    let labelName = applyClosure ++ "_" ++ show i
+  for_ (rangeFromTo 0 (maxArgs - 1)) (\numberOfStoredArgs => do
+    let labelName = applyClosure ++ "_" ++ show numberOfStoredArgs
     appendCode $ labelName ++ ":"
-    storedArgs <- for (rangeFromThenTo 0 1 (i-1)) (\i => do
-                      argItem <- getObjectSlotT {t=IRObjPtr} closureObj (2+i)
+    storedArgs <- for (rangeFromThenTo 0 1 (numberOfStoredArgs-1)) (\argIndex => do
+                      argItem <- getObjectSlotT {t=IRObjPtr} closureObj (2+argIndex)
                       pure $ (toIR argItem)
                       )
     let argList = [hp, base, hpLim] ++ storedArgs ++ [toIR argValue]
-    func <- assignSSA $ "bitcast " ++ (toIR funcPtr) ++ " to %FuncPtrArgs" ++ show (i+1)
+    func <- assignSSA $ "bitcast " ++ (toIR funcPtr) ++ " to %FuncPtrArgs" ++ show (numberOfStoredArgs+1)
     callRes <- assignSSA $ "tail call fastcc %Return1 " ++ func ++ "(" ++ (showSep ", " argList) ++ ")"
     appendCode $ "ret %Return1 " ++ callRes
+    appendCode $ "unreachable"
     )
 
   beginLabel lblUnsaturated
@@ -1753,8 +1803,9 @@ applyClosureHelperFunc = do
   beginLabel lblApplyViaClosureEntry
   closureEntryPtr <- assignSSA $ "bitcast " ++ (toIR funcPtr) ++ " to %FuncPtrClosureEntry"
   let argList = [hp, base, hpLim, toIR closureObj, toIR argValue]
-  callRes <- assignSSA $ "tail call fastcc %Return1 " ++ closureEntryPtr ++ "(" ++ (showSep ", " argList) ++ ")"
+  callRes <- assignSSA $ "musttail call fastcc %Return1 " ++ closureEntryPtr ++ "(" ++ (showSep ", " argList) ++ ")"
   appendCode $ "ret %Return1 " ++ callRes
+  appendCode $ "unreachable"
 
   appendCode $ "call ccc void @idris_rts_crash(i64 13)"
   appendCode "unreachable"
