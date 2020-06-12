@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 set -e
 set -u
@@ -9,7 +9,7 @@ fdir="$(dirname "$1")"
 fbase="$(basename "$1")"
 
 workdir="$fdir/build/rapid"
-workfile="$workdir/$fbase"
+workfile="$workdir/${fbase/%.idr/}"
 mkdir -p "$workdir"
 
 opt="${2:-}"

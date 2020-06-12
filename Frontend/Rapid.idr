@@ -1,5 +1,6 @@
 module Main
 
+import Data.List
 import Data.Strings
 import System
 import System.File
@@ -61,8 +62,14 @@ output filename cd = do let foreignDecls = map dumpFgn (namedDefs cd)
                                idris_crash "error while verifying generated Sexp"
 
 
+removeExtension : String -> String
+removeExtension s = pack $ reverse $ removeExtension' $ reverse $ unpack s where
+  removeExtension' : List Char -> List Char
+  removeExtension' ('r'::'d'::'i'::'.'::base) = base
+  removeExtension' s = s
+
 compile : String -> IO ()
-compile filename = do coreRun (compileMain filename) handleError (output filename)
+compile filename = do coreRun (compileMain filename) handleError (output $ removeExtension filename)
                       pure ()
 
 main : IO ()

@@ -17,9 +17,17 @@ external/bdwgc/.libs/libgc.a: Makefile
 	make -j`nproc` -C external/bdwgc
 	test -f $@ && touch $@
 
-clean:
+clean: clean-tests
 	rm -rf build rts/rts.bc samples/build
-	find tests -type d -name build -ls
 	make -C external/bdwgc distclean
 
-.PHONY: all bdw-gc clean rapid rts
+clean-tests:
+	rm -rf tests/chez/*/build
+	rm -rf tests/chez/*/compile.log
+
+check: test
+
+test:
+	./runtests.sh --good
+
+.PHONY: all bdw-gc check clean clean-tests rapid rts test

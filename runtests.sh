@@ -30,7 +30,7 @@ for test in ${tests[*]}; do
   testdir=tests/chez/$test
   idr=$(echo ${testdir}/*.idr)
   if ./compile.sh "$idr" >& "${testdir}/compile.log"; then
-    "$testdir/build/rapid/$(basename "$idr").native" > "${testdir}/output"
+    "$testdir/build/rapid/$(basename "$idr" .idr).native" > "${testdir}/output"
     if git diff --quiet --no-index -- "${testdir}/expected" "${testdir}/output"; then
       echo "OK: $test"
     else
