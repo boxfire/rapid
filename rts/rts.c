@@ -8,7 +8,7 @@
 #include <sys/errno.h>
 #include <sys/mman.h>
 
-#include <gc/gc.h>
+#include <gc.h>
 
 const size_t IDRIS_ALIGNMENT = 8;
 const size_t NURSERY_SIZE = 1 * 1024 * 1024;
