@@ -1,14 +1,19 @@
 #include <assert.h>
+#include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
 #include <sys/errno.h>
+#include <sys/mman.h>
 
 #include <gc/gc.h>
 
 const size_t IDRIS_ALIGNMENT = 8;
 const size_t NURSERY_SIZE = 1 * 1024 * 1024;
+
+static const size_t RAPID_STACK_SIZE = 128 * 1024 * 1024;
 
 const int HEADER_SIZE = 8;
 const int POINTER_SIZE = sizeof(void*);
@@ -29,6 +34,12 @@ typedef struct {
   void *nurseryEnd;
 
   int rapid_errno;
+
+  jmp_buf sched_jmp_buf;
+
+  void *stack_bottom;
+  void *stack_top;
+  size_t stack_size;
 } Idris_TSO;
 
 static int rapid_global_argc = 0;
@@ -477,6 +488,25 @@ void idris_rts_crash_typecheck(ObjPtr obj, int64_t expectedType) {
   exit(123);
 }
 
+void  task_start(Idris_TSO *tso) {
+  int jump_result;
+  if ((jump_result = setjmp(tso->sched_jmp_buf)) == 0) {
+    register void *top = tso->stack_top;
+    __asm__ volatile(
+        "mov %[rs], %%rsp \n"
+        : [ rs ] "+r" (top) ::
+        );
+
+    idris_enter(tso);
+
+    longjmp(tso->sched_jmp_buf, 127);
+  } else {
+    // fprintf(stderr, "task finished: %d\n", jump_result);
+  }
+
+  // we can not return from this function
+}
+
 int main(int argc, char **argv) {
   GC_INIT();
 
@@ -489,7 +519,35 @@ int main(int argc, char **argv) {
   tso->nurseryEnd = (void *)((long int)tso->nurseryStart + NURSERY_SIZE);
   tso->rapid_errno = 1;
 
-  idris_enter(tso);
+  tso->stack_size = RAPID_STACK_SIZE;
+  size_t pagesize = getpagesize();
+  void *stackmem = mmap(0, tso->stack_size + 2 * pagesize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (stackmem == MAP_FAILED) {
+    fprintf(stderr, "stack alloc failed\n");
+    exit(8);
+  }
+
+  // map guard page below the stack
+  void *guard_page_bottom = mmap(stackmem, pagesize, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+  if (guard_page_bottom == MAP_FAILED) {
+    fprintf(stderr, "stack bottom guard page alloc failed\n");
+    exit(9);
+  }
+  void *guard_page_top = mmap((char *)stackmem + pagesize + tso->stack_size, pagesize, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+  if (guard_page_top == MAP_FAILED) {
+    fprintf(stderr, "stack top guard page alloc failed\n");
+    exit(9);
+  }
+
+  tso->stack_bottom = (char *)stackmem + pagesize;
+  tso->stack_top = (char *)(tso->stack_bottom) + tso->stack_size - pagesize;
+  *(int64_t *)tso->stack_top = 0x7f7d7c7b12345678;
+  *((int64_t *)tso->stack_top - 1) = 0x7f7d7c7b12345678;
+  *((int64_t *)tso->stack_top - 2) = 0x7f7d7c7b12345678;
+  //fprintf(stderr, "stack allocated at: %p (+%ld)\n", tso->stack_bottom, tso->stack_size);
+
+  /*GC_disable();*/
+  task_start(tso);
 
   return 0;
 }
