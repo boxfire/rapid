@@ -35,13 +35,16 @@ escapeChar '\n' = ['\\', 'n']
 escapeChar '\t' = ['\\', 't']
 escapeChar c = ('\\'::'{'::(unpack $ cast $ cast {to=Int} c)) ++ ['}']
 
+safeCharInQuotes : Char -> Bool
+safeCharInQuotes c = (c >= ' ' && c <= '~') && (c /= '\\') && (c /= '"')
+
 safeShow : String -> String
 safeShow s = fastPack ('"' :: reverse ('"' :: safeShow' (unpack s) []))
   where
     safeShow' : List Char -> List Char -> List Char
     safeShow' [] acc = acc
     safeShow' (c::rest) acc =
-      if safeChar c
+      if safeCharInQuotes c
          then safeShow' rest (c::acc)
          else safeShow' rest (reverseOnto acc (escapeChar c))
 

@@ -6,8 +6,9 @@ import Data.Strings
 import System
 import System.File
 
-import Core.Name
 import Compiler.VMCode
+import Core.CompileExpr
+import Core.Name
 
 import Data.Sexp
 import Data.Sexp.Lexer
@@ -60,12 +61,18 @@ main = do
          --putStrLn $ show $ parsed
          let vmcodeAll = getVMDefs (filter isVmdef parsed)
          let vmcode = filter (not . isBlacklisted) vmcodeAll
-         let foreigns = (filter isForeignDecl parsed)
          --putStrLn $ show $ vmcode
          (Right support) <- readFile "support.ll"
          | Left _ => pure ()
          let support = ""
          let nameMap = getNameMap $ map snd vmcode
+
+         let foreignSexps = (filter isForeignDecl parsed)
+         (Right foreigns) <- pure $ getForeignDefs foreignSexps
+         | Left e => putStrLn $ "error parsing foreign decls: " ++ e
+         putStrLn $ "number of foreign decls: " ++ show (length foreigns)
+         let foreignCode = map (compileForeign debug) (enumerate foreigns)
+
          let indexedCode = enumerate vmcode
          let funCode = map (getVMIR debug nameMap) indexedCode
          --funCode <- for indexedCode (\c => do when verbose $ putStrLn $ "compile fun: " ++ safeName (fst (snd c))
@@ -77,6 +84,7 @@ main = do
          | Left err => putStrLn $ "error: " ++ show err
          fPutStr outFile support
          fPutStr outFile closureHelper
+         traverse_ (fPutStr outFile) foreignCode
          traverse_ (fPutStr outFile) funCode
          closeFile outFile
          --let ir = fastAppend $ [support, closureHelper] ++ funCode

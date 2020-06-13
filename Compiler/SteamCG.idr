@@ -8,6 +8,7 @@ import Data.SortedMap
 import Data.Strings
 import Data.Vect
 
+import Compiler.CompileExpr
 import Compiler.VMCode
 import Core.TT
 
@@ -1751,6 +1752,15 @@ supportPrelude = fastAppend [
   , mkSupport (NS ["Info", "_extprim_System"] (UN "prim__os")) mk_prim__systemInfoOs
   , mkSupport (NS ["Info", "_extprim_System"] (UN "prim__codegen")) mk_prim__systemInfoCodegen
   ]
+
+getForeignFunctionIR : Bool -> Int -> Name -> List String -> List CFType -> CFType -> Codegen ()
+getForeignFunctionIR debug i name cs args ret = do
+  pure ()
+
+export
+compileForeign : Bool -> (Int, (Name, NamedDef)) -> String
+compileForeign debug (i, (n, MkNmForeign cs args ret)) = runCodegen $ getForeignFunctionIR debug i n cs args ret
+compileForeign debug _ = ""
 
 export
 getVMIR : Bool -> SortedMap Name Int -> (Int, (Name, VMDef)) -> String

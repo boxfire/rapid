@@ -6,8 +6,8 @@ import Data.Maybe
 import Data.Strings
 import Data.Vect
 
-import Compiler.CompileExpr
 import Compiler.VMCode
+import Core.CompileExpr
 import Core.TT
 
 import Data.Sexp
@@ -365,6 +365,21 @@ export
 ToSexp CFType where
   toSexp t = SList [SAtom $ show t]
 
+FromSexp CFType where
+  fromSexp (SList [SAtom "Buffer"]) = pure CFBuffer
+  fromSexp (SList [SAtom "Double"]) = pure CFDouble
+  fromSexp (SList [SAtom "Int"]) = pure CFInt
+  fromSexp (SList [SAtom "IORes Buffer"]) = pure $ CFIORes CFBuffer
+  fromSexp (SList [SAtom "IORes Double"]) = pure $ CFIORes CFDouble
+  fromSexp (SList [SAtom "IORes Int"]) = pure $ CFIORes CFInt
+  fromSexp (SList [SAtom "IORes String"]) = pure $ CFIORes CFString
+  fromSexp (SList [SAtom "IORes Unit"]) = pure $ CFIORes CFUnit
+  fromSexp (SList [SAtom "IORes Ptr"]) = pure $ CFIORes CFPtr
+  fromSexp (SList [SAtom "Ptr"]) = pure CFPtr
+  fromSexp (SList [SAtom "String"]) = pure CFString
+  fromSexp (SList [SAtom "%World"]) = pure CFWorld
+  fromSexp s = Left $ "invalid CFType: " ++ show s
+
 export
 ToSexp (Name, NamedDef) where
   toSexp (n, (MkNmForeign cs args ret)) = SList $ [SAtom "foreign", toSexp n, SList $ map SAtom cs, SList $ map toSexp args, toSexp ret]
@@ -383,10 +398,23 @@ FromSexp (Name, VMDef) where
     pure (name, MkVMFun fArgs fInsts)
   fromSexp l = Left ("invalid vmdef: " ++ show l)
 
+FromSexp (Name, NamedDef) where
+  fromSexp (SList [SAtom "foreign", n, SList extS, SList argsS, retS]) = do
+    name <- fromSexp n
+    cs <- traverse (unAtom "foreign name") extS
+    args <- traverse fromSexp argsS
+    ret <- fromSexp retS
+    pure (name, MkNmForeign cs args ret)
+  fromSexp l = Left ("invalid foreign decl: " ++ show l)
+
 export
 partial
 getVMDefs : List Sexp -> List (Name, VMDef)
 getVMDefs s = either (\error=>idris_crash ("failed to read VMCode from Sexp: " ++ error ++ "\n")) id $ traverse fromSexp s
+
+export
+getForeignDefs : List Sexp -> Either String (List (Name, NamedDef))
+getForeignDefs l = traverse fromSexp l
 
 export
 isVmdef : Sexp -> Bool
