@@ -159,6 +159,14 @@ data IRValue : IRType -> Type where
   SSA : (t : IRType) ->  String -> IRValue t
   IRDiscard : IRValue (Pointer IRObjPtr)
 
+globalHpVar : IRValue (Pointer (Pointer I8))
+globalHpVar = SSA (Pointer (Pointer I8)) "%HpVar"
+
+globalHpLimVar : IRValue (Pointer (Pointer I8))
+globalHpLimVar = SSA (Pointer (Pointer I8)) "%HpLimVar"
+
+globalRValVar : IRValue (Pointer IRObjPtr)
+globalRValVar = SSA (Pointer IRObjPtr) "%rvalVar"
 
 total
 ToIR (IRValue t) where
@@ -294,12 +302,23 @@ call {t} cconv name args =
 
 -- Call a "runtime-aware" foreign function, i.e. one, that can allocate memory
 foreignCall : {t : IRType} -> String -> List String -> Codegen (IRValue t)
-foreignCall {t} name args =
-  SSA t <$> (assignSSA $ "  call ccc " ++ show t ++ " " ++ name ++ "(%RuntimePtr %BaseArg, " ++ (showSep ", " args) ++ ")")
+foreignCall {t} name args = do
+  hp <- load globalHpVar
+  hpLim <- load globalHpLimVar
+  baseHpPointer <- SSA (Pointer (Pointer I8)) <$> assignSSA ("getelementptr inbounds %Idris_TSO.struct, %TSOPtr %BaseArg, i32 0, i32 1")
+  store hp baseHpPointer
+  result <- SSA t <$> (assignSSA $ "  call ccc " ++ show t ++ " " ++ name ++ "(%TSOPtr %BaseArg, " ++ (showSep ", " args) ++ ")")
+  store !(load baseHpPointer) globalHpVar
+  pure result
 
 foreignVoidCall : String -> List String -> Codegen ()
-foreignVoidCall name args =
-  appendCode $ "  call ccc void " ++ name ++ "(%RuntimePtr %BaseArg, " ++ (showSep ", " args) ++ ")"
+foreignVoidCall name args = do
+  hp <- load globalHpVar
+  hpLim <- load globalHpLimVar
+  baseHpPointer <- SSA (Pointer (Pointer I8)) <$> assignSSA ("getelementptr inbounds %Idris_TSO.struct, %TSOPtr %BaseArg, i32 0, i32 1")
+  store hp baseHpPointer
+  appendCode $ "  call ccc void " ++ name ++ "(%TSOPtr %BaseArg, " ++ (showSep ", " args) ++ ")"
+  store !(load baseHpPointer) globalHpVar
 
 getObjectSlotAddrVar : {t : IRType} -> IRValue IRObjPtr -> IRValue I64 -> Codegen (IRValue (Pointer t))
 getObjectSlotAddrVar obj pos = do
@@ -328,26 +347,24 @@ putObjectHeader obj hdr = do
   headerPtr <- SSA (Pointer I64) <$> assignSSA ("getelementptr inbounds %Object, %Object* " ++ objptr ++ ", i32 0, i32 0")
   store hdr headerPtr
 
-funcEntry : String
-funcEntry = "
-  %HpVar = alloca %RuntimePtr
-  store %RuntimePtr %HpArg, %RuntimePtr* %HpVar
-  %HpLimVar = alloca %RuntimePtr
-  store %RuntimePtr %HpLimArg, %RuntimePtr* %HpLimVar
-  %rvalVar = alloca %ObjPtr
-"
+funcEntry : Codegen ()
+funcEntry = do
+  appendCode "%HpVar = alloca %RuntimePtr\n"
+  appendCode "%HpLimVar = alloca %RuntimePtr\n"
+  appendCode "%rvalVar = alloca %ObjPtr\n"
+  store (SSA (Pointer I8) "%HpArg") globalHpVar
+  store (SSA (Pointer I8) "%HpLimArg") globalHpLimVar
 
-funcReturn : String
-funcReturn = "
-  %FinHp = load %RuntimePtr, %RuntimePtr* %HpVar
-  %FinHpLim = load %RuntimePtr, %RuntimePtr* %HpLimVar
-  %FinRVal = load %ObjPtr, %ObjPtr* %rvalVar
+funcReturn : Codegen ()
+funcReturn = do
+  finHp <- load globalHpVar
+  finHpLim <- load globalHpLimVar
+  finRVal <- load globalRValVar
 
-  %ret1 = insertvalue %Return1 undef, %RuntimePtr %FinHp, 0
-  %ret2 = insertvalue %Return1 %ret1, %RuntimePtr %FinHpLim, 1
-  %ret3 = insertvalue %Return1 %ret2, %ObjPtr %FinRVal, 2
-  ret %Return1 %ret3
-"
+  ret1 <- assignSSA $ "insertvalue %Return1 undef, " ++ toIR finHp ++ ", 0"
+  ret2 <- assignSSA $ "insertvalue %Return1 " ++ ret1 ++ ", " ++ toIR finHpLim ++ ", 1"
+  ret3 <- assignSSA $ "insertvalue %Return1 " ++ ret2 ++ ", " ++ toIR finRVal ++ ", 2"
+  appendCode $ "ret %Return1 " ++ ret3
 
 dynamicAllocate : IRValue I64 -> Codegen (IRValue IRObjPtr)
 dynamicAllocate payloadSize = do
@@ -355,7 +372,7 @@ dynamicAllocate payloadSize = do
 
   hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
   hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
-  let base = "%RuntimePtr %BaseArg"
+  let base = "%TSOPtr %BaseArg"
 
   allocated <- assignSSA $ "call fastcc %Return1 @rapid_allocate(" ++ showSep ", " [hp, base, hpLim] ++ ", "++(toIR totalSize)++") alwaysinline optsize nounwind"
   newHp <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 0"
@@ -570,7 +587,7 @@ instrAsComment : VMInst -> String
 instrAsComment i = ";" ++ (unwords $ lines $ show i)
 
 prepareArgCallConv' : List String -> List String
-prepareArgCallConv' rest = ["%RuntimePtr %HpArg", "%RuntimePtr %BaseArg", "%RuntimePtr %HpLimArg"] ++ rest
+prepareArgCallConv' rest = ["%RuntimePtr %HpArg", "%TSOPtr %BaseArg", "%RuntimePtr %HpLimArg"] ++ rest
 
 prepareArgCallConv : List String -> List String
 --prepareArgCallConv [] = prepareArgCallConv' (["%ObjPtr %unused1", "%ObjPtr %unused2"])
@@ -1285,7 +1302,7 @@ getInstIR i (MKCLOSURE r n missingN args) = do
 getInstIR i (APPLY r fun arg) = do
   hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
   hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
-  let base = "%RuntimePtr %BaseArg"
+  let base = "%TSOPtr %BaseArg"
 
   closureObj <- load (reg2val fun)
   argV <- load (reg2val arg)
@@ -1367,7 +1384,7 @@ getInstIR i (CALL r tailpos n args) =
   do argsV <- traverse prepareArg args
      hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
      hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
-     let base = "%RuntimePtr %BaseArg"
+     let base = "%TSOPtr %BaseArg"
 
      let tailStr = if tailpos then "tail " else ""
      result <- assignSSA $ tailStr ++ "call fastcc %Return1 @" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
@@ -1394,7 +1411,7 @@ getInstIR i (EXTPRIM r n args) =
   do argsV <- traverse prepareArg args
      hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
      hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
-     let base = "%RuntimePtr %BaseArg"
+     let base = "%TSOPtr %BaseArg"
      result <- assignSSA $ "call fastcc %Return1 @_extprim_" ++ (safeName n) ++ "(" ++ showSep ", " (hp::base::hpLim::argsV) ++ ")"
 
      newHp <- assignSSA $ "extractvalue %Return1 " ++ result ++ ", 0"
@@ -1418,10 +1435,10 @@ getFunIR debug conNames i n args body = do
     let visibility = if debug then "external" else "private"
     appendCode ("\n\ndefine " ++ visibility ++ " fastcc %Return1 @" ++ safeName n ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
     appendCode "entry:"
-    appendCode funcEntry
+    funcEntry
     traverse_ appendCode (map copyArg args)
     traverse_ (getInstIRWithComment i) body
-    appendCode funcReturn
+    funcReturn
     appendCode "}\n"
   where
     copyArg : Reg -> String
@@ -1433,12 +1450,12 @@ getFunIRClosureEntry debug conNames i n args body = do
     let visibility = if debug then "external" else "private"
     appendCode ("\n\ndefine " ++ visibility ++ " fastcc %Return1 @" ++ safeName n ++ "$$closureEntry(" ++ (showSep ", " $ prepareArgCallConv ["%ObjPtr %clObj", "%ObjPtr %lastArg"]) ++ ") {")
     appendCode "entry:"
-    appendCode funcEntry
+    funcEntry
     traverse_ copyArg (enumerate $ init args)
     appendCode $ "  %v" ++ (show $ last args) ++ "Var = alloca %ObjPtr"
     store (SSA IRObjPtr "%lastArg") (reg2val $ Loc $ last args)
     traverse_ (getInstIRWithComment i) body
-    appendCode funcReturn
+    funcReturn
     appendCode "}\n"
   where
     copyArg : (Int, Int) -> Codegen ()
@@ -1631,8 +1648,7 @@ mk_prim__currentDir [_] = do
 
 mk_prim__fileErrno : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__fileErrno [_] = do
-  tsoObj <- assignSSA "bitcast %RuntimePtr %BaseArg to %Idris_TSO.struct*"
-  errnoAddr <- SSA (Pointer I32) <$> assignSSA ("getelementptr inbounds %Idris_TSO.struct, %Idris_TSO.struct* " ++ tsoObj ++ ", i32 0, i32 3")
+  errnoAddr <- SSA (Pointer I32) <$> assignSSA ("getelementptr inbounds %Idris_TSO.struct, %Idris_TSO.struct* %BaseArg, i32 0, i32 3")
   errnoValue <- load errnoAddr
   errnoObj <- cgMkInt !(mkZext errnoValue)
   store errnoObj (reg2val RVal)
@@ -1662,9 +1678,9 @@ mk_prim__systemInfoCodegen [] = do
 mkSupport : {n : Nat} -> Name -> (Vect n (IRValue IRObjPtr) -> Codegen ()) -> String
 mkSupport {n} name f = runCodegen (do
           appendCode ("define external fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ toList $ map toIR args) ++ ") {")
-          appendCode funcEntry
+          funcEntry
           f args
-          appendCode funcReturn
+          funcReturn
           appendCode "\n}\n"
           )
   where
@@ -1727,13 +1743,13 @@ genericForeign : String -> Name -> (argTypes : List CFType) -> CFType -> Codegen
 genericForeign foreignName name argTypes ret = do
   let args = map (\(i, _) => SSA IRObjPtr ("%arg" ++ show i)) (enumerate argTypes)
   appendCode ("define private fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ map toIR args) ++ ") {")
-  appendCode funcEntry
+  funcEntry
   if cftypeIsUnit ret then
     foreignVoidCall ("@" ++ foreignName) !(traverse transformArg (zip args argTypes))
     else do
       fgResult <- foreignCall {t=fromCFType ret} ("@" ++ foreignName) !(traverse transformArg (zip args argTypes))
       store !(wrapForeignResult ret fgResult) (reg2val RVal)
-  appendCode funcReturn
+  funcReturn
   appendCode "\n}\n"
 
 foreignRedirectMap : List (String, String)
@@ -1780,11 +1796,11 @@ getVMIR _ _ _ = ""
 funcPtrTypes : String
 funcPtrTypes = fastAppend $ map funcPtr (rangeFromTo 0 FAT_CLOSURE_LIMIT) where
   funcPtr : Int -> String
-  funcPtr i = "%FuncPtrArgs" ++ (show (i + 1)) ++ " = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr" ++ repeatStr ", %ObjPtr" (integerToNat $ cast (i+1)) ++ ")*\n"
+  funcPtr i = "%FuncPtrArgs" ++ (show (i + 1)) ++ " = type %Return1 (%RuntimePtr, %TSOPtr, %RuntimePtr" ++ repeatStr ", %ObjPtr" (integerToNat $ cast (i+1)) ++ ")*\n"
 
 applyClosureHelperFunc : Codegen ()
 applyClosureHelperFunc = do
-  appendCode $ funcEntry
+  funcEntry
 
   let maxArgs = FAT_CLOSURE_LIMIT
 
@@ -1805,7 +1821,7 @@ applyClosureHelperFunc = do
   funcPtr <- getObjectSlot {t=FuncPtr} closureObj 0
 
   let hp = "%RuntimePtr %HpArg"
-  let base = "%RuntimePtr %BaseArg"
+  let base = "%TSOPtr %BaseArg"
   let hpLim = "%RuntimePtr %HpLimArg"
 
   lblApplyViaClosureEntry <- genLabel "apply_via_closure_entry"
@@ -1862,7 +1878,7 @@ applyClosureHelperFunc = do
 
   store newClosure (reg2val RVal)
 
-  appendCode $ funcReturn
+  funcReturn
 
   beginLabel lblApplyViaClosureEntry
   closureEntryPtr <- assignSSA $ "bitcast " ++ (toIR funcPtr) ++ " to %FuncPtrClosureEntry"
@@ -1878,7 +1894,7 @@ export
 closureHelper : String
 closureHelper = fastAppend [
   funcPtrTypes,
-  "\ndefine fastcc %Return1 @idris_apply_closure(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %closureObjArg, %ObjPtr %argumentObjArg) {\n",
+  "\ndefine fastcc %Return1 @idris_apply_closure(%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %closureObjArg, %ObjPtr %argumentObjArg) {\n",
   runCodegen applyClosureHelperFunc,
   "\n}\n\n",
   supportPrelude

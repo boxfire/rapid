@@ -16,14 +16,19 @@ target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
   , i8* ; nurseryNext
   , i8* ; nurseryEnd
   , i32 ; errno
+  , i8* ; stack_bottom
+  , i8* ; stack_top
+  , i8* ; stack_size
 }
+
+%TSOPtr = type %Idris_TSO.struct*
 
 %Word = type i64
 
 %VoidReturn = type {%RuntimePtr, %RuntimePtr, %RuntimePtr}
 %Return1 = type {%RuntimePtr, %RuntimePtr, %ObjPtr}
 
-%FuncPtrClosureEntry = type %Return1 (%RuntimePtr, %RuntimePtr, %RuntimePtr, %ObjPtr, %ObjPtr)*
+%FuncPtrClosureEntry = type %Return1 (%RuntimePtr, %TSOPtr, %RuntimePtr, %ObjPtr, %ObjPtr)*
 
 declare ccc void @idris_rts_gc(i8*)
 declare ccc void @idris_rts_crash(i64) noreturn
@@ -40,18 +45,18 @@ declare ccc i64 @idris_rts_str_to_int(%ObjPtr noalias nocapture nofree nonnull) 
 
 declare ccc void @rapid_strreverse(i8* noalias nocapture nofree nonnull writeonly, i8* noalias nocapture nofree nonnull readonly, i64) argmemonly
 
-declare ccc i64 @idris_rts_write_buffer_data(%RuntimePtr, %ObjPtr, %ObjPtr, i64, i64, %ObjPtr)
-declare ccc i64 @idris_rts_read_buffer_data(%RuntimePtr, %ObjPtr, %ObjPtr, i64, i64, %ObjPtr)
-declare ccc %ObjPtr @rapid_system_file_open(%RuntimePtr, %ObjPtr, %ObjPtr, i64, %ObjPtr)
-declare ccc void @rapid_system_file_close(%RuntimePtr, %ObjPtr, %ObjPtr)
-declare ccc %Word @rapid_system_file_eof(%RuntimePtr, %ObjPtr, %ObjPtr)
-declare ccc i64 @rapid_system_file_size(%RuntimePtr, %ObjPtr, %ObjPtr)
-declare ccc %Word @rapid_system_file_write_string(%RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr)
-declare ccc %ObjPtr @rapid_system_file_read_line(%RuntimePtr, %ObjPtr, %ObjPtr)
-declare ccc %ObjPtr @rapid_system_getargs(%RuntimePtr, %ObjPtr)
-declare ccc %ObjPtr @rapid_fast_pack(%RuntimePtr, %ObjPtr)
-declare ccc %ObjPtr @rapid_fast_append(%RuntimePtr, %ObjPtr)
-declare ccc void @rapid_putstr(%RuntimePtr, %ObjPtr, %ObjPtr)
+declare ccc i64 @idris_rts_write_buffer_data(%TSOPtr, %ObjPtr, %ObjPtr, i64, i64, %ObjPtr)
+declare ccc i64 @idris_rts_read_buffer_data(%TSOPtr, %ObjPtr, %ObjPtr, i64, i64, %ObjPtr)
+declare ccc %ObjPtr @rapid_system_file_open(%TSOPtr, %ObjPtr, %ObjPtr, i64, %ObjPtr)
+declare ccc void @rapid_system_file_close(%TSOPtr, %ObjPtr, %ObjPtr)
+declare ccc %Word @rapid_system_file_eof(%TSOPtr, %ObjPtr, %ObjPtr)
+declare ccc i64 @rapid_system_file_size(%TSOPtr, %ObjPtr, %ObjPtr)
+declare ccc %Word @rapid_system_file_write_string(%TSOPtr, %ObjPtr, %ObjPtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_system_file_read_line(%TSOPtr, %ObjPtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_system_getargs(%TSOPtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_fast_pack(%TSOPtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_fast_append(%TSOPtr, %ObjPtr)
+declare ccc void @rapid_putstr(%TSOPtr, %ObjPtr, %ObjPtr)
 
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind
@@ -59,16 +64,16 @@ declare void @llvm.dbg.addr(metadata, metadata, metadata)
 
 declare i8* @llvm.frameaddress(i32)
 
+declare ccc i1 @llvm.expect.i1(i1, i1)
+
+declare ccc noalias %ObjPtr @GC_malloc(i64)
+declare ccc noalias %ObjPtr @log_GC_malloc(i64)
+
 define private ccc %Return1 @rapid_gc_enter() noinline {
   %frame = call i8* @llvm.frameaddress(i32 0)
   call ccc void @idris_rts_gc(i8* %frame)
   ret %Return1 undef
 }
-
-declare ccc i1 @llvm.expect.i1(i1, i1)
-
-declare ccc noalias %ObjPtr @GC_malloc(i64)
-declare ccc noalias %ObjPtr @log_GC_malloc(i64)
 
 define private fastcc i1 @mem_eq(i8* noalias nocapture nofree nonnull %v1, i8* noalias nocapture nofree nonnull %v2, i64 %size) argmemonly readonly nounwind {
 entry:
@@ -120,7 +125,7 @@ finished_eq:
   ret i32 0
 }
 
-define external fastcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) allocsize(3) alwaysinline optsize nounwind {
+define external fastcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) allocsize(3) alwaysinline optsize nounwind {
   ;%addr = call ccc %ObjPtr @log_GC_malloc(i64 %size)
   %addr = call ccc noalias %ObjPtr @GC_malloc(i64 %size)
 
@@ -130,7 +135,7 @@ define external fastcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %Runtime
   ret %Return1 %packed3
 }
 
-define external fastcc %Return1 @rapid_allocate_mutable (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
+define external fastcc %Return1 @rapid_allocate_mutable (%RuntimePtr %HpPtrArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
   %addr = call ccc noalias %ObjPtr @GC_malloc(i64 %size)
 
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpPtrArg, 0
@@ -139,11 +144,10 @@ define external fastcc %Return1 @rapid_allocate_mutable (%RuntimePtr %HpPtrArg, 
   ret %Return1 %packed3
 }
 
-define external fastcc %Return1 @rapid_allocate_fast (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
+define external fastcc %Return1 @rapid_allocate_fast (%RuntimePtr %HpPtrArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
   %Hp = ptrtoint %RuntimePtr %HpPtrArg to i64
 
-  %BasePtr = bitcast %RuntimePtr %BaseArg to %Idris_TSO.struct*
-  %nurseryEndPtr = getelementptr inbounds %Idris_TSO.struct, %Idris_TSO.struct *%BasePtr, i32 0, i32 2
+  %nurseryEndPtr = getelementptr inbounds %Idris_TSO.struct, %Idris_TSO.struct *%BaseArg, i32 0, i32 2
   %nurseryEnd = load %RuntimePtr, %RuntimePtr* %nurseryEndPtr
 
   %HpLim = ptrtoint %RuntimePtr %nurseryEnd to i64
@@ -168,8 +172,8 @@ gc_enter:
   ret %Return1 %gcresult
 }
 
-define private fastcc %Return1 @_extprim_Data.IORef.prim__newIORef(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %val, %ObjPtr %world) {
-  %allocated.ret = call fastcc %Return1 @rapid_allocate_mutable (%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, i64 16)
+define private fastcc %Return1 @_extprim_Data.IORef.prim__newIORef(%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %val, %ObjPtr %world) {
+  %allocated.ret = call fastcc %Return1 @rapid_allocate_mutable (%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, i64 16)
   %hpnew = extractvalue %Return1 %allocated.ret, 0
   %hplimnew = extractvalue %Return1 %allocated.ret, 1
   %newobj = extractvalue %Return1 %allocated.ret, 2
@@ -189,7 +193,7 @@ define private fastcc %Return1 @_extprim_Data.IORef.prim__newIORef(%RuntimePtr %
   ret %Return1 %packed3
 }
 
-define private fastcc %Return1 @_extprim_Data.IORef.prim__readIORef(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %ref, %ObjPtr %world) alwaysinline {
+define private fastcc %Return1 @_extprim_Data.IORef.prim__readIORef(%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %ref, %ObjPtr %world) alwaysinline {
   %objptr = bitcast %ObjPtr %ref to i64*
   %payload.ptr = getelementptr inbounds i64, i64* %objptr, i64 1
   %payload.objptr = bitcast i64* %payload.ptr to %ObjPtr*
@@ -201,7 +205,7 @@ define private fastcc %Return1 @_extprim_Data.IORef.prim__readIORef(%RuntimePtr 
   ret %Return1 %packed3
 }
 
-define private fastcc %Return1 @_extprim_Data.IORef.prim__writeIORef(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %ref, %ObjPtr %val, %ObjPtr %world) alwaysinline {
+define private fastcc %Return1 @_extprim_Data.IORef.prim__writeIORef(%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %ref, %ObjPtr %val, %ObjPtr %world) alwaysinline {
   %objptr = bitcast %ObjPtr %ref to i64*
   %payload.ptr = getelementptr inbounds i64, i64* %objptr, i64 1
   %payload.objptr = bitcast i64* %payload.ptr to %ObjPtr*
@@ -216,8 +220,8 @@ define private fastcc %Return1 @_extprim_Data.IORef.prim__writeIORef(%RuntimePtr
   ret %Return1 %packed3
 }
 
-define private fastcc i64 @idris_enter_stackbridge(i8* %BaseTSO, i8* %heapStart, i8* %heapEnd) {
-  call fastcc %Return1 @$7b__mainExpression$3a0$7d(%RuntimePtr %heapStart, %RuntimePtr %BaseTSO, %RuntimePtr %heapEnd)
+define private fastcc i64 @idris_enter_stackbridge(%TSOPtr %BaseTSO, i8* %heapStart, i8* %heapEnd) {
+  call fastcc %Return1 @$7b__mainExpression$3a0$7d(%RuntimePtr %heapStart, %TSOPtr %BaseTSO, %RuntimePtr %heapEnd)
   ;call hhvmcc %Return1 @Main$2e$7bmain$3a0$7d(%RuntimePtr %heapStart, %RuntimePtr %BaseTSO, %RuntimePtr %heapEnd, %ObjPtr undef)
   ret i64 0
 }
@@ -229,7 +233,6 @@ define external ccc i64 @idris_enter(%Idris_TSO.struct* %BaseTSO) {
   %heapEndPtr = getelementptr inbounds %Idris_TSO.struct, %Idris_TSO.struct* %BaseTSO, i32 0, i32 2
   %heapEnd = load %RuntimePtr, %RuntimePtr* %heapEndPtr
 
-  %BaseTSO.raw = bitcast %Idris_TSO.struct* %BaseTSO to %RuntimePtr
-  call fastcc i64 @idris_enter_stackbridge(%RuntimePtr %BaseTSO.raw, %RuntimePtr %heapStart, %RuntimePtr %heapEnd)
+  call fastcc i64 @idris_enter_stackbridge(%TSOPtr %BaseTSO, %RuntimePtr %heapStart, %RuntimePtr %heapEnd)
   ret i64 0
 }

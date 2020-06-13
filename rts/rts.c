@@ -36,11 +36,11 @@ typedef struct {
 
   int rapid_errno;
 
-  jmp_buf sched_jmp_buf;
-
   void *stack_bottom;
   void *stack_top;
   size_t stack_size;
+
+  jmp_buf sched_jmp_buf;
 } Idris_TSO;
 
 static int rapid_global_argc = 0;
