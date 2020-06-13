@@ -1433,7 +1433,7 @@ getFunIR : Bool -> SortedMap Name Int -> Int -> Name -> List Reg -> List VMInst 
 getFunIR debug conNames i n args body = do
     fargs <- traverse argIR args
     let visibility = if debug then "external" else "private"
-    appendCode ("\n\ndefine " ++ visibility ++ " fastcc %Return1 @" ++ safeName n ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") {")
+    appendCode ("\n\ndefine " ++ visibility ++ " fastcc %Return1 @" ++ safeName n ++ "(" ++ (showSep ", " $ prepareArgCallConv fargs) ++ ") gc \"statepoint-example\" {")
     appendCode "entry:"
     funcEntry
     traverse_ appendCode (map copyArg args)
@@ -1448,7 +1448,7 @@ getFunIR debug conNames i n args body = do
 getFunIRClosureEntry : Bool -> SortedMap Name Int -> Int -> Name -> (args : List Int) -> {auto ok : NonEmpty args} -> List VMInst -> Codegen ()
 getFunIRClosureEntry debug conNames i n args body = do
     let visibility = if debug then "external" else "private"
-    appendCode ("\n\ndefine " ++ visibility ++ " fastcc %Return1 @" ++ safeName n ++ "$$closureEntry(" ++ (showSep ", " $ prepareArgCallConv ["%ObjPtr %clObj", "%ObjPtr %lastArg"]) ++ ") {")
+    appendCode ("\n\ndefine " ++ visibility ++ " fastcc %Return1 @" ++ safeName n ++ "$$closureEntry(" ++ (showSep ", " $ prepareArgCallConv ["%ObjPtr %clObj", "%ObjPtr %lastArg"]) ++ ") gc \"statepoint-example\" {")
     appendCode "entry:"
     funcEntry
     traverse_ copyArg (enumerate $ init args)
