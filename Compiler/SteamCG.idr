@@ -764,11 +764,19 @@ getInstForConstCaseString i r alts def =
       beginLabel labelAltNext
     makeCaseAlt _ _ _ (_, c, _) = appendCode $ "ERROR: constcase must be Str, got: " ++ show c
 
+intBinary : (IRValue I64 -> IRValue I64 -> Codegen (IRValue I64)) -> Reg -> Reg -> Reg -> Codegen ()
+intBinary op dest a b = do
+  i1 <- unboxInt (reg2val a)
+  i2 <- unboxInt (reg2val b)
+  obj <- cgMkInt !(op i1 i2)
+  store obj (reg2val dest)
+
 getInstIR : {auto conNames : SortedMap Name Int} -> Int -> VMInst -> Codegen ()
 getInstIR i (DECLARE (Loc r)) = do
   appendCode $ "  %v" ++ show r ++ "Var = alloca %ObjPtr"
-  weird <- assignSSA $ "inttoptr " ++ (toIR (Const I64 0xf7f7f7f7f4f3f2f1)) ++ " to %ObjPtr"
-  appendCode $ "  store %ObjPtr " ++ weird ++ ", %ObjPtr* %v" ++ show r ++ "Var"
+  when TRACE $ do
+    weird <- assignSSA $ "inttoptr " ++ (toIR (Const I64 0xf7f7f7f7f4f3f2f1)) ++ " to %ObjPtr"
+    appendCode $ "  store %ObjPtr " ++ weird ++ ", %ObjPtr* %v" ++ show r ++ "Var"
 getInstIR i (ASSIGN r src) = do
   value <- assignSSA $ "load %ObjPtr, %ObjPtr* " ++ toIR src ++ "Var"
   appendCode $ "  store %ObjPtr " ++ value ++ ", %ObjPtr* " ++ toIR r ++ "Var"
@@ -1060,31 +1068,15 @@ getInstIR i (OP r (Cast IntegerType IntType) [r1]) = do
 getInstIR i (OP r (Cast IntType IntegerType) [r1]) = do
   store !(load (reg2val r1)) (reg2val r)
 
-getInstIR i (OP r (Add IntType) [r1, r2]) = do
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  obj <- cgMkInt !(mkAdd i1 i2)
-  store obj (reg2val r)
-getInstIR i (OP r (Sub IntType) [r1, r2]) = do
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  obj <- cgMkInt !(mkSub i1 i2)
-  store obj (reg2val r)
-getInstIR i (OP r (Mul IntType) [r1, r2]) = do
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  obj <- cgMkInt !(mkMul i1 i2)
-  store obj (reg2val r)
-getInstIR i (OP r (Div IntType) [r1, r2]) = do
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  obj <- cgMkInt !(mkSDiv i1 i2)
-  store obj (reg2val r)
-getInstIR i (OP r (Mod IntType) [r1, r2]) = do
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  obj <- cgMkInt !(mkSRem i1 i2)
-  store obj (reg2val r)
+getInstIR i (OP r (Add IntType) [r1, r2]) = intBinary mkAdd r r1 r2
+getInstIR i (OP r (Sub IntType) [r1, r2]) = intBinary mkSub r r1 r2
+getInstIR i (OP r (Mul IntType) [r1, r2]) = intBinary mkMul r r1 r2
+getInstIR i (OP r (Div IntType) [r1, r2]) = intBinary mkSDiv r r1 r2
+getInstIR i (OP r (Mod IntType) [r1, r2]) = intBinary mkSRem r r1 r2
+getInstIR i (OP r (BAnd IntType) [r1, r2]) = intBinary mkAnd r r1 r2
+getInstIR i (OP r (BOr IntType) [r1, r2]) = intBinary mkOr r r1 r2
+getInstIR i (OP r (ShiftL IntType) [r1, r2]) = intBinary mkShiftL r r1 r2
+getInstIR i (OP r (ShiftR IntType) [r1, r2]) = intBinary mkShiftR r r1 r2
 
 getInstIR i (OP r (Add IntegerType) [r1, r2]) = do
   -- FIXME: we treat Integers as bounded Ints -> should use GMP
@@ -1121,6 +1113,12 @@ getInstIR i (OP r (ShiftL IntegerType) [r1, r2]) = do
   i1 <- unboxInt (reg2val r1)
   i2 <- unboxInt (reg2val r2)
   obj <- cgMkInt !(mkShiftL i1 i2)
+  store obj (reg2val r)
+getInstIR i (OP r (ShiftR IntegerType) [r1, r2]) = do
+  -- FIXME: we treat Integers as bounded Ints -> should use GMP
+  i1 <- unboxInt (reg2val r1)
+  i2 <- unboxInt (reg2val r2)
+  obj <- cgMkInt !(mkShiftR i1 i2)
   store obj (reg2val r)
 
 getInstIR i (OP r (LT CharType) [r1, r2]) = do
