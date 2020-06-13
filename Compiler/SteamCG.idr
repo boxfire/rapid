@@ -318,12 +318,12 @@ getObjectSlotT obj n = do
 getObjectHeader : IRValue IRObjPtr -> Codegen (IRValue I64)
 getObjectHeader o = getObjectSlotT o 0
 
-putObjectSlotG : {t : IRType} -> IRValue IRObjPtr -> IRValue I64 -> IRValue t -> Codegen ()
-putObjectSlotG {t} obj pos val = do
-  i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
-  slotPtr <- assignSSA $ "getelementptr inbounds i64, i64* " ++ i64ptr ++ ", " ++ toIR pos
-  slotPtrObj <- assignSSA $ "bitcast i64* " ++ slotPtr ++ " to " ++ show t ++ "*"
-  appendCode $ "  store " ++ toIR val ++ ", " ++ show t ++ " * " ++ slotPtrObj
+putObjectSlot : {t : IRType} -> IRValue IRObjPtr -> IRValue I64 -> IRValue t -> Codegen ()
+putObjectSlot {t} obj pos val = do
+  objptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to %Object*"
+  slotPtr <- SSA (Pointer $ Pointer I8) <$> assignSSA ("getelementptr inbounds %Object, %Object* " ++ objptr ++ ", i32 0, i32 1, " ++ toIR pos)
+  slotPtrCasted <- bitcast slotPtr
+  store val slotPtrCasted
 
 putObjectHeader : IRValue IRObjPtr -> IRValue I64 -> Codegen ()
 putObjectHeader obj hdr = store hdr !(bitcast obj)
@@ -374,14 +374,14 @@ cgMkInt : IRValue I64 -> Codegen (IRValue IRObjPtr)
 cgMkInt val = do
   newObj <- dynamicAllocate (ConstI64 8)
   putObjectHeader newObj (ConstI64 $ header OBJECT_TYPE_ID_INT)
-  putObjectSlotG newObj (ConstI64 1) val
+  putObjectSlot newObj (ConstI64 0) val
   pure newObj
 
 cgMkDouble : IRValue F64 -> Codegen (IRValue IRObjPtr)
 cgMkDouble val = do
   newObj <- dynamicAllocate (ConstI64 8)
   putObjectHeader newObj (ConstI64 $ header OBJECT_TYPE_ID_DOUBLE)
-  putObjectSlotG newObj (ConstI64 1) val
+  putObjectSlot newObj (ConstI64 0) val
   pure newObj
 
 -- change to List Bits8
@@ -677,7 +677,7 @@ mkCon tag args = do
   for enumArgs (\x => let (i, arg) = x in do
                             arg <- load (reg2val arg)
                             assertObjectTypeAny arg (cast i+1)
-                            putObjectSlotG newObj (ConstI64 $ cast (1+i)) arg
+                            putObjectSlot newObj (ConstI64 $ cast i) arg
                             --when TRACE $ appendCode $ "call ccc void @idris_mkcon_arg_ok(" ++ showSep ", " [toIR newObj, toIR (Const I64 $ cast i)] ++ ")"
                           )
   --when TRACE $ appendCode $ "call ccc void @idris_mkcon_ok(" ++ showSep ", " [toIR newObj] ++ ")"
@@ -1275,11 +1275,11 @@ getInstIR i (MKCLOSURE r n missingN args) = do
                assignSSA $ "bitcast %FuncPtrClosureEntry @" ++ (safeName n) ++ "$$closureEntry to %FuncPtr"
                )
 
-  putObjectSlotG newObj (Const I64 1) (SSA FuncPtr funcPtr)
+  putObjectSlot newObj (Const I64 0) (SSA FuncPtr funcPtr)
   for_ (enumerate args) (\iv => do
       let (i, arg) = iv
       argObj <- load {t=IRObjPtr} (reg2val arg)
-      putObjectSlotG newObj (Const I64 $ cast $ i+2) argObj
+      putObjectSlot newObj (Const I64 $ cast $ i+1) argObj
       pure ()
                               )
   appendCode $ "  store " ++ toIR newObj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
@@ -1644,7 +1644,7 @@ mk_prim__currentDir [_] = do
   dummy <- mkStr 1 "/tmp"
   newPtr <- dynamicAllocate (Const I64 8)
   putObjectHeader newPtr (Const I64 $ header $ OBJECT_TYPE_ID_POINTER)
-  putObjectSlotG newPtr (Const I64 1) dummy
+  putObjectSlot newPtr (Const I64 0) dummy
   store newPtr (reg2val RVal)
 
 mk_prim__fileOpen : Vect 4 (IRValue IRObjPtr) -> Codegen ()
@@ -1843,8 +1843,8 @@ applyClosureHelperFunc = do
   appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR newClosure ++ ", " ++ toIR closureObj ++ ", " ++ toIR newClosureTotalSize ++ ", i1 false)"
   putObjectHeader newClosure newHeader''
 
-  newArgSlotNumber <- mkAddNoWrap appliedArgCount (ConstI64 1)
-  putObjectSlotG newClosure newArgSlotNumber argValue
+  let newArgSlotNumber = appliedArgCount
+  putObjectSlot newClosure newArgSlotNumber argValue
 
   store newClosure (reg2val RVal)
 

@@ -1,5 +1,11 @@
 target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
 
+; generic boxed object
+%Object = type {
+    i64 ; object header
+  , [0 x i8*] ; payload
+}
+
 %ObjPtr = type i8*
 %RawPtr = type i8*
 %RuntimePtr = type i8*
