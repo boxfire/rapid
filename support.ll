@@ -11,6 +11,13 @@ target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
 %RuntimePtr = type i8*
 %FuncPtr = type i8*
 
+%Idris_TSO.struct = type {
+    i8* ; nurseryStart
+  , i8* ; nurseryNext
+  , i8* ; nurseryEnd
+  , i32 ; errno
+}
+
 %Word = type i64
 
 %VoidReturn = type {%RuntimePtr, %RuntimePtr, %RuntimePtr}
@@ -134,13 +141,19 @@ define external fastcc %Return1 @rapid_allocate_mutable (%RuntimePtr %HpPtrArg, 
 
 define external fastcc %Return1 @rapid_allocate_fast (%RuntimePtr %HpPtrArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
   %Hp = ptrtoint %RuntimePtr %HpPtrArg to i64
-  %HpLim = ptrtoint %RuntimePtr %HpLimPtrArg to i64
+
+  %BasePtr = bitcast %RuntimePtr %BaseArg to %Idris_TSO.struct*
+  %nurseryEndPtr = getelementptr inbounds %Idris_TSO.struct, %Idris_TSO.struct *%BasePtr, i32 0, i32 2
+  %nurseryEnd = load %RuntimePtr, %RuntimePtr* %nurseryEndPtr
+
+  %HpLim = ptrtoint %RuntimePtr %nurseryEnd to i64
 
   %HpNew = add i64 %Hp, %size
   %HpNewPtr = inttoptr i64 %HpNew to %RuntimePtr
 
   %overflow.in = icmp ugt i64 %HpNew, %HpLim
   %overflow = call ccc i1 @llvm.expect.i1(i1 %overflow.in, i1 0)
+
   br i1 %overflow, label %gc_enter, label %continue
 continue:
   %retptr = inttoptr i64 %Hp to i64*
@@ -207,13 +220,6 @@ define private fastcc i64 @idris_enter_stackbridge(i8* %BaseTSO, i8* %heapStart,
   call fastcc %Return1 @$7b__mainExpression$3a0$7d(%RuntimePtr %heapStart, %RuntimePtr %BaseTSO, %RuntimePtr %heapEnd)
   ;call hhvmcc %Return1 @Main$2e$7bmain$3a0$7d(%RuntimePtr %heapStart, %RuntimePtr %BaseTSO, %RuntimePtr %heapEnd, %ObjPtr undef)
   ret i64 0
-}
-
-%Idris_TSO.struct = type {
-    i8* ; nurseryStart
-  , i8* ; nurseryNext
-  , i8* ; nurseryEnd
-  , i32 ; errno
 }
 
 define external ccc i64 @idris_enter(%Idris_TSO.struct* %BaseTSO) {
