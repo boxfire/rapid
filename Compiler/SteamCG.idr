@@ -387,13 +387,40 @@ cgMkDouble val = do
   putObjectSlotG newObj (ConstI64 1) val
   pure newObj
 
-getStringIR : String -> String
-getStringIR s = concatMap okchar (unpack s)
+-- change to List Bits8
+utf8EncodeChar : Char -> List Int
+utf8EncodeChar c = let codepoint = cast {to=Int} c
+                       bor = prim__or_Int
+                       band = prim__and_Int
+                       shr = prim__shr_Int in
+                       map id $
+                       if codepoint <= 0x7f then [codepoint]
+                       else if codepoint <= 0x7ff then [
+                         bor 0xc0 (codepoint `shr` 6),
+                         bor 0x80 (codepoint `band` 0x3f)
+                         ]
+                       else if codepoint <= 0xffff then [
+                         bor 0xe0 (codepoint `shr` 12),
+                         bor 0x80 ((codepoint `shr` 6) `band` 0x3f),
+                         bor 0x80 ((codepoint `shr` 0) `band` 0x3f)
+                         ]
+                       else [
+                         bor 0xf0 (codepoint `shr` 18),
+                         bor 0x80 ((codepoint `shr` 12) `band` 0x3f),
+                         bor 0x80 ((codepoint `shr` 6) `band` 0x3f),
+                         bor 0x80 ((codepoint `shr` 0) `band` 0x3f)
+                         ]
+utf8EncodeString : String -> List Int
+utf8EncodeString s = concatMap utf8EncodeChar $ unpack s
+
+getStringIR : List Int -> String
+getStringIR utf8bytes = concatMap okchar utf8bytes
   where
-    okchar : Char -> String
-    okchar c = if isAlphaNum c
-                  then cast c
-                  else "\\" ++ asHex2 (cast {to=Int} c)
+    okchar : Int -> String
+    -- c > '"' && c <= '~' && c /= '\\'
+    okchar c = if c > 34 && c <= 126 && c /= 92
+                  then cast $ cast {to=Char} c
+                  else "\\" ++ asHex2 c
 
 data CompareOp = LT | LTE | EQ | GTE | GT
 
@@ -486,8 +513,9 @@ mkSubstring strObj startIndexRaw length = do
 
 mkStr : Int -> String -> Codegen (IRValue IRObjPtr)
 mkStr i s = do
-  let len = cast {to=Integer} $ length s
-  cn <- addConstant i $ "private unnamed_addr constant [" ++ show len ++ " x i8] c\"" ++ (getStringIR s) ++ "\""
+  let utf8bytes = utf8EncodeString s
+  let len = cast {to=Integer} $ length utf8bytes
+  cn <- addConstant i $ "private unnamed_addr constant [" ++ show len ++ " x i8] c\"" ++ (getStringIR utf8bytes) ++ "\""
   cn <- assignSSA $ "bitcast [" ++ show len ++ " x i8]* "++cn++" to i8*"
   let newHeader = ConstI64 $ (header OBJECT_TYPE_ID_STR) + len
   newObj <- dynamicAllocate (ConstI64 len)
