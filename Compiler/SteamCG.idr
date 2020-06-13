@@ -295,38 +295,32 @@ foreignCall : {t : IRType} -> String -> Vect n String -> Codegen (IRValue t)
 foreignCall {t} name args = do
   SSA t <$> (assignSSA $ "  call ccc " ++ show t ++ " " ++ name ++ "(%RuntimePtr %BaseArg, " ++ (showSep ", " (toList args)) ++ ")")
 
-getObjectSlot : IRValue IRObjPtr -> Int -> Codegen (IRValue I64)
-getObjectSlot obj n = do
-  i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
-  slotPtr <- assignSSA $ "getelementptr inbounds i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
-  load {t=I64} (SSA (Pointer I64) slotPtr)
-
-getObjectSlotAddr : {t : IRType} -> IRValue IRObjPtr -> Int -> Codegen (IRValue (Pointer t))
-getObjectSlotAddr obj n = do
-  i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
-  slotPtr <- assignSSA $ "getelementptr inbounds i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
-  slotPtrT <- assignSSA $ "bitcast i64* " ++ slotPtr ++ " to " ++ show t ++ "*"
-  pure (SSA (Pointer t) slotPtrT)
-
-getObjectSlotT : {t : IRType} -> IRValue IRObjPtr -> Int -> Codegen (IRValue t)
-getObjectSlotT obj n = do
-  i64ptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to i64*"
-  slotPtr <- assignSSA $ "getelementptr inbounds i64, i64* " ++ i64ptr ++ ", i64 " ++ show n
-  slotPtrT <- assignSSA $ "bitcast i64* " ++ slotPtr ++ " to " ++ show t ++ "*"
-  load {t=t} (SSA (Pointer t) slotPtrT)
-
-getObjectHeader : IRValue IRObjPtr -> Codegen (IRValue I64)
-getObjectHeader o = getObjectSlotT o 0
-
-putObjectSlot : {t : IRType} -> IRValue IRObjPtr -> IRValue I64 -> IRValue t -> Codegen ()
-putObjectSlot {t} obj pos val = do
+getObjectSlotAddrVar : {t : IRType} -> IRValue IRObjPtr -> IRValue I64 -> Codegen (IRValue (Pointer t))
+getObjectSlotAddrVar obj pos = do
   objptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to %Object*"
   slotPtr <- SSA (Pointer $ Pointer I8) <$> assignSSA ("getelementptr inbounds %Object, %Object* " ++ objptr ++ ", i32 0, i32 1, " ++ toIR pos)
-  slotPtrCasted <- bitcast slotPtr
-  store val slotPtrCasted
+  bitcast slotPtr
+
+getObjectPayloadAddr : {t : IRType} -> IRValue IRObjPtr -> Codegen (IRValue (Pointer t))
+getObjectPayloadAddr obj = getObjectSlotAddrVar obj (Const I64 0)
+
+getObjectSlot : {t : IRType} -> IRValue IRObjPtr -> Int -> Codegen (IRValue t)
+getObjectSlot obj n = load !(getObjectSlotAddrVar obj (Const I64 $ cast n))
+
+putObjectSlot : {t : IRType} -> IRValue IRObjPtr -> IRValue I64 -> IRValue t -> Codegen ()
+putObjectSlot {t} obj pos val = store val !(getObjectSlotAddrVar obj pos)
+
+getObjectHeader : IRValue IRObjPtr -> Codegen (IRValue I64)
+getObjectHeader obj = do
+  objptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to %Object*"
+  headerPtr <- SSA (Pointer I64) <$> assignSSA ("getelementptr inbounds %Object, %Object* " ++ objptr ++ ", i32 0, i32 0")
+  load headerPtr
 
 putObjectHeader : IRValue IRObjPtr -> IRValue I64 -> Codegen ()
-putObjectHeader obj hdr = store hdr !(bitcast obj)
+putObjectHeader obj hdr = do
+  objptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to %Object*"
+  headerPtr <- SSA (Pointer I64) <$> assignSSA ("getelementptr inbounds %Object, %Object* " ++ objptr ++ ", i32 0, i32 0")
+  store hdr headerPtr
 
 funcEntry : String
 funcEntry = "
@@ -449,8 +443,8 @@ stringCompare op r1 r2 = do
   startCommand
   beginLabel lblCmpStart
 
-  str1 <- getObjectSlotAddr {t=I8} o1 1
-  str2 <- getObjectSlotAddr {t=I8} o2 1
+  str1 <- getObjectPayloadAddr {t=I8} o1
+  str2 <- getObjectPayloadAddr {t=I8} o2
   cmpResult32 <- call {t=I32} "fastcc" "@rapid.memcmp" [toIR str1, toIR str2, toIR minLength]
   cmpResult <- mkSext cmpResult32
   cmpResultIsEq <- icmp "eq" cmpResult (ConstI64 0)
@@ -500,9 +494,9 @@ mkSubstring strObj startIndexRaw length = do
   newStr <- dynamicAllocate resultLength
   newHeader <- mkBinOp "or" resultLength (ConstI64 $ header OBJECT_TYPE_ID_STR)
   putObjectHeader newStr newHeader
-  newStrPayload <- getObjectSlotAddr {t=I8} newStr 1
+  newStrPayload <- getObjectPayloadAddr {t=I8} newStr
 
-  strPayloadStart <- getObjectSlotAddr {t=I8} strObj 1
+  strPayloadStart <- getObjectPayloadAddr {t=I8} strObj
   strCopyRangeStart <- getElementPtr strPayloadStart startIndex
 
   voidCall "ccc" "@llvm.memcpy.p0i8.p0i8.i64" [toIR newStrPayload, toIR strCopyRangeStart, toIR resultLength, toIR (Const I1 0)]
@@ -517,7 +511,7 @@ mkStr i s = do
   let newHeader = ConstI64 $ (header OBJECT_TYPE_ID_STR) + len
   newObj <- dynamicAllocate (ConstI64 len)
   putObjectHeader newObj newHeader
-  strPayload <- getObjectSlotAddr {t=I8} newObj 1
+  strPayload <- getObjectPayloadAddr {t=I8} newObj
   appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i32(" ++ toIR strPayload ++ ", i8* "++cn++", i32 " ++show len ++", i1 false)"
   pure newObj
 
@@ -529,16 +523,16 @@ enumerate l = enumerate' 0 l where
   enumerate' i (x::xs) = (i, x)::(enumerate' (i+1) xs)
 
 unboxInt : IRValue (Pointer IRObjPtr) -> Codegen (IRValue I64)
-unboxInt src = getObjectSlotT {t=I64} !(load src) 1
+unboxInt src = getObjectSlot {t=I64} !(load src) 0
 
 unboxInt' : IRValue IRObjPtr -> Codegen (IRValue I64)
-unboxInt' src = getObjectSlotT {t=I64} src 1
+unboxInt' src = getObjectSlot {t=I64} src 0
 
 unboxFloat64 : IRValue (Pointer IRObjPtr) -> Codegen (IRValue F64)
-unboxFloat64 src = getObjectSlotT {t=F64} !(load src) 1
+unboxFloat64 src = getObjectSlot {t=F64} !(load src) 0
 
 unboxFloat64' : IRValue IRObjPtr -> Codegen (IRValue F64)
-unboxFloat64' src = getObjectSlotT {t=F64} src 1
+unboxFloat64' src = getObjectSlot {t=F64} src 0
 
 total
 showConstant : Constant -> String
@@ -610,8 +604,8 @@ compareStr obj1 obj2 = do
   headersEqual <- icmp "eq" h1 h2
   appendCode $ "br " ++ toIR headersEqual ++ ", " ++ toIR lblCompareContents ++ ", " ++ toIR lblEnd
   beginLabel lblCompareContents
-  str1 <- getObjectSlotAddr {t=I8} obj1 1
-  str2 <- getObjectSlotAddr {t=I8} obj2 1
+  str1 <- getObjectPayloadAddr {t=I8} obj1
+  str2 <- getObjectPayloadAddr {t=I8} obj2
   length <- mkAnd h1 (ConstI64 0xffffffff)
   contentsEqual <- (SSA I1) <$> assignSSA ("call fastcc i1 @mem_eq(" ++ (showSep ", " ([toIR str1, toIR str2, toIR length])) ++ ")")
   appendCode $ "br " ++ toIR lblEnd
@@ -796,7 +790,7 @@ getInstIR i (OP r StrHead [r1]) = do
 
   branch strIsZero strHeadError strHeadOk
   beginLabel strHeadOk
-  payload <- getObjectSlotAddr {t=I8} o1 1
+  payload <- getObjectPayloadAddr {t=I8} o1
 
   -- FIXME: this assumes ASCII
   firstChar <- mkZext {to=I64} !(load payload)
@@ -861,10 +855,10 @@ getInstIR i (OP r StrAppend [r1, r2]) = do
   newStr <- dynamicAllocate newLength
   newHeader <- mkBinOp "or" newLength (ConstI64 $ header OBJECT_TYPE_ID_STR)
 
-  str1 <- getObjectSlotAddr {t=I8} o1 1
-  str2 <- getObjectSlotAddr {t=I8} o2 1
+  str1 <- getObjectPayloadAddr {t=I8} o1
+  str2 <- getObjectPayloadAddr {t=I8} o2
 
-  newStrPayload1 <- getObjectSlotAddr {t=I8} newStr 1
+  newStrPayload1 <- getObjectPayloadAddr {t=I8} newStr
   newStrPayload2 <- getElementPtr newStrPayload1 l1
 
   appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR newStrPayload1 ++ ", " ++ toIR str1 ++ ", " ++ toIR l1 ++ ", i1 false)"
@@ -882,8 +876,8 @@ getInstIR i (OP r StrReverse [r1]) = do
   newStr <- dynamicAllocate length
   newHeader <- mkBinOp "or" length (ConstI64 $ header OBJECT_TYPE_ID_STR)
 
-  origPayload <- getObjectSlotAddr {t=I8} strObj 1
-  newStrPayload <- getObjectSlotAddr {t=I8} newStr 1
+  origPayload <- getObjectPayloadAddr {t=I8} strObj
+  newStrPayload <- getObjectPayloadAddr {t=I8} newStr
 
   appendCode $ "  call ccc void @rapid_strreverse(" ++ toIR newStrPayload ++ ", " ++ toIR origPayload ++ ", " ++ toIR length ++ ")"
 
@@ -906,9 +900,9 @@ getInstIR i (OP r StrCons [r1, r2]) = do
   newStr <- dynamicAllocate newLength
   newHeader <- mkBinOp "or" newLength (ConstI64 $ header OBJECT_TYPE_ID_STR)
 
-  str2 <- getObjectSlotAddr {t=I8} o2 1
+  str2 <- getObjectPayloadAddr {t=I8} o2
 
-  newStrPayload1 <- getObjectSlotAddr {t=I8} newStr 1
+  newStrPayload1 <- getObjectPayloadAddr {t=I8} newStr
   newStrPayload2 <- getElementPtr newStrPayload1 (ConstI64 1)
 
   store charVal newStrPayload1
@@ -929,7 +923,7 @@ getInstIR i (OP r StrIndex [r1, r2]) = do
   assertObjectType r2 OBJECT_TYPE_ID_INT
   o1 <- load (reg2val r1)
   objHeader <- getObjectHeader o1
-  payload0 <- getObjectSlotAddr {t=I8} o1 1
+  payload0 <- getObjectPayloadAddr {t=I8} o1
 
   index <- unboxInt (reg2val r2)
   payload <- getElementPtr payload0 index
@@ -951,11 +945,11 @@ getInstIR i (OP r (GT  StringType) [r1, r2]) = store !(stringCompare GT  r1 r2) 
 
 getInstIR i (OP r (Cast IntegerType StringType) [r1]) = do
   theIntObj <- load (reg2val r1)
-  theInt <- getObjectSlotT {t=I64} theIntObj 1
+  theInt <- getObjectSlot {t=I64} theIntObj 0
 
   -- max size of 2^64 = 20 + (optional "-" prefix) + NUL byte (from snprintf)
   newStr <- dynamicAllocate (ConstI64 24)
-  strPayload <- getObjectSlotAddr {t=I8} newStr 1
+  strPayload <- getObjectPayloadAddr {t=I8} newStr
   length <- (SSA I64) <$> assignSSA ("call ccc i64 @idris_rts_int_to_str(" ++ toIR strPayload ++ ", " ++ toIR theInt ++ ")")
   newHeader <- mkOr (ConstI64 $ header OBJECT_TYPE_ID_STR) length
   putObjectHeader newStr newHeader
@@ -963,18 +957,18 @@ getInstIR i (OP r (Cast IntegerType StringType) [r1]) = do
 
 getInstIR i (OP r (Cast IntType StringType) [r1]) = do
   theIntObj <- load (reg2val r1)
-  theInt <- getObjectSlotT {t=I64} theIntObj 1
+  theInt <- getObjectSlot {t=I64} theIntObj 0
 
   -- max size of 2^64 = 20 + (optional "-" prefix) + NUL byte (from snprintf)
   newStr <- dynamicAllocate (ConstI64 24)
-  strPayload <- getObjectSlotAddr {t=I8} newStr 1
+  strPayload <- getObjectPayloadAddr {t=I8} newStr
   length <- (SSA I64) <$> assignSSA ("call ccc i64 @idris_rts_int_to_str(" ++ toIR strPayload ++ ", " ++ toIR theInt ++ ")")
   newHeader <- mkOr (ConstI64 $ header OBJECT_TYPE_ID_STR) length
   putObjectHeader newStr newHeader
   store newStr (reg2val r)
 getInstIR i (OP r (Cast DoubleType StringType) [r1]) = do
   obj <- load (reg2val r1)
-  theDouble <- getObjectSlotT {t=F64} obj 1
+  theDouble <- getObjectSlot {t=F64} obj 0
 
   -- call once with nullptr as dest, to get required length
   length <- (SSA I64) <$> assignSSA ("call ccc i64 @idris_rts_double_to_str(i8* null, i64 0, " ++ toIR theDouble ++ ")")
@@ -982,7 +976,7 @@ getInstIR i (OP r (Cast DoubleType StringType) [r1]) = do
   lengthPlus1 <- mkAddNoWrap length (ConstI64 1)
 
   newStr <- dynamicAllocate lengthPlus1
-  strPayload <- getObjectSlotAddr {t=I8} newStr 1
+  strPayload <- getObjectPayloadAddr {t=I8} newStr
   length <- (SSA I64) <$> assignSSA ("call ccc i64 @idris_rts_double_to_str(" ++ toIR strPayload ++ ", " ++ toIR lengthPlus1 ++ ", " ++ toIR theDouble ++ ")")
   newHeader <- mkOr (ConstI64 $ header OBJECT_TYPE_ID_STR) length
   putObjectHeader newStr newHeader
@@ -1050,7 +1044,7 @@ getInstIR i (OP r (Cast CharType StringType) [r1]) = do
   let newLength = (ConstI64 1)
   newStr <- dynamicAllocate newLength
   newHeader <- mkBinOp "or" newLength (ConstI64 $ header OBJECT_TYPE_ID_STR)
-  newStrPayload1 <- getObjectSlotAddr {t=I8} newStr 1
+  newStrPayload1 <- getObjectPayloadAddr {t=I8} newStr
   store charVal newStrPayload1
   putObjectHeader newStr newHeader
   store newStr (reg2val r)
@@ -1388,7 +1382,7 @@ getInstIR i (CALL r tailpos n args) =
 getInstIR i (PROJECT r o pos) = do
   assertObjectType o OBJECT_TYPE_ID_CON_NO_ARGS
   obj <- load {t=IRObjPtr} (reg2val o)
-  slot <- getObjectSlotT {t=IRObjPtr} obj (pos+1)
+  slot <- getObjectSlot {t=IRObjPtr} obj pos
   assertObjectTypeAny slot 0xf0
   store slot (reg2val r)
 
@@ -1447,7 +1441,7 @@ getFunIRClosureEntry debug conNames i n args body = do
     copyArg (index, i) =
       let clObj = SSA IRObjPtr "%clObj" in do
         appendCode $ "  %v" ++ show i ++ "Var = alloca %ObjPtr"
-        arg <- getObjectSlotT clObj (index + 2)
+        arg <- getObjectSlot clObj (index + 1)
         store arg (reg2val (Loc i))
     copyArg _ = idris_crash "not an argument"
 
@@ -1473,7 +1467,7 @@ mk_prim__bufferGetByte [buf, offsetObj, _] = do
   --hdr <- getObjectHeader buf
   --size <- mkAnd hdr (ConstI64 0xffffffff)
   offset <- unboxInt' offsetObj
-  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  payloadStart <- getObjectPayloadAddr {t=I8} buf
   bytePtr <- getElementPtr payloadStart offset
   byte <- load bytePtr
   val <- mkZext {to=I64} byte
@@ -1485,7 +1479,7 @@ mk_prim__bufferGetDouble [buf, offsetObj, _] = do
   --hdr <- getObjectHeader buf
   --size <- mkAnd hdr (ConstI64 0xffffffff)
   offset <- unboxInt' offsetObj
-  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  payloadStart <- getObjectPayloadAddr {t=I8} buf
   bytePtr <- getElementPtr payloadStart offset
   doublePtr <- bitcast bytePtr
   val <- load doublePtr
@@ -1497,7 +1491,7 @@ mk_prim__bufferSetDouble [buf, offsetObj, valObj, _] = do
   --hdr <- getObjectHeader buf
   --size <- mkAnd hdr (ConstI64 0xffffffff)
   offset <- unboxInt' offsetObj
-  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  payloadStart <- getObjectPayloadAddr {t=I8} buf
   bytePtr <- getElementPtr payloadStart offset
   doublePtr <- bitcast bytePtr
   val <- unboxFloat64' valObj
@@ -1509,7 +1503,7 @@ mk_prim__bufferGetInt [buf, offsetObj, _] = do
   --hdr <- getObjectHeader buf
   --size <- mkAnd hdr (ConstI64 0xffffffff)
   offset <- unboxInt' offsetObj
-  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  payloadStart <- getObjectPayloadAddr {t=I8} buf
   bytePtr <- getElementPtr payloadStart offset
   intPtr <- bitcast {to=I64} bytePtr
   val <- load intPtr
@@ -1521,7 +1515,7 @@ mk_prim__bufferGetInt32 [buf, offsetObj, _] = do
   --hdr <- getObjectHeader buf
   --size <- mkAnd hdr (ConstI64 0xffffffff)
   offset <- unboxInt' offsetObj
-  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  payloadStart <- getObjectPayloadAddr {t=I8} buf
   bytePtr <- getElementPtr payloadStart offset
   intPtr <- bitcast {to=I32} bytePtr
   val32 <- load intPtr
@@ -1534,7 +1528,7 @@ mk_prim__bufferSetInt [buf, offsetObj, valObj, _] = do
   --hdr <- getObjectHeader buf
   --size <- mkAnd hdr (ConstI64 0xffffffff)
   offset <- unboxInt' offsetObj
-  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  payloadStart <- getObjectPayloadAddr {t=I8} buf
   bytePtr <- getElementPtr payloadStart offset
   intPtr <- bitcast {to=I64} bytePtr
   val <- unboxInt' valObj
@@ -1546,7 +1540,7 @@ mk_prim__bufferSetInt32 [buf, offsetObj, valObj, _] = do
   --hdr <- getObjectHeader buf
   --size <- mkAnd hdr (ConstI64 0xffffffff)
   offset <- unboxInt' offsetObj
-  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  payloadStart <- getObjectPayloadAddr {t=I8} buf
   bytePtr <- getElementPtr payloadStart offset
   intPtr <- bitcast {to=I32} bytePtr
   val <- mkTrunc {to=I32} !(unboxInt' valObj)
@@ -1560,13 +1554,13 @@ mk_prim__bufferGetString [buf, offsetObj, lengthObj, _] = do
   --size <- mkAnd hdr (ConstI64 0xffffffff)
   offset <- unboxInt' offsetObj
   length <- unboxInt' lengthObj
-  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  payloadStart <- getObjectPayloadAddr {t=I8} buf
   bytePtr <- getElementPtr payloadStart offset
 
   newStr <- dynamicAllocate length
   newHeader <- mkBinOp "or" length (ConstI64 $ header OBJECT_TYPE_ID_STR)
   putObjectHeader newStr newHeader
-  strPayload <- getObjectSlotAddr {t=I8} newStr 1
+  strPayload <- getObjectPayloadAddr {t=I8} newStr
   appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR strPayload ++ ", " ++ toIR bytePtr ++ ", " ++ toIR length ++ ", i1 false)"
   store newStr (reg2val RVal)
 
@@ -1576,11 +1570,11 @@ mk_prim__bufferSetString [buf, offsetObj, valObj, _] = do
   --hdr <- getObjectHeader buf
   --size <- mkAnd hdr (ConstI64 0xffffffff)
   offset <- unboxInt' offsetObj
-  payloadStart <- getObjectSlotAddr {t=I8} buf 1
+  payloadStart <- getObjectPayloadAddr {t=I8} buf
   bytePtr <- getElementPtr payloadStart offset
   strHeader <- getObjectHeader valObj
   strLength <- mkAnd strHeader (ConstI64 0xffffffff)
-  strPayload <- getObjectSlotAddr {t=I8} valObj 1
+  strPayload <- getObjectPayloadAddr {t=I8} valObj
   appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR bytePtr ++ ", " ++ toIR strPayload ++ ", " ++ toIR strLength ++ ", i1 false)"
 
 
@@ -1614,7 +1608,7 @@ mk_prim__nullAnyPtr [p] = do
   branch ptrObjIsZero lblEnd lblInside
 
   beginLabel lblInside
-  payload <- getObjectSlotT {t=I64} p 1
+  payload <- getObjectSlot {t=I64} p 0
   payloadIsZero <- icmp "eq" (ConstI64 0) payload
 
   jump lblEnd
@@ -1627,7 +1621,7 @@ mk_prim__nullAnyPtr [p] = do
 mk_prim__getString : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__getString [p] = do
   assertObjectType' p OBJECT_TYPE_ID_POINTER
-  payload <- getObjectSlotT {t=IRObjPtr} p 1
+  payload <- getObjectSlot {t=IRObjPtr} p 0
   assertObjectType' payload OBJECT_TYPE_ID_STR
   store payload (reg2val RVal)
 
@@ -1792,7 +1786,7 @@ applyClosureHelperFunc = do
   lblUnsaturated <- genLabel "closure_unsaturated"
   appendCode $ "br i1 " ++ isSaturated ++ ", label %" ++ labelName ++ "_yes, " ++ toIR lblUnsaturated
   appendCode $ labelName ++ "_yes:"
-  funcPtr <- getObjectSlotT {t=FuncPtr} closureObj 1
+  funcPtr <- getObjectSlot {t=FuncPtr} closureObj 0
 
   let hp = "%RuntimePtr %HpArg"
   let base = "%RuntimePtr %BaseArg"
@@ -1812,7 +1806,7 @@ applyClosureHelperFunc = do
     let labelName = applyClosure ++ "_" ++ show numberOfStoredArgs
     appendCode $ labelName ++ ":"
     storedArgs <- for (rangeFromThenTo 0 1 (numberOfStoredArgs-1)) (\argIndex => do
-                      argItem <- getObjectSlotT {t=IRObjPtr} closureObj (2+argIndex)
+                      argItem <- getObjectSlot {t=IRObjPtr} closureObj (argIndex + 1)
                       pure $ (toIR argItem)
                       )
     let argList = [hp, base, hpLim] ++ storedArgs ++ [toIR argValue]
