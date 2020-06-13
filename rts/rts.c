@@ -7,6 +7,7 @@
 
 #include <sys/errno.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 
 #include <gc.h>
 
@@ -82,6 +83,10 @@ static inline void OBJ_PUT_SLOT(ObjPtr p, int32_t pos, ObjPtr d) {
 
 static inline ObjPtr OBJ_GET_SLOT(ObjPtr p, int32_t pos) {
   return ((ObjPtr*)&p->data)[pos];
+}
+
+static inline void *OBJ_GET_SLOT_ADDR(ObjPtr p, int32_t pos) {
+  return &((&p->data)[pos]);
 }
 
 static inline void *OBJ_PAYLOAD(ObjPtr p) {
@@ -166,81 +171,58 @@ int64_t idris_rts_str_to_int(ObjPtr obj) {
   return strtoll(scopy, NULL, 10);
 }
 
-int64_t idris_rts_write_buffer_to_file(ObjPtr fnameObj, ObjPtr bufObj, int64_t maxSize) {
-  int fnameLength = OBJ_SIZE(fnameObj);
-  const char *fnameStr = (const char *)OBJ_PAYLOAD(fnameObj);
-  char *scopy = (char *)alloca(fnameLength + 1);
-  memcpy(scopy, fnameStr, fnameLength);
-  scopy[fnameLength] = '\0';
+int64_t rapid_system_file_size(Idris_TSO *base, ObjPtr filePtrObj) {
+  assert (OBJ_TYPE(filePtrObj) == OBJ_TYPE_OPAQUE);
+  assert (OBJ_SIZE(filePtrObj) == POINTER_SIZE);
 
-  int64_t writeSize = OBJ_SIZE(bufObj);
-  if (maxSize < writeSize) {
-    writeSize = maxSize;
+  struct stat stat_buf;
+
+  FILE *f = *(FILE **)OBJ_GET_SLOT_ADDR(filePtrObj, 0);
+  int fd = fileno(f);
+  int stat_error = fstat(fd, &stat_buf);
+
+  if (stat_error != 0) {
+    base->rapid_errno = errno;
+    return -1;
   }
 
-  FILE *outf = fopen(scopy, "wb");
-
-  size_t written = fwrite(OBJ_PAYLOAD(bufObj), 1, writeSize, outf);
-  if (written != writeSize) {
-    fclose(outf);
-    return 1;
-  }
-
-  int closeOk = fclose(outf);
-
-  return closeOk;
+  return stat_buf.st_size;
 }
 
-ObjPtr idris_rts_read_buffer_from_file(Idris_TSO *base, ObjPtr fnameObj) {
-  int fnameLength = OBJ_SIZE(fnameObj);
-  const char *fnameStr = (const char *)OBJ_PAYLOAD(fnameObj);
-  char *scopy = (char *)alloca(fnameLength + 1);
-  memcpy(scopy, fnameStr, fnameLength);
-  scopy[fnameLength] = '\0';
+int64_t idris_rts_write_buffer_data(ObjPtr filePtrObj, ObjPtr bufObj, int64_t loc, int64_t maxSize) {
+  assert (loc >= 0);
+  assert (maxSize >= 0);
+  assert (OBJ_TYPE(filePtrObj) == OBJ_TYPE_OPAQUE && OBJ_SIZE(filePtrObj) == POINTER_SIZE);
+  assert (OBJ_TYPE(bufObj) == OBJ_TYPE_BUFFER && OBJ_SIZE(bufObj) >= (loc + maxSize));
 
-  int err = 0;
+  FILE *f = *(FILE **)OBJ_GET_SLOT_ADDR(filePtrObj, 0);
+  const char *payload = OBJ_PAYLOAD(bufObj);
+  const char *begin = payload + loc;
 
-  FILE *inf = NULL;
-  if (!(inf = fopen(scopy, "rb"))) {
-    err = 1;
-    goto end;
+  size_t written = fwrite(begin, 1, maxSize, f);
+  if (written != maxSize) {
+    return -1;
   }
 
-  if ((err = fseeko(inf, 0L, SEEK_END))) {
-    goto end;
+  return written;
+}
+
+int64_t idris_rts_read_buffer_data(ObjPtr filePtrObj, ObjPtr bufObj, int64_t loc, int64_t maxSize) {
+  assert (loc >= 0);
+  assert (maxSize >= 0);
+  assert (OBJ_TYPE(filePtrObj) == OBJ_TYPE_OPAQUE && OBJ_SIZE(filePtrObj) == POINTER_SIZE);
+  assert (OBJ_TYPE(bufObj) == OBJ_TYPE_BUFFER && OBJ_SIZE(bufObj) >= (loc + maxSize));
+
+  FILE *f = *(FILE **)OBJ_GET_SLOT_ADDR(filePtrObj, 0);
+  char *payload = OBJ_PAYLOAD(bufObj);
+  char *begin = payload + loc;
+
+  size_t read = fread(begin, 1, maxSize, f);
+  if (read != maxSize) {
+    return -1;
   }
 
-  off_t fileSize = ftello(inf);
-  if (fileSize > 0xffffffffull) {
-    rapid_C_crash("file too big");
-  }
-
-  if ((err = fseeko(inf, 0L, SEEK_SET))) {
-    goto end;
-  }
-
-  ObjPtr newObj = (ObjPtr)rapid_C_allocate(base, 8 + fileSize);
-  newObj->hdr = MAKE_HEADER(OBJ_TYPE_BUFFER, fileSize);
-
-  size_t readBytes = fread(OBJ_PAYLOAD(newObj), 1, fileSize, inf);
-  if (readBytes != fileSize) {
-    err = 2;
-    goto end;
-  }
-
-end:
-  if (inf != NULL) {
-    int closeErr = fclose(inf);
-    if (!err && !closeErr) {
-      return newObj;
-    }
-  }
-
-  // create a "null" obj to signify error (because the "isBuffer" check will
-  // fail, if the object type is set to zero)
-  ObjPtr nullObj = rapid_C_allocate(base, 8);
-  nullObj->hdr = 0x0ull;
-  return nullObj;
+  return read;
 }
 
 ObjPtr rapid_system_file_open(Idris_TSO *base, ObjPtr fnameObj, ObjPtr modeObj) {
@@ -272,7 +254,7 @@ ObjPtr rapid_system_file_open(Idris_TSO *base, ObjPtr fnameObj, ObjPtr modeObj) 
 
 void rapid_system_file_close(ObjPtr filePtrObj) {
   if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
-    rapid_C_crash("invalid object apssed to file_close");
+    rapid_C_crash("invalid object passed to file_close");
   }
 
   FILE *f = *(FILE **)OBJ_PAYLOAD(filePtrObj);

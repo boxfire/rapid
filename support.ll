@@ -24,14 +24,15 @@ declare ccc i64 @idris_rts_int_to_str(i8* noalias nocapture nofree nonnull, i64)
 declare ccc i64 @idris_rts_double_to_str(i8* noalias nocapture nofree writeonly, i64, double) argmemonly
 declare ccc double @idris_rts_str_to_double(%ObjPtr noalias nocapture nofree nonnull) readonly argmemonly
 declare ccc i64 @idris_rts_str_to_int(%ObjPtr noalias nocapture nofree nonnull) readonly argmemonly
-declare ccc i64 @idris_rts_write_buffer_to_file(%ObjPtr, %ObjPtr, i64)
 
 declare ccc void @rapid_strreverse(i8* noalias nocapture nofree nonnull writeonly, i8* noalias nocapture nofree nonnull readonly, i64) argmemonly
 
-declare ccc %ObjPtr @idris_rts_read_buffer_from_file(%RuntimePtr, %ObjPtr)
+declare ccc i64 @idris_rts_write_buffer_data(%ObjPtr, %ObjPtr, i64, i64)
+declare ccc i64 @idris_rts_read_buffer_data(%ObjPtr, %ObjPtr, i64, i64)
 declare ccc %ObjPtr @rapid_system_file_open(%RuntimePtr, %ObjPtr, %ObjPtr)
 declare ccc void @rapid_system_file_close(%ObjPtr)
 declare ccc %Word @rapid_system_file_eof(%ObjPtr)
+declare ccc i64 @rapid_system_file_size(%RuntimePtr, %ObjPtr)
 declare ccc %Word @rapid_system_file_write_string(%ObjPtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_system_file_read_line(%RuntimePtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_system_getargs(%RuntimePtr, %Word)

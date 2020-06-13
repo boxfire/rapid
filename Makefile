@@ -27,7 +27,7 @@ clean-tests:
 
 check: test
 
-test:
+test: rts
 	./runtests.sh --good
 
 .PHONY: all bdw-gc check clean clean-tests rapid rts test

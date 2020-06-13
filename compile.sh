@@ -39,6 +39,5 @@ set -x
 cat support.ll "${workfile}.sexp.output.ll" > "${workfile}.full.ll"
 opt "${workfile}.full.ll" $optimize | tee "${workfile}.bc" | llc $tco -o "${workfile}.s"
 
-make rts
 clang -c -o "${workfile}.o" "${workfile}.s"
 clang -g -o "${workfile}.native" "${workfile}.o" rts/rts.bc external/bdwgc/.libs/libgc.a

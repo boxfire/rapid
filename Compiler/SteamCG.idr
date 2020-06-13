@@ -1559,17 +1559,21 @@ mk_prim__bufferSetString [buf, offsetObj, valObj, _] = do
   appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR bytePtr ++ ", " ++ toIR strPayload ++ ", " ++ toIR strLength ++ ", i1 false)"
 
 
-mk_prim__bufferWriteToFile : Vect 5 (IRValue IRObjPtr) -> Codegen ()
-mk_prim__bufferWriteToFile [_, fname, buf, sizeObj, _] = do
-  maxSize <- unboxInt' sizeObj
-  retval <- call {t=I64} "ccc" "@idris_rts_write_buffer_to_file" [toIR fname, toIR buf, toIR maxSize]
-  result <- cgMkInt retval
-  store result (reg2val RVal)
+mk_prim__bufferWriteData : Vect 5 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferWriteData [filePtr, buf, locObj, maxObj, _] = do
+  loc <- unboxInt' locObj
+  max <- unboxInt' maxObj
+  writtenBytes <- call {t=I64} "ccc" "@idris_rts_write_buffer_data" [toIR filePtr, toIR buf, toIR loc, toIR max]
+  resultObj <- cgMkInt writtenBytes
+  store resultObj (reg2val RVal)
 
-mk_prim__bufferReadFromFile : Vect 3 (IRValue IRObjPtr) -> Codegen ()
-mk_prim__bufferReadFromFile [_, fname, _] = do
-  newObj <- foreignCall {t=IRObjPtr} "@idris_rts_read_buffer_from_file" [toIR fname]
-  store newObj (reg2val RVal)
+mk_prim__bufferReadData : Vect 5 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferReadData [filePtr, buf, locObj, maxObj, _] = do
+  loc <- unboxInt' locObj
+  max <- unboxInt' maxObj
+  readBytes <- call {t=I64} "ccc" "@idris_rts_read_buffer_data" [toIR filePtr, toIR buf, toIR loc, toIR max]
+  resultObj <- cgMkInt readBytes
+  store resultObj (reg2val RVal)
 
 mk_prim__nullAnyPtr : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__nullAnyPtr [p] = do
@@ -1653,6 +1657,11 @@ mk_prim__fileReadLine [filePtr, _] = do
   assertObjectType' result OBJECT_TYPE_ID_POINTER
   store result (reg2val RVal)
 
+mk_prim__fileSize : Vect 2 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__fileSize [filePtr, _] = do
+  result <- foreignCall {t=I64} "@rapid_system_file_size" [toIR filePtr]
+  store !(cgMkInt result) (reg2val RVal)
+
 mk_prim__getArgs : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__getArgs [_] = do
   result <- foreignCall {t=IRObjPtr} "@rapid_system_getargs" [toIR (Const I64 0)]
@@ -1704,8 +1713,8 @@ supportPrelude = fastAppend [
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__setInt32")) mk_prim__bufferSetInt32
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__getString")) mk_prim__bufferGetString
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__setString")) mk_prim__bufferSetString
-  , mkSupport (NS ["Buffer", "Data"] (UN "prim__writeBuffer")) mk_prim__bufferWriteToFile
-  , mkSupport (NS ["Buffer", "Data"] (UN "prim__readBufferFromFile")) mk_prim__bufferReadFromFile
+  , mkSupport (NS ["Buffer", "Data"] (UN "prim__writeBufferData")) mk_prim__bufferWriteData
+  , mkSupport (NS ["Buffer", "Data"] (UN "prim__readBufferData")) mk_prim__bufferReadData
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__isBuffer")) mk_prim__isBuffer
   , mkSupport (NS ["Directory", "System"] (UN "prim_currentDir")) mk_prim__currentDir
   , mkSupport (NS ["File", "System"] (UN "prim__open")) mk_prim__fileOpen
@@ -1713,6 +1722,7 @@ supportPrelude = fastAppend [
   , mkSupport (NS ["File", "System"] (UN "prim__eof")) mk_prim__fileEof
   , mkSupport (NS ["File", "System"] (UN "prim__writeLine")) mk_prim__fileWriteLine
   , mkSupport (NS ["File", "System"] (UN "prim__readLine")) mk_prim__fileReadLine
+  , mkSupport (NS ["File", "System"] (UN "prim__fileSize")) mk_prim__fileSize
   , mkSupport (NS ["File", "System"] (UN "prim_fileErrno")) mk_prim__fileErrno
   , mkSupport (NS ["System"] (UN "prim__getArgs")) mk_prim__getArgs
   , mkSupport (NS ["PrimIO"] (UN "prim__nullAnyPtr")) mk_prim__nullAnyPtr
