@@ -6,12 +6,11 @@ import Data.Maybe
 import Data.Strings
 import Data.Vect
 
-import Codegen
 import Compiler.CompileExpr
 import Compiler.VMCode
 import Core.TT
+
 import Data.Sexp
-import Utils.Hex
 
 ToSexp (Maybe Int) where
   toSexp (Just i) = SList [SAtom "Just", SAtom $ show i]
