@@ -1283,13 +1283,13 @@ getInstIR i (APPLY r fun arg) = do
   hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
   let base = "%RuntimePtr %BaseArg"
 
-  funV <- ((++) "%FuncPtr ") <$> (assignSSA $ "load %FuncPtr, %FuncPtr* " ++ toIR fun ++ "Var")
+  closureObj <- load (reg2val fun)
   argV <- load (reg2val arg)
 
   let tailpos = isReturn r
   let tailStr = if tailpos then "tail " else ""
 
-  result <- assignSSA $ tailStr ++ "call fastcc %Return1 @idris_apply_closure(" ++ showSep ", " [hp, base, hpLim, funV, toIR argV] ++ ")"
+  result <- assignSSA $ tailStr ++ "call fastcc %Return1 @idris_apply_closure(" ++ showSep ", " [hp, base, hpLim, toIR closureObj, toIR argV] ++ ")"
 
   when tailpos $ appendCode $ "ret %Return1 " ++ result
   when tailpos $appendCode $ "unreachable"
@@ -1822,7 +1822,9 @@ applyClosureHelperFunc = do
   newArgsSize <- mkMul appliedArgCount (ConstI64 8)
   -- add 8 bytes for entry func ptr
   newPayloadSize <- mkAddNoWrap newArgsSize (ConstI64 8)
-  newClosureTotalSize <- mkAddNoWrap newPayloadSize (ConstI64 $ cast HEADER_SIZE)
+  -- old payload size is new payload size - 8
+  let oldPayloadSize = newArgsSize
+
   newClosure <- dynamicAllocate newPayloadSize
 
   let newHeader = ConstI64 $ header OBJECT_TYPE_ID_CLOSURE
@@ -1832,13 +1834,15 @@ applyClosureHelperFunc = do
   newHeader' <- mkOr newHeader newMissingArgsShifted
   newHeader'' <- mkOr newHeader' appliedArgCount
 
-  -- FIXME: "to copy" size is probably 8 bytes too big
-  --appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR newClosure ++ ", " ++ toIR closureObj ++ ", " ++ toIR newClosureTotalSize ++ ", i1 false)"
-  appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR newClosure ++ ", " ++ toIR closureObj ++ ", " ++ toIR newClosureTotalSize ++ ", i1 false)"
-  putObjectHeader newClosure newHeader''
+  oldPayloadPtr <- getObjectPayloadAddr {t=I8} closureObj
+  newPayloadPtr <- getObjectPayloadAddr {t=I8} newClosure
+
+  appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR newPayloadPtr ++ ", " ++ toIR oldPayloadPtr ++ ", " ++ toIR oldPayloadSize ++ ", i1 false)"
 
   let newArgSlotNumber = appliedArgCount
   putObjectSlot newClosure newArgSlotNumber argValue
+
+  putObjectHeader newClosure newHeader''
 
   store newClosure (reg2val RVal)
 

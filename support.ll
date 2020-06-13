@@ -6,7 +6,7 @@ target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
   , [0 x i8*] ; payload
 }
 
-%ObjPtr = type i8*
+%ObjPtr = type %Object*
 %RawPtr = type i8*
 %RuntimePtr = type i8*
 %FuncPtr = type i8*
@@ -118,7 +118,7 @@ define external fastcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %Runtime
 
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpPtrArg, 0
   %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 1
-  %packed3 = insertvalue %Return1 %packed2, %RuntimePtr %addr, 2
+  %packed3 = insertvalue %Return1 %packed2, %ObjPtr %addr, 2
   ret %Return1 %packed3
 }
 
@@ -127,7 +127,7 @@ define external fastcc %Return1 @rapid_allocate_mutable (%RuntimePtr %HpPtrArg, 
 
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpPtrArg, 0
   %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 1
-  %packed3 = insertvalue %Return1 %packed2, %RuntimePtr %addr, 2
+  %packed3 = insertvalue %Return1 %packed2, %ObjPtr %addr, 2
   ret %Return1 %packed3
 }
 
@@ -146,7 +146,8 @@ continue:
   ;TODO: do it
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpNewPtr, 0
   %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 1
-  %packed3 = insertvalue %Return1 %packed2, %RuntimePtr %HpPtrArg, 2
+  %newAddr = bitcast %RuntimePtr %HpPtrArg to %ObjPtr
+  %packed3 = insertvalue %Return1 %packed2, %ObjPtr %newAddr, 2
   ret %Return1 %packed3
 gc_enter:
   %gcresult = call ccc %Return1 @rapid_gc_enter() noreturn
@@ -156,10 +157,11 @@ gc_enter:
 declare ccc i64 @write(i32, i8*, i64)
 
 define private fastcc %Return1 @PrimIO.prim__putStr(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %t0, %ObjPtr %unused0) {
-  %payloadPtr = getelementptr i8, %ObjPtr %t0, i64 8
-  %sizePtr = bitcast %ObjPtr %t0 to i32*
-  %size32 = load i32, i32* %sizePtr
-  %size64 = zext i32 %size32 to i64
+  %payloadPtrG = getelementptr %Object, %ObjPtr %t0, i32 0, i32 1, i32 0
+  %payloadPtr = bitcast i8** %payloadPtrG to i8*
+  %hdrPtr = bitcast %ObjPtr %t0 to i64*
+  %strHeader = load i64, i64* %hdrPtr
+  %size64 = and i64 4294967295, %strHeader
 
   call ccc i64 @write(i32 1, i8* %payloadPtr, i64 %size64)
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpArg, 0
