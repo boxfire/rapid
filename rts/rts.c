@@ -263,7 +263,7 @@ void rapid_system_file_close(ObjPtr filePtrObj) {
 
 Word rapid_system_file_write_string(ObjPtr filePtrObj, ObjPtr strObj) {
   if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
-    rapid_C_crash("invalid object apssed to file_close");
+    rapid_C_crash("invalid object passed to file_write_string");
   }
 
   FILE *f = *(FILE **)OBJ_PAYLOAD(filePtrObj);
@@ -279,7 +279,7 @@ Word rapid_system_file_write_string(ObjPtr filePtrObj, ObjPtr strObj) {
 // return type: Ptr String
 ObjPtr rapid_system_file_read_line(Idris_TSO *base, ObjPtr filePtrObj) {
   if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
-    rapid_C_crash("invalid object passed to file_close");
+    rapid_C_crash("invalid object passed to file_read_line");
   }
 
   FILE *f = *(FILE **)OBJ_PAYLOAD(filePtrObj);
