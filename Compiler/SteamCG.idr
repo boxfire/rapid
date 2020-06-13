@@ -7,6 +7,7 @@ import Data.Maybe
 import Data.SortedMap
 import Data.Strings
 import Data.Vect
+import System.Info
 
 import Compiler.CompileExpr
 import Compiler.VMCode
@@ -16,9 +17,6 @@ import Codegen
 import Utils.Hex
 
 %default partial
-
-HEADER_SIZE : String
-HEADER_SIZE = "8"
 
 OBJECT_TYPE_ID_CON_NO_ARGS : Int
 OBJECT_TYPE_ID_CON_NO_ARGS = 0xff
@@ -175,6 +173,9 @@ ToIR (IRValue t) where
   showWithoutType (ConstI64 i) = show i
   showWithoutType (ConstF64 f) = "0x" ++ (assert_total $ doubleToHex f)
   showWithoutType (IRDiscard) = "ERROR: trying to use DISCARD without type"
+
+HEADER_SIZE : IRValue I64
+HEADER_SIZE = (Const I64 8)
 
 isReturn : Reg -> Bool
 isReturn RVal = True
@@ -346,7 +347,7 @@ funcReturn = "
 
 dynamicAllocate : IRValue I64 -> Codegen (IRValue IRObjPtr)
 dynamicAllocate payloadSize = do
-  totalSize <- SSA I64 <$> assignSSA ("add nsw nuw " ++ (toIR payloadSize) ++ ", " ++ HEADER_SIZE)
+  totalSize <- mkAddNoWrap payloadSize HEADER_SIZE
 
   hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
   hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
@@ -1699,7 +1700,8 @@ mk_prelude_fastAppend [stringListObj] = do
 
 mk_prim__systemInfoOs : Vect 0 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__systemInfoOs [] = do
-  str <- mkStr 2 "darwin"
+  -- no cross compiling for now
+  str <- mkStr 2 System.Info.os
   store str (reg2val RVal)
 
 mk_prim__systemInfoCodegen : Vect 0 (IRValue IRObjPtr) -> Codegen ()
