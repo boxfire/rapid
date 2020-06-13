@@ -56,6 +56,10 @@ escape : String -> Maybe String
 escape s = map (fastPack . reverse) $ escape' (unpack s) [] where
   escape' : List Char -> List Char -> Maybe (List Char)
   escape' [] acc = Just acc
+  escape' ('\\'::'{'::rest) acc =
+    let (codepoint, rest) = span (/= '}') rest
+        ch = cast $ cast {to=Int} (fastPack codepoint) in
+        escape' (drop 1 rest) (ch::acc)
   escape' ('\\'::'\\'::rest) acc = escape' rest ('\\'::acc)
   escape' ('\\'::'a'::rest) acc = escape' rest ('\a'::acc)
   escape' ('\\'::'b'::rest) acc = escape' rest ('\b'::acc)
@@ -66,7 +70,12 @@ escape s = map (fastPack . reverse) $ escape' (unpack s) [] where
   escape' ('\\'::'v'::rest) acc = escape' rest ('\v'::acc)
   escape' ('\\'::'"'::rest) acc = escape' rest ('"'::acc)
   escape' ('\\'::'D'::'E'::'L'::rest) acc = escape' rest ('\DEL'::acc)
+  escape' ('\\'::'E'::'S'::'C'::rest) acc = escape' rest ('\ESC'::acc)
+  escape' ('\\'::'L'::'F'::rest) acc = escape' rest ('\LF'::acc)
+  escape' ('\\'::'N'::'U'::'L'::rest) acc = escape' rest ('\NUL'::acc)
   escape' ('\\'::'S'::'O'::rest) acc = escape' rest ('\SO'::acc)
+  escape' ('\\'::'S'::'Y'::'N'::rest) acc = escape' rest ('\SYN'::acc)
+  escape' ('\\'::'U'::'S'::rest) acc = escape' rest ('\US'::acc)
   escape' ('\\'::xs) acc = case span isDigit xs of
            ([], rest) => escape' rest acc
            (ds, rest) => escape' rest (cast (cast {to=Int} (fastPack ds)) :: acc)

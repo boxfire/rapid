@@ -1,5 +1,6 @@
 module Data.Sexp
 
+import Data.List
 import Data.Strings
 
 %default total
@@ -17,17 +18,32 @@ public export
 interface FromSexp a where
   fromSexp : Sexp -> Either String a
 
+safeChar : Char -> Bool
+safeChar c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '-'
+
 isSafe : String -> Bool
 isSafe "" = False
 isSafe s = let l = prim__strLength s in
                if l > 20 then False else
                go s l 0 where
-                 safeChar : Char -> Bool
-                 safeChar c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '-'
-
                  go : String -> Int -> Int -> Bool
                  go s l i = if i >= l then True
                                       else safeChar (assert_total $ strIndex s i) && (assert_total $ go s l (i+1))
+
+escapeChar : Char -> List Char
+escapeChar '\n' = ['\\', 'n']
+escapeChar '\t' = ['\\', 't']
+escapeChar c = ('\\'::'{'::(unpack $ cast $ cast {to=Int} c)) ++ ['}']
+
+safeShow : String -> String
+safeShow s = fastPack ('"' :: reverse ('"' :: safeShow' (unpack s) []))
+  where
+    safeShow' : List Char -> List Char -> List Char
+    safeShow' [] acc = acc
+    safeShow' (c::rest) acc =
+      if safeChar c
+         then safeShow' rest (c::acc)
+         else safeShow' rest (reverseOnto acc (escapeChar c))
 
 showSep : String -> List String -> String
 showSep sep xs = showSepGo True xs "" where
@@ -38,7 +54,7 @@ showSep sep xs = showSepGo True xs "" where
 
 export
 Show Sexp where
-  show (SAtom s) = if isSafe s then s else (show s)
+  show (SAtom s) = if isSafe s then s else (safeShow s)
   show (SList xs) = "(" ++ (showSep " " (assert_total $ map show xs)) ++ ")"
 
 export

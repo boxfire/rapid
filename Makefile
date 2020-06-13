@@ -19,10 +19,11 @@ external/bdwgc/.libs/libgc.a: Makefile
 
 clean: clean-tests
 	rm -rf build rts/rts.bc samples/build
-	make -C external/bdwgc distclean
+	-make -C external/bdwgc distclean
 
 clean-tests:
 	rm -rf tests/chez/*/build
+	rm -rf tests/chez/*/output
 	rm -rf tests/chez/*/compile.log
 
 check: test

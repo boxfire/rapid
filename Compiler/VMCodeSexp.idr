@@ -12,6 +12,8 @@ import Core.TT
 
 import Data.Sexp
 
+%default covering
+
 ToSexp (Maybe Int) where
   toSexp (Just i) = SList [SAtom "Just", SAtom $ show i]
   toSexp (Nothing) = SList [SAtom "Nothing"]
@@ -22,21 +24,27 @@ FromSexp (Maybe Int) where
   fromSexp s = Left $ "invalid maybe int: " ++ show s
 
 export
+total
 ToSexp Name where
   toSexp (UN s) = SList [SAtom "UN", SAtom s]
   toSexp (NS ns n) = SList [SAtom "NS", SList (map SAtom ns), toSexp n]
   toSexp (DN d n) = SList [SAtom "DN", SAtom d, toSexp n]
   toSexp (MN s i) = SList [SAtom "MN", SAtom s, SAtom $ cast i]
+  toSexp (PV n i) = SList [SAtom "PV", toSexp n, SAtom $ cast i]
+  toSexp (RF s) = SList [SAtom "RF", SAtom s]
   toSexp (CaseBlock outer i) = SList [SAtom "CaseBlock", SAtom $ cast outer, SAtom $ cast i]
   toSexp (WithBlock outer i) = SList [SAtom "WithBlock", SAtom $ cast outer, SAtom $ cast i]
   toSexp (Nested (outer, idx) inner) = SList [SAtom "Nested", SAtom $ cast outer, SAtom $ cast idx, toSexp inner]
-  toSexp n = assert_total $ (idris_crash $ "error-name:" ++ show n)
+  toSexp (Resolved i) = SList [SAtom "Resolved", SAtom $ cast i]
 
 export
+total
 FromSexp Name where
   fromSexp (SList [SAtom "UN", SAtom s]) = Right $ (UN s)
   fromSexp (SList [SAtom "DN", SAtom d, n]) = pure $ (DN d !(fromSexp n))
   fromSexp (SList [SAtom "MN", SAtom s, SAtom i]) = pure $ (MN s !(maybeToEither "invalid MN int" $ parseInteger i))
+  fromSexp (SList [SAtom "PV", n, SAtom i]) = pure $ (PV !(fromSexp n) !(maybeToEither "invalid PV int" $ parseInteger i))
+  fromSexp (SList [SAtom "RF", SAtom s]) = pure $ RF s
   fromSexp (SList [SAtom "CaseBlock", SAtom o, SAtom i]) = pure $ (CaseBlock !(maybeToEither "invalid caseblock outer int" $ parseInteger o) !(maybeToEither "invalid caseblock inner int" $ parseInteger i))
   fromSexp (SList [SAtom "WithBlock", SAtom o, SAtom i]) = pure $ (WithBlock !(maybeToEither "invalid withblock outer int" $ parseInteger o) !(maybeToEither "invalid withblock inner int" $ parseInteger i))
   fromSexp (SList [SAtom "NS", SList ns, n]) = do
@@ -69,7 +77,7 @@ ToSexp Reg where
 shelper : ToSexp a => String -> List a -> Sexp
 shelper s xs = SList ([SAtom s] ++ map toSexp xs)
 
-public export
+export
 ToSexp Constant where
   toSexp (I i)       = SList [SAtom "I", SAtom $ show i]
   toSexp (BI i)      = SList [SAtom "BI", SAtom $ show i]
@@ -85,6 +93,7 @@ ToSexp Constant where
   toSexp u           = SList [SAtom "const-not-implemented", SAtom $ show u]
 
 export
+total
 FromSexp Constant where
   fromSexp (SList [SAtom "I", SAtom i]) = Right $ I $ cast i
   fromSexp (SList [SAtom "BI", SAtom i]) = Right $ BI $ cast i
@@ -100,48 +109,74 @@ FromSexp Constant where
   fromSexp s = Left $ "invalid constant: " ++ show s
 
 export
+total
 ToSexp (PrimFn arity) where
-  toSexp (Add ty)     = SList [SAtom "Add", toSexp ty]
-  toSexp (Sub ty)     = SList [SAtom "Sub", toSexp ty]
-  toSexp (Mul ty)     = SList [SAtom "Mul", toSexp ty]
-  toSexp (Div ty)     = SList [SAtom "Div", toSexp ty]
-  toSexp (Mod ty)     = SList [SAtom "Mod", toSexp ty]
-  toSexp (Neg ty)     = SList [SAtom "Neg", toSexp ty]
-  toSexp (ShiftL ty)  = SList [SAtom "ShiftL", toSexp ty]
-  toSexp (ShiftR ty)  = SList [SAtom "ShiftR", toSexp ty]
+  toSexp (Add ty)      = SList [SAtom "Add", toSexp ty]
+  toSexp (Sub ty)      = SList [SAtom "Sub", toSexp ty]
+  toSexp (Mul ty)      = SList [SAtom "Mul", toSexp ty]
+  toSexp (Div ty)      = SList [SAtom "Div", toSexp ty]
+  toSexp (Mod ty)      = SList [SAtom "Mod", toSexp ty]
+  toSexp (Neg ty)      = SList [SAtom "Neg", toSexp ty]
+  toSexp (ShiftL ty)   = SList [SAtom "ShiftL", toSexp ty]
+  toSexp (ShiftR ty)   = SList [SAtom "ShiftR", toSexp ty]
 
-  toSexp (BAnd ty)    = SList [SAtom "BAnd", toSexp ty]
-  toSexp (BOr ty)     = SList [SAtom "BOr", toSexp ty]
-  toSexp (BXOr ty)    = SList [SAtom "BXOr", toSexp ty]
+  toSexp (BAnd ty)     = SList [SAtom "BAnd", toSexp ty]
+  toSexp (BOr ty)      = SList [SAtom "BOr", toSexp ty]
+  toSexp (BXOr ty)     = SList [SAtom "BXOr", toSexp ty]
 
-  toSexp (LT ty)      = SList [SAtom "LT", toSexp ty]
-  toSexp (LTE ty)     = SList [SAtom "LTE", toSexp ty]
-  toSexp (EQ ty)      = SList [SAtom "EQ", toSexp ty]
-  toSexp (GTE ty)     = SList [SAtom "GTE", toSexp ty]
-  toSexp (GT ty)      = SList [SAtom "GT", toSexp ty]
+  toSexp (LT ty)       = SList [SAtom "LT", toSexp ty]
+  toSexp (LTE ty)      = SList [SAtom "LTE", toSexp ty]
+  toSexp (EQ ty)       = SList [SAtom "EQ", toSexp ty]
+  toSexp (GTE ty)      = SList [SAtom "GTE", toSexp ty]
+  toSexp (GT ty)       = SList [SAtom "GT", toSexp ty]
 
-  toSexp StrLength    = SList [SAtom "StrLength"]
-  toSexp StrHead      = SList [SAtom "StrHead"]
-  toSexp StrTail      = SList [SAtom "StrTail"]
-  toSexp StrReverse   = SList [SAtom "StrReverse"]
-  toSexp StrIndex     = SList [SAtom "StrIndex"]
-  toSexp StrCons      = SList [SAtom "StrCons"]
-  toSexp StrAppend    = SList [SAtom "StrAppend"]
-  toSexp StrSubstr    = SList [SAtom "StrSubstr"]
+  toSexp StrLength     = SList [SAtom "StrLength"]
+  toSexp StrHead       = SList [SAtom "StrHead"]
+  toSexp StrTail       = SList [SAtom "StrTail"]
+  toSexp StrReverse    = SList [SAtom "StrReverse"]
+  toSexp StrIndex      = SList [SAtom "StrIndex"]
+  toSexp StrCons       = SList [SAtom "StrCons"]
+  toSexp StrAppend     = SList [SAtom "StrAppend"]
+  toSexp StrSubstr     = SList [SAtom "StrSubstr"]
 
-  toSexp (Cast t1 t2) = SList [SAtom "Cast", toSexp t1, toSexp t2]
-  toSexp BelieveMe    = SList [SAtom "BelieveMe"]
-  toSexp Crash        = SList [SAtom "Crash"]
-  toSexp f            = SAtom (show f)
+  toSexp DoubleExp     = SList [SAtom "DoubleExp"]
+  toSexp DoubleLog     = SList [SAtom "DoubleLog"]
+  toSexp DoubleSin     = SList [SAtom "DoubleSin"]
+  toSexp DoubleCos     = SList [SAtom "DoubleCos"]
+  toSexp DoubleTan     = SList [SAtom "DoubleTan"]
+  toSexp DoubleASin    = SList [SAtom "DoubleASin"]
+  toSexp DoubleACos    = SList [SAtom "DoubleACos"]
+  toSexp DoubleATan    = SList [SAtom "DoubleATan"]
+  toSexp DoubleSqrt    = SList [SAtom "DoubleSqrt"]
+  toSexp DoubleFloor   = SList [SAtom "DoubleFloor"]
+  toSexp DoubleCeiling = SList [SAtom "DoubleCeiling"]
+
+  toSexp (Cast t1 t2)  = SList [SAtom "Cast", toSexp t1, toSexp t2]
+  toSexp BelieveMe     = SList [SAtom "BelieveMe"]
+  toSexp Crash         = SList [SAtom "Crash"]
 
 export
 FromSexp (PrimFn 1) where
-  fromSexp (SList [SAtom "Cast", t1, t2]) = pure $ Cast !(fromSexp t1) !(fromSexp t2)
-  fromSexp (SList [SAtom "StrLength"])    = pure $ StrLength
-  fromSexp (SList [SAtom "StrHead"])      = pure $ StrHead
-  fromSexp (SList [SAtom "StrTail"])      = pure $ StrTail
-  fromSexp (SList [SAtom "StrReverse"])   = pure $ StrReverse
-  fromSexp s                              = Left $ "invalid PrimFn 1: " ++ show s
+  fromSexp (SList [SAtom "Cast", t1, t2])  = pure $ Cast !(fromSexp t1) !(fromSexp t2)
+  fromSexp (SList [SAtom "Neg", t])        = pure $ Neg !(fromSexp t)
+  fromSexp (SList [SAtom "StrLength"])     = pure $ StrLength
+  fromSexp (SList [SAtom "StrHead"])       = pure $ StrHead
+  fromSexp (SList [SAtom "StrTail"])       = pure $ StrTail
+  fromSexp (SList [SAtom "StrReverse"])    = pure $ StrReverse
+
+  fromSexp (SList [SAtom "DoubleExp"])     = pure $ DoubleExp
+  fromSexp (SList [SAtom "DoubleLog"])     = pure $ DoubleLog
+  fromSexp (SList [SAtom "DoubleSin"])     = pure $ DoubleSin
+  fromSexp (SList [SAtom "DoubleCos"])     = pure $ DoubleCos
+  fromSexp (SList [SAtom "DoubleTan"])     = pure $ DoubleTan
+  fromSexp (SList [SAtom "DoubleASin"])    = pure $ DoubleASin
+  fromSexp (SList [SAtom "DoubleACos"])    = pure $ DoubleACos
+  fromSexp (SList [SAtom "DoubleATan"])    = pure $ DoubleATan
+  fromSexp (SList [SAtom "DoubleSqrt"])    = pure $ DoubleSqrt
+  fromSexp (SList [SAtom "DoubleFloor"])   = pure $ DoubleFloor
+  fromSexp (SList [SAtom "DoubleCeiling"]) = pure $ DoubleCeiling
+
+  fromSexp s                               = Left $ "invalid PrimFn 1: " ++ show s
 
 export
 FromSexp (PrimFn 2) where
@@ -153,6 +188,10 @@ FromSexp (PrimFn 2) where
   fromSexp (SList [SAtom "ShiftL", ty]) = ShiftL <$> fromSexp ty
   fromSexp (SList [SAtom "ShiftR", ty]) = ShiftR <$> fromSexp ty
 
+  fromSexp (SList [SAtom "BAnd", ty])   = BAnd <$> fromSexp ty
+  fromSexp (SList [SAtom "BOr", ty])    = BOr <$> fromSexp ty
+  fromSexp (SList [SAtom "BXOr", ty])   = BXOr <$> fromSexp ty
+
   fromSexp (SList [SAtom "LT", ty])     = LT <$> fromSexp ty
   fromSexp (SList [SAtom "LTE", ty])    = LTE <$> fromSexp ty
   fromSexp (SList [SAtom "EQ", ty])     = EQ <$> fromSexp ty
@@ -163,7 +202,7 @@ FromSexp (PrimFn 2) where
   fromSexp (SList [SAtom "StrCons"])    = pure $ StrCons
   fromSexp (SList [SAtom "StrAppend"])  = pure $ StrAppend
 
-  fromSexp (SList [SAtom "Crash"])  = pure $ Crash
+  fromSexp (SList [SAtom "Crash"])      = pure $ Crash
 
   fromSexp s = Left $ "invalid PrimFn 2: " ++ show s
 
