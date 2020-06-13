@@ -6,10 +6,15 @@ target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
   , [0 x i8*] ; payload
 }
 
-%ObjPtr = type %Object*
+%ObjPtr = type %Object addrspace(1)*
+%ObjPtrPtr = type %Object addrspace(1)* addrspace(1)*
 %RawPtr = type i8*
 %RuntimePtr = type i8*
 %FuncPtr = type i8*
+
+%i8p1 = type i8 addrspace(1)*
+%i32p1 = type i32 addrspace(1)*
+%i64p1 = type i64 addrspace(1)*
 
 %Idris_TSO.struct = type {
     i8* ; nurseryStart
@@ -38,12 +43,12 @@ declare ccc void @idris_rts_crash_typecheck(%ObjPtr, i64) noreturn
 declare ccc void @idris_mkcon_ok(%ObjPtr)
 declare ccc void @idris_mkcon_arg_ok(%ObjPtr, i64)
 
-declare ccc i64 @idris_rts_int_to_str(i8* noalias nocapture nofree nonnull, i64) readonly argmemonly
-declare ccc i64 @idris_rts_double_to_str(i8* noalias nocapture nofree writeonly, i64, double) argmemonly
+declare ccc i64 @idris_rts_int_to_str(%i8p1 noalias nocapture nofree nonnull, i64) readonly argmemonly
+declare ccc i64 @idris_rts_double_to_str(%i8p1 noalias nocapture nofree writeonly, i64, double) argmemonly
 declare ccc double @idris_rts_str_to_double(%ObjPtr noalias nocapture nofree nonnull) readonly argmemonly
 declare ccc i64 @idris_rts_str_to_int(%ObjPtr noalias nocapture nofree nonnull) readonly argmemonly
 
-declare ccc void @rapid_strreverse(i8* noalias nocapture nofree nonnull writeonly, i8* noalias nocapture nofree nonnull readonly, i64) argmemonly
+declare ccc void @rapid_strreverse(%i8p1 noalias nocapture nofree nonnull writeonly, %i8p1 noalias nocapture nofree nonnull readonly, i64) argmemonly
 
 declare ccc i64 @idris_rts_write_buffer_data(%TSOPtr, %ObjPtr, %ObjPtr, i64, i64, %ObjPtr)
 declare ccc i64 @idris_rts_read_buffer_data(%TSOPtr, %ObjPtr, %ObjPtr, i64, i64, %ObjPtr)
@@ -59,7 +64,10 @@ declare ccc %ObjPtr @rapid_fast_append(%TSOPtr, %ObjPtr)
 declare ccc void @rapid_putstr(%TSOPtr, %ObjPtr, %ObjPtr)
 
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
+declare void @llvm.memcpy.p1i8.p0i8.i32(%i8p1 nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind
+declare void @llvm.memcpy.p1i8.p1i8.i32(%i8p1 nocapture, %i8p1 nocapture, i32, i1) nounwind
+declare void @llvm.memcpy.p1i8.p1i8.i64(%i8p1 nocapture, %i8p1 nocapture, i64, i1) nounwind
 declare void @llvm.dbg.addr(metadata, metadata, metadata)
 
 declare i8* @llvm.frameaddress(i32)
@@ -75,16 +83,16 @@ define private ccc %Return1 @rapid_gc_enter() noinline {
   ret %Return1 undef
 }
 
-define private fastcc i1 @mem_eq(i8* noalias nocapture nofree nonnull %v1, i8* noalias nocapture nofree nonnull %v2, i64 %size) argmemonly readonly nounwind {
+define private fastcc i1 @mem_eq(%i8p1 noalias nocapture nofree nonnull %v1, %i8p1 noalias nocapture nofree nonnull %v2, i64 %size) argmemonly readonly nounwind {
 entry:
   br label %loop
 loop:
   %i = phi i64 [%iPlus, %loopend], [0, %entry]
 
-  %p1 = getelementptr inbounds i8, i8* %v1, i64 %i
-  %p2 = getelementptr inbounds i8, i8* %v2, i64 %i
-  %b1 = load i8, i8* %p1
-  %b2 = load i8, i8* %p2
+  %p1 = getelementptr inbounds i8, %i8p1 %v1, i64 %i
+  %p2 = getelementptr inbounds i8, %i8p1 %v2, i64 %i
+  %b1 = load i8, %i8p1 %p1
+  %b2 = load i8, %i8p1 %p2
   %beq = icmp eq i8 %b1, %b2
 
   br i1 %beq, label %loopend, label %finished
@@ -97,17 +105,17 @@ finished:
   ret i1 %beq
 }
 
-define private fastcc i32 @rapid.memcmp(i8* noalias nocapture nofree nonnull %v1, i8* noalias nocapture nofree nonnull %v2, i64 %size) argmemonly readonly nounwind {
-;define external fastcc i32 @rapid.memcmp(i8* %v1, i8* %v2, i64 %size) noinline optsize nounwind {
+define private fastcc i32 @rapid.memcmp(%i8p1 noalias nocapture nofree nonnull %v1, %i8p1 noalias nocapture nofree nonnull %v2, i64 %size) argmemonly readonly nounwind {
+;define external fastcc i32 @rapid.memcmp(%i8p1 %v1, %i8p1 %v2, i64 %size) noinline optsize nounwind {
 entry:
   br label %loop
 loop:
   %i = phi i64 [%iPlus, %loopend], [0, %entry]
 
-  %p1 = getelementptr inbounds i8, i8* %v1, i64 %i
-  %p2 = getelementptr inbounds i8, i8* %v2, i64 %i
-  %b1 = load i8, i8* %p1
-  %b2 = load i8, i8* %p2
+  %p1 = getelementptr inbounds i8, %i8p1 %v1, i64 %i
+  %p2 = getelementptr inbounds i8, %i8p1 %v2, i64 %i
+  %b1 = load i8, %i8p1 %p1
+  %b2 = load i8, %i8p1 %p2
   %beq = icmp eq i8 %b1, %b2
 
   br i1 %beq, label %loopend, label %finished_neq
@@ -164,7 +172,8 @@ continue:
   ;TODO: do it
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpNewPtr, 0
   %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 1
-  %newAddr = bitcast %RuntimePtr %HpPtrArg to %ObjPtr
+  %newAddrIn1 = addrspacecast %RuntimePtr %HpPtrArg to i8 addrspace(1)*
+  %newAddr = bitcast i8 addrspace(1)* %newAddrIn1 to %ObjPtr
   %packed3 = insertvalue %Return1 %packed2, %ObjPtr %newAddr, 2
   ret %Return1 %packed3
 gc_enter:
@@ -178,14 +187,14 @@ define private fastcc %Return1 @_extprim_Data.IORef.prim__newIORef(%RuntimePtr %
   %hplimnew = extractvalue %Return1 %allocated.ret, 1
   %newobj = extractvalue %Return1 %allocated.ret, 2
 
-  %objptr = bitcast %ObjPtr %newobj to i64*
-  %hdr.ptr = getelementptr inbounds i64, i64* %objptr, i64 0
+  %objptr = bitcast %ObjPtr %newobj to %i64p1
+  %hdr.ptr = getelementptr inbounds i64, %i64p1 %objptr, i64 0
   ; putObjectHeader 0x05 `shl` 32
-  store i64 21474836480, i64* %hdr.ptr
+  store i64 21474836480, %i64p1 %hdr.ptr
 
-  %ref.ptr = getelementptr inbounds i64, i64* %objptr, i64 1
-  %ref.objptr = bitcast i64* %ref.ptr to %ObjPtr*
-  store %ObjPtr %val, %ObjPtr* %ref.objptr
+  %ref.ptr = getelementptr inbounds i64, %i64p1 %objptr, i64 1
+  %ref.objptr = bitcast %i64p1 %ref.ptr to %ObjPtrPtr
+  store %ObjPtr %val, %ObjPtrPtr %ref.objptr
 
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %hpnew, 0
   %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %hplimnew, 1
@@ -194,10 +203,10 @@ define private fastcc %Return1 @_extprim_Data.IORef.prim__newIORef(%RuntimePtr %
 }
 
 define private fastcc %Return1 @_extprim_Data.IORef.prim__readIORef(%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %ref, %ObjPtr %world) alwaysinline {
-  %objptr = bitcast %ObjPtr %ref to i64*
-  %payload.ptr = getelementptr inbounds i64, i64* %objptr, i64 1
-  %payload.objptr = bitcast i64* %payload.ptr to %ObjPtr*
-  %payload.obj = load %ObjPtr, %ObjPtr* %payload.objptr
+  %objptr = bitcast %ObjPtr %ref to %i64p1
+  %payload.ptr = getelementptr inbounds i64, %i64p1 %objptr, i64 1
+  %payload.objptr = bitcast %i64p1 %payload.ptr to %ObjPtrPtr
+  %payload.obj = load %ObjPtr, %ObjPtrPtr %payload.objptr
 
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpArg, 0
   %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimArg, 1
@@ -206,17 +215,15 @@ define private fastcc %Return1 @_extprim_Data.IORef.prim__readIORef(%RuntimePtr 
 }
 
 define private fastcc %Return1 @_extprim_Data.IORef.prim__writeIORef(%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %ref, %ObjPtr %val, %ObjPtr %world) alwaysinline {
-  %objptr = bitcast %ObjPtr %ref to i64*
-  %payload.ptr = getelementptr inbounds i64, i64* %objptr, i64 1
-  %payload.objptr = bitcast i64* %payload.ptr to %ObjPtr*
+  %objptr = bitcast %ObjPtr %ref to %i64p1
+  %payload.ptr = getelementptr inbounds i64, %i64p1 %objptr, i64 1
+  %payload.objptr = bitcast %i64p1 %payload.ptr to %ObjPtrPtr
   ; future write barrier required?
-  store %ObjPtr %val, %ObjPtr* %payload.objptr
-
-  %nullptr = inttoptr i64 0 to %ObjPtr
+  store %ObjPtr %val, %ObjPtrPtr %payload.objptr
 
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpArg, 0
   %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimArg, 1
-  %packed3 = insertvalue %Return1 %packed2, %ObjPtr %nullptr, 2
+  %packed3 = insertvalue %Return1 %packed2, %ObjPtr null, 2
   ret %Return1 %packed3
 }
 
