@@ -289,13 +289,17 @@ voidCall cconv name args =
   appendCode $ "  call " ++ cconv ++ " void " ++ name ++ "(" ++ (showSep ", " (toList args)) ++ ")"
 
 call : {t : IRType} -> String -> String -> Vect n String -> Codegen (IRValue t)
-call {t} cconv name args = do
+call {t} cconv name args =
   SSA t <$> (assignSSA $ "  call " ++ cconv ++ " " ++ show t ++ " " ++ name ++ "(" ++ (showSep ", " (toList args)) ++ ")")
 
 -- Call a "runtime-aware" foreign function, i.e. one, that can allocate memory
-foreignCall : {t : IRType} -> String -> Vect n String -> Codegen (IRValue t)
-foreignCall {t} name args = do
-  SSA t <$> (assignSSA $ "  call ccc " ++ show t ++ " " ++ name ++ "(%RuntimePtr %BaseArg, " ++ (showSep ", " (toList args)) ++ ")")
+foreignCall : {t : IRType} -> String -> List String -> Codegen (IRValue t)
+foreignCall {t} name args =
+  SSA t <$> (assignSSA $ "  call ccc " ++ show t ++ " " ++ name ++ "(%RuntimePtr %BaseArg, " ++ (showSep ", " args) ++ ")")
+
+foreignVoidCall : String -> List String -> Codegen ()
+foreignVoidCall name args =
+  appendCode $ "  call ccc void " ++ name ++ "(%RuntimePtr %BaseArg, " ++ (showSep ", " args) ++ ")"
 
 getObjectSlotAddrVar : {t : IRType} -> IRValue IRObjPtr -> IRValue I64 -> Codegen (IRValue (Pointer t))
 getObjectSlotAddrVar obj pos = do
@@ -1580,22 +1584,6 @@ mk_prim__bufferSetString [buf, offsetObj, valObj, _] = do
   appendCode $ "  call void @llvm.memcpy.p0i8.p0i8.i64(" ++ toIR bytePtr ++ ", " ++ toIR strPayload ++ ", " ++ toIR strLength ++ ", i1 false)"
 
 
-mk_prim__bufferWriteData : Vect 5 (IRValue IRObjPtr) -> Codegen ()
-mk_prim__bufferWriteData [filePtr, buf, locObj, maxObj, _] = do
-  loc <- unboxInt' locObj
-  max <- unboxInt' maxObj
-  writtenBytes <- call {t=I64} "ccc" "@idris_rts_write_buffer_data" [toIR filePtr, toIR buf, toIR loc, toIR max]
-  resultObj <- cgMkInt writtenBytes
-  store resultObj (reg2val RVal)
-
-mk_prim__bufferReadData : Vect 5 (IRValue IRObjPtr) -> Codegen ()
-mk_prim__bufferReadData [filePtr, buf, locObj, maxObj, _] = do
-  loc <- unboxInt' locObj
-  max <- unboxInt' maxObj
-  readBytes <- call {t=I64} "ccc" "@idris_rts_read_buffer_data" [toIR filePtr, toIR buf, toIR loc, toIR max]
-  resultObj <- cgMkInt readBytes
-  store resultObj (reg2val RVal)
-
 mk_prim__nullAnyPtr : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__nullAnyPtr [p] = do
   lblStart <- genLabel "nullAnyPtr_start"
@@ -1643,21 +1631,6 @@ mk_prim__currentDir [_] = do
   putObjectSlot newPtr (Const I64 0) dummy
   store newPtr (reg2val RVal)
 
-mk_prim__fileOpen : Vect 4 (IRValue IRObjPtr) -> Codegen ()
-mk_prim__fileOpen [fileName, mode, _, _] = do
-  result <- foreignCall "@rapid_system_file_open" [toIR fileName, toIR mode]
-  store result (reg2val RVal)
-
-mk_prim__fileClose : Vect 2 (IRValue IRObjPtr) -> Codegen ()
-mk_prim__fileClose [filePtr, _] = do
-  voidCall "ccc" "@rapid_system_file_close" [toIR filePtr]
-
-mk_prim__fileEof : Vect 2 (IRValue IRObjPtr) -> Codegen ()
-mk_prim__fileEof [filePtr, _] = do
-  result <- call {t=I64} "ccc" "@rapid_system_file_eof" [toIR filePtr]
-  resultObj <- cgMkInt result
-  store resultObj (reg2val RVal)
-
 mk_prim__fileErrno : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__fileErrno [_] = do
   tsoObj <- assignSSA "bitcast %RuntimePtr %BaseArg to %Idris_TSO.struct*"
@@ -1665,28 +1638,6 @@ mk_prim__fileErrno [_] = do
   errnoValue <- load errnoAddr
   errnoObj <- cgMkInt !(mkZext errnoValue)
   store errnoObj (reg2val RVal)
-
-mk_prim__fileWriteLine : Vect 3 (IRValue IRObjPtr) -> Codegen ()
-mk_prim__fileWriteLine [filePtr, strObj, _] = do
-  result <- call {t=I64} "ccc" "@rapid_system_file_write_string" [toIR filePtr, toIR strObj]
-  resultObj <- cgMkInt result
-  store resultObj (reg2val RVal)
-
-mk_prim__fileReadLine : Vect 2 (IRValue IRObjPtr) -> Codegen ()
-mk_prim__fileReadLine [filePtr, _] = do
-  result <- foreignCall {t=IRObjPtr} "@rapid_system_file_read_line" [toIR filePtr]
-  assertObjectType' result OBJECT_TYPE_ID_POINTER
-  store result (reg2val RVal)
-
-mk_prim__fileSize : Vect 2 (IRValue IRObjPtr) -> Codegen ()
-mk_prim__fileSize [filePtr, _] = do
-  result <- foreignCall {t=I64} "@rapid_system_file_size" [toIR filePtr]
-  store !(cgMkInt result) (reg2val RVal)
-
-mk_prim__getArgs : Vect 1 (IRValue IRObjPtr) -> Codegen ()
-mk_prim__getArgs [_] = do
-  result <- foreignCall {t=IRObjPtr} "@rapid_system_getargs" [toIR (Const I64 0)]
-  store result (reg2val RVal)
 
 mk_prelude_fastPack : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prelude_fastPack [charListObj] = do
@@ -1735,18 +1686,9 @@ supportPrelude = fastAppend [
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__setInt32")) mk_prim__bufferSetInt32
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__getString")) mk_prim__bufferGetString
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__setString")) mk_prim__bufferSetString
-  , mkSupport (NS ["Buffer", "Data"] (UN "prim__writeBufferData")) mk_prim__bufferWriteData
-  , mkSupport (NS ["Buffer", "Data"] (UN "prim__readBufferData")) mk_prim__bufferReadData
   , mkSupport (NS ["Buffer", "Data"] (UN "prim__isBuffer")) mk_prim__isBuffer
   , mkSupport (NS ["Directory", "System"] (UN "prim_currentDir")) mk_prim__currentDir
-  , mkSupport (NS ["File", "System"] (UN "prim__open")) mk_prim__fileOpen
-  , mkSupport (NS ["File", "System"] (UN "prim__close")) mk_prim__fileClose
-  , mkSupport (NS ["File", "System"] (UN "prim__eof")) mk_prim__fileEof
-  , mkSupport (NS ["File", "System"] (UN "prim__writeLine")) mk_prim__fileWriteLine
-  , mkSupport (NS ["File", "System"] (UN "prim__readLine")) mk_prim__fileReadLine
-  , mkSupport (NS ["File", "System"] (UN "prim__fileSize")) mk_prim__fileSize
   , mkSupport (NS ["File", "System"] (UN "prim_fileErrno")) mk_prim__fileErrno
-  , mkSupport (NS ["System"] (UN "prim__getArgs")) mk_prim__getArgs
   , mkSupport (NS ["PrimIO"] (UN "prim__nullAnyPtr")) mk_prim__nullAnyPtr
   , mkSupport (NS ["PrimIO"] (UN "prim__getString")) mk_prim__getString
   , mkSupport (NS ["Strings", "Data"] (UN "fastAppend")) mk_prelude_fastAppend
@@ -1755,9 +1697,73 @@ supportPrelude = fastAppend [
   , mkSupport (NS ["Info", "_extprim_System"] (UN "prim__codegen")) mk_prim__systemInfoCodegen
   ]
 
+fromCFType : CFType -> IRType
+fromCFType CFInt = I64
+fromCFType (CFIORes CFInt) = I64
+fromCFType CFDouble = F64
+fromCFType (CFIORes CFDouble) = F64
+fromCFType _ = IRObjPtr
+
+cftypeIsUnit : CFType -> Bool
+cftypeIsUnit CFUnit = True
+cftypeIsUnit (CFIORes CFUnit) = True
+cftypeIsUnit _ = False
+
+wrapForeignResult : (cft : CFType) -> (v: IRValue (fromCFType cft)) -> Codegen (IRValue IRObjPtr)
+wrapForeignResult (CFInt) v = cgMkInt v
+wrapForeignResult (CFIORes CFInt) v = cgMkInt v
+wrapForeignResult (CFDouble) v = cgMkDouble v
+wrapForeignResult (CFIORes CFDouble) v = cgMkDouble v
+wrapForeignResult _ (SSA _ v) = pure (SSA IRObjPtr v)
+
+transformArg : (IRValue IRObjPtr, CFType) -> Codegen String
+transformArg (arg, CFInt) = do
+  i <- unboxInt' arg
+  pure (toIR i)
+transformArg (arg, CFDouble) = do
+  d <- unboxFloat64' arg
+  pure (toIR d)
+transformArg (arg, _) = pure (toIR arg)
+
+genericForeign : String -> Name -> (argTypes : List CFType) -> CFType -> Codegen ()
+genericForeign foreignName name argTypes ret = do
+  let args = map (\(i, _) => SSA IRObjPtr ("%arg" ++ show i)) (enumerate argTypes)
+  appendCode ("define private fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ map toIR args) ++ ") {")
+  appendCode funcEntry
+  if cftypeIsUnit ret then
+    foreignVoidCall ("@" ++ foreignName) !(traverse transformArg (zip args argTypes))
+    else do
+      fgResult <- foreignCall {t=fromCFType ret} ("@" ++ foreignName) !(traverse transformArg (zip args argTypes))
+      store !(wrapForeignResult ret fgResult) (reg2val RVal)
+  appendCode funcReturn
+  appendCode "\n}\n"
+
+foreignRedirectMap : List (String, String)
+foreignRedirectMap = [
+    ("C:idris2_openFile, libidris2_support", "rapid_system_file_open")
+  , ("C:idris2_closeFile, libidris2_support", "rapid_system_file_close")
+  , ("C:idris2_fileSize, libidris2_support", "rapid_system_file_size")
+  , ("C:idris2_readLine, libidris2_support", "rapid_system_file_read_line")
+  , ("C:idris2_writeLine, libidris2_support", "rapid_system_file_write_string")
+  , ("C:idris2_eof, libidris2_support", "rapid_system_file_eof")
+  , ("C:idris2_putStr,libidris2_support", "rapid_putstr")
+  , ("C:idris2_readBufferData,libidris2_support", "idris_rts_read_buffer_data")
+  , ("C:idris2_writeBufferData,libidris2_support", "idris_rts_write_buffer_data")
+  , ("scheme:blodwen-args", "rapid_system_getargs")
+  ]
+
+findForeignName : List String -> Maybe String
+findForeignName cs =
+  case find (isPrefixOf "rapid:") cs of
+       Just found => Just (substr 6 99999 found)
+       Nothing => choiceMap (\n => lookup n foreignRedirectMap) cs
+
 getForeignFunctionIR : Bool -> Int -> Name -> List String -> List CFType -> CFType -> Codegen ()
 getForeignFunctionIR debug i name cs args ret = do
-  pure ()
+  let found = findForeignName cs
+  case found of
+       Just funcName => do genericForeign funcName name args ret
+       Nothing => appendCode $ "; missing foreign: " ++ show name ++ " <- " ++ show cs ++ "\n"
 
 export
 compileForeign : Bool -> (Int, (Name, NamedDef)) -> String

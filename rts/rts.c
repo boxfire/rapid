@@ -171,7 +171,7 @@ int64_t idris_rts_str_to_int(ObjPtr obj) {
   return strtoll(scopy, NULL, 10);
 }
 
-int64_t rapid_system_file_size(Idris_TSO *base, ObjPtr filePtrObj) {
+int64_t rapid_system_file_size(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
   assert (OBJ_TYPE(filePtrObj) == OBJ_TYPE_OPAQUE);
   assert (OBJ_SIZE(filePtrObj) == POINTER_SIZE);
 
@@ -189,7 +189,7 @@ int64_t rapid_system_file_size(Idris_TSO *base, ObjPtr filePtrObj) {
   return stat_buf.st_size;
 }
 
-int64_t idris_rts_write_buffer_data(ObjPtr filePtrObj, ObjPtr bufObj, int64_t loc, int64_t maxSize) {
+int64_t idris_rts_write_buffer_data(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr bufObj, int64_t loc, int64_t maxSize, ObjPtr _world) {
   assert (loc >= 0);
   assert (maxSize >= 0);
   assert (OBJ_TYPE(filePtrObj) == OBJ_TYPE_OPAQUE && OBJ_SIZE(filePtrObj) == POINTER_SIZE);
@@ -207,7 +207,7 @@ int64_t idris_rts_write_buffer_data(ObjPtr filePtrObj, ObjPtr bufObj, int64_t lo
   return written;
 }
 
-int64_t idris_rts_read_buffer_data(ObjPtr filePtrObj, ObjPtr bufObj, int64_t loc, int64_t maxSize) {
+int64_t idris_rts_read_buffer_data(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr bufObj, int64_t loc, int64_t maxSize, ObjPtr _world) {
   assert (loc >= 0);
   assert (maxSize >= 0);
   assert (OBJ_TYPE(filePtrObj) == OBJ_TYPE_OPAQUE && OBJ_SIZE(filePtrObj) == POINTER_SIZE);
@@ -225,7 +225,7 @@ int64_t idris_rts_read_buffer_data(ObjPtr filePtrObj, ObjPtr bufObj, int64_t loc
   return read;
 }
 
-ObjPtr rapid_system_file_open(Idris_TSO *base, ObjPtr fnameObj, ObjPtr modeObj) {
+ObjPtr rapid_system_file_open(Idris_TSO *base, ObjPtr fnameObj, ObjPtr modeObj, int64_t _unused0, ObjPtr _world) {
   ObjPtr ptrObj = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
   ptrObj->hdr = MAKE_HEADER(OBJ_TYPE_OPAQUE, POINTER_SIZE);
 
@@ -252,7 +252,13 @@ ObjPtr rapid_system_file_open(Idris_TSO *base, ObjPtr fnameObj, ObjPtr modeObj) 
   return ptrObj;
 }
 
-void rapid_system_file_close(ObjPtr filePtrObj) {
+void rapid_putstr(Idris_TSO *base, ObjPtr strObj, ObjPtr _world) {
+  assert(OBJ_TYPE(strObj) == OBJ_TYPE_STRING);
+  int64_t length = OBJ_SIZE(strObj);
+  fwrite(OBJ_PAYLOAD(strObj), length, 1, stdout);
+}
+
+void rapid_system_file_close(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
   if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
     rapid_C_crash("invalid object passed to file_close");
   }
@@ -261,7 +267,7 @@ void rapid_system_file_close(ObjPtr filePtrObj) {
   fclose(f);
 }
 
-Word rapid_system_file_write_string(ObjPtr filePtrObj, ObjPtr strObj) {
+Word rapid_system_file_write_string(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr strObj, ObjPtr _world) {
   if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
     rapid_C_crash("invalid object passed to file_write_string");
   }
@@ -277,7 +283,7 @@ Word rapid_system_file_write_string(ObjPtr filePtrObj, ObjPtr strObj) {
 }
 
 // return type: Ptr String
-ObjPtr rapid_system_file_read_line(Idris_TSO *base, ObjPtr filePtrObj) {
+ObjPtr rapid_system_file_read_line(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
   if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
     rapid_C_crash("invalid object passed to file_read_line");
   }
@@ -301,7 +307,7 @@ ObjPtr rapid_system_file_read_line(Idris_TSO *base, ObjPtr filePtrObj) {
   return newPtr;
 }
 
-Word rapid_system_file_eof(ObjPtr filePtrObj) {
+Word rapid_system_file_eof(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
   if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
     rapid_C_crash("invalid object passed to file_eof");
   }
@@ -395,7 +401,7 @@ ObjPtr rapid_fast_append(Idris_TSO *base, ObjPtr strListObj) {
   return newStr;
 }
 
-ObjPtr rapid_system_getargs(Idris_TSO *base, Word _dummy) {
+ObjPtr rapid_system_getargs(Idris_TSO *base, ObjPtr _world) {
   ObjPtr result = MK_LIST_NIL(base);
 
   for (int i = rapid_global_argc - 1; i >= 0; --i) {

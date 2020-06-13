@@ -33,17 +33,18 @@ declare ccc i64 @idris_rts_str_to_int(%ObjPtr noalias nocapture nofree nonnull) 
 
 declare ccc void @rapid_strreverse(i8* noalias nocapture nofree nonnull writeonly, i8* noalias nocapture nofree nonnull readonly, i64) argmemonly
 
-declare ccc i64 @idris_rts_write_buffer_data(%ObjPtr, %ObjPtr, i64, i64)
-declare ccc i64 @idris_rts_read_buffer_data(%ObjPtr, %ObjPtr, i64, i64)
-declare ccc %ObjPtr @rapid_system_file_open(%RuntimePtr, %ObjPtr, %ObjPtr)
-declare ccc void @rapid_system_file_close(%ObjPtr)
-declare ccc %Word @rapid_system_file_eof(%ObjPtr)
-declare ccc i64 @rapid_system_file_size(%RuntimePtr, %ObjPtr)
-declare ccc %Word @rapid_system_file_write_string(%ObjPtr, %ObjPtr)
-declare ccc %ObjPtr @rapid_system_file_read_line(%RuntimePtr, %ObjPtr)
-declare ccc %ObjPtr @rapid_system_getargs(%RuntimePtr, %Word)
+declare ccc i64 @idris_rts_write_buffer_data(%RuntimePtr, %ObjPtr, %ObjPtr, i64, i64, %ObjPtr)
+declare ccc i64 @idris_rts_read_buffer_data(%RuntimePtr, %ObjPtr, %ObjPtr, i64, i64, %ObjPtr)
+declare ccc %ObjPtr @rapid_system_file_open(%RuntimePtr, %ObjPtr, %ObjPtr, i64, %ObjPtr)
+declare ccc void @rapid_system_file_close(%RuntimePtr, %ObjPtr, %ObjPtr)
+declare ccc %Word @rapid_system_file_eof(%RuntimePtr, %ObjPtr, %ObjPtr)
+declare ccc i64 @rapid_system_file_size(%RuntimePtr, %ObjPtr, %ObjPtr)
+declare ccc %Word @rapid_system_file_write_string(%RuntimePtr, %ObjPtr, %ObjPtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_system_file_read_line(%RuntimePtr, %ObjPtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_system_getargs(%RuntimePtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_fast_pack(%RuntimePtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_fast_append(%RuntimePtr, %ObjPtr)
+declare ccc void @rapid_putstr(%RuntimePtr, %ObjPtr, %ObjPtr)
 
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind
@@ -152,22 +153,6 @@ continue:
 gc_enter:
   %gcresult = call ccc %Return1 @rapid_gc_enter() noreturn
   ret %Return1 %gcresult
-}
-
-declare ccc i64 @write(i32, i8*, i64)
-
-define private fastcc %Return1 @PrimIO.prim__putStr(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %t0, %ObjPtr %unused0) {
-  %payloadPtrG = getelementptr %Object, %ObjPtr %t0, i32 0, i32 1, i32 0
-  %payloadPtr = bitcast i8** %payloadPtrG to i8*
-  %hdrPtr = bitcast %ObjPtr %t0 to i64*
-  %strHeader = load i64, i64* %hdrPtr
-  %size64 = and i64 4294967295, %strHeader
-
-  call ccc i64 @write(i32 1, i8* %payloadPtr, i64 %size64)
-  %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpArg, 0
-  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimArg, 1
-  ;%packed3 = insertvalue %Return1 %packed2, %RuntimePtr %HpPtrArg, 3
-  ret %Return1 %packed2
 }
 
 define private fastcc %Return1 @_extprim_Data.IORef.prim__newIORef(%RuntimePtr %HpArg, %RuntimePtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %val, %ObjPtr %world) {

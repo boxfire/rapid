@@ -375,6 +375,7 @@ FromSexp CFType where
   fromSexp (SList [SAtom "IORes String"]) = pure $ CFIORes CFString
   fromSexp (SList [SAtom "IORes Unit"]) = pure $ CFIORes CFUnit
   fromSexp (SList [SAtom "IORes Ptr"]) = pure $ CFIORes CFPtr
+  fromSexp (SList [SAtom "IORes Prelude.List String"]) = pure $ CFIORes (CFUser (NS ["Prelude"] (UN "List")) [CFString])
   fromSexp (SList [SAtom "Ptr"]) = pure CFPtr
   fromSexp (SList [SAtom "String"]) = pure CFString
   fromSexp (SList [SAtom "%World"]) = pure CFWorld
