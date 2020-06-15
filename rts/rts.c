@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 
 #include <gc.h>
+#include <llvm-statepoint-tablegen.h>
 
 const size_t IDRIS_ALIGNMENT = 8;
 const size_t NURSERY_SIZE = 1 * 1024 * 1024;
@@ -59,6 +60,8 @@ typedef RapidObject_t *ObjPtr;
 
 int dump_obj(ObjPtr o);
 int dump_obj_i(ObjPtr o, int indent);
+
+extern void *rapid_C_allocate(Idris_TSO *base, int64_t size) __attribute__((__malloc__)) __attribute__((alloc_size(2)));
 
 static inline uint32_t OBJ_TYPE(ObjPtr p) {
   //return ((p->hdr >> 32) & 0xffffffff);
@@ -137,10 +140,6 @@ void rapid_strreverse(char *restrict dst, const char *restrict src, int64_t size
 void idris_rts_gc(long arg0) {
   printf("GC called: 0x%016lx\n", arg0);
   exit(2);
-}
-
-void *rapid_C_allocate(Idris_TSO *base, int64_t size) {
-  return GC_malloc(size);
 }
 
 int64_t idris_rts_int_to_str(char *dst, int64_t val) {
@@ -415,12 +414,6 @@ ObjPtr rapid_system_getargs(Idris_TSO *base, ObjPtr _world) {
   }
 
   return result;
-}
-
-void *log_GC_malloc(int64_t size) {
-  void *mem = GC_malloc(size);
-  fprintf(stderr, "GC_malloc: %p (%lld)\n", mem, size);
-  return mem;
 }
 
 #define INDENT(i) for(int indent_i=0;indent_i<i;++indent_i){fprintf(stderr, "  ");};

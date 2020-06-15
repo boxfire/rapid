@@ -74,7 +74,7 @@ declare i8* @llvm.frameaddress(i32)
 
 declare ccc i1 @llvm.expect.i1(i1, i1)
 
-declare ccc noalias %ObjPtr @GC_malloc(i64)
+declare ccc noalias i8* @GC_malloc(i64)
 declare ccc noalias %ObjPtr @log_GC_malloc(i64)
 
 define private ccc %Return1 @rapid_gc_enter() noinline {
@@ -135,7 +135,8 @@ finished_eq:
 
 define external fastcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) allocsize(3) alwaysinline optsize nounwind {
   ;%addr = call ccc %ObjPtr @log_GC_malloc(i64 %size)
-  %addr = call ccc noalias %ObjPtr @GC_malloc(i64 %size)
+  %addr.raw = call ccc noalias i8* @GC_malloc(i64 %size)
+  %addr = addrspacecast i8* %addr.raw to %ObjPtr
 
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpPtrArg, 0
   %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 1
@@ -143,8 +144,15 @@ define external fastcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %TSOPtr 
   ret %Return1 %packed3
 }
 
+define external ccc noalias i8* @rapid_C_allocate (%TSOPtr %Base, i64 %size) allocsize(1) {
+  %addr = call ccc noalias i8* @GC_malloc(i64 %size)
+
+  ret i8* %addr
+}
+
 define external fastcc %Return1 @rapid_allocate_mutable (%RuntimePtr %HpPtrArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
-  %addr = call ccc noalias %ObjPtr @GC_malloc(i64 %size)
+  %addr.raw = call ccc noalias i8* @GC_malloc(i64 %size)
+  %addr = addrspacecast i8* %addr.raw to %ObjPtr
 
   %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpPtrArg, 0
   %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 1
