@@ -23,7 +23,7 @@ optimizeO2="$optimizeO1 -functionattrs -ipsccp -sccp -simplifycfg -gvn -ipconstp
 optimizeO3="$optimizeO2"
 if [ -z "$opt" ]; then
   debug="--debug"
-  optimize="-sccp -dce -rewrite-statepoints-for-gc"
+  optimize="-mem2reg -sccp -dce -rewrite-statepoints-for-gc"
 fi
 if [ "$opt" = "-O1" ]; then
   debug="--debug"
@@ -43,5 +43,5 @@ cat support.ll "${workfile}.sexp.output.ll" > "${workfile}.full.ll"
 opt "${workfile}.full.ll" $optimize | tee "${workfile}.bc" | llc $tco -o "${workfile}.s"
 echo $'\n.globl __LLVM_StackMaps' >> "${workfile}.s"
 
-clang -c -o "${workfile}.o" "${workfile}.s"
+clang -g -c -o "${workfile}.o" "${workfile}.s"
 clang -g -o "${workfile}.native" "${workfile}.o" rts/rts.bc external/bdwgc/.libs/libgc.a external/llvm-statepoint-utils/dist/llvm-statepoint-tablegen.a

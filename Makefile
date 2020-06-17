@@ -4,10 +4,13 @@ rapid:
 	idris2 --build rapid-cg.ipkg
 	idris2 --build rapid-fe.ipkg
 
+cg:
+	idris2 --build rapid-cg.ipkg
+
 rts: bdw-gc rts/rts.bc
 
 rts/rts.bc: Makefile rts/rts.c
-	clang -flto -c -Wall -Wpedantic -Werror -I ./external/bdwgc/include -I ./external/llvm-statepoint-utils/dist -std=c99 -o rts/rts.bc rts/rts.c
+	clang -flto -g -c -Wall -Wpedantic -Werror -I ./external/bdwgc/include -I ./external/llvm-statepoint-utils/dist -std=c99 -o rts/rts.bc rts/rts.c
 
 bdw-gc: external/bdwgc/.libs/libgc.a
 

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <sys/errno.h>
@@ -13,27 +14,31 @@
 #include <llvm-statepoint-tablegen.h>
 
 const size_t IDRIS_ALIGNMENT = 8;
-const size_t NURSERY_SIZE = 1 * 1024 * 1024;
+const size_t INITIAL_NURSERY_SIZE = 128;
 
 static const size_t RAPID_STACK_SIZE = 128 * 1024 * 1024;
 
 const int HEADER_SIZE = 8;
 const int POINTER_SIZE = sizeof(void*);
 
-const int64_t OBJ_TYPE_CON_NO_ARGS = 0xff;
-const int64_t OBJ_TYPE_INT         = 0x01;
-const int64_t OBJ_TYPE_STRING      = 0x02;
-const int64_t OBJ_TYPE_CLOSURE     = 0x03;
-const int64_t OBJ_TYPE_CHAR        = 0x04;
-const int64_t OBJ_TYPE_IOREF       = 0x05;
-const int64_t OBJ_TYPE_BUFFER      = 0x06;
-const int64_t OBJ_TYPE_OPAQUE      = 0x07;
-const int64_t OBJ_TYPE_PTR         = 0x08;
+#define OBJ_TYPE_CON_NO_ARGS 0xff
+#define OBJ_TYPE_INT         0x01
+#define OBJ_TYPE_DOUBLE      0x01
+#define OBJ_TYPE_STRING      0x02
+#define OBJ_TYPE_CLOSURE     0x03
+#define OBJ_TYPE_CHAR        0x04
+#define OBJ_TYPE_IOREF       0x05
+#define OBJ_TYPE_BUFFER      0x06
+#define OBJ_TYPE_OPAQUE      0x07
+#define OBJ_TYPE_PTR         0x08
 
+#define OBJ_TYPE_FWD_REF     0xfd
+
+// tso
 typedef struct {
-  void *nurseryStart;
-  void *nurseryNext;
-  void *nurseryEnd;
+  uint8_t *nurseryStart;
+  uint8_t *nurseryNext;
+  uint8_t *nurseryEnd;
 
   int rapid_errno;
 
@@ -41,12 +46,27 @@ typedef struct {
   void *stack_top;
   size_t stack_size;
 
+  uint64_t heap_alloc;
+  uint64_t next_nursery_size;
+
   jmp_buf sched_jmp_buf;
 } Idris_TSO;
 
 static int rapid_global_argc = 0;
 static char **rapid_global_argv = NULL;
 
+// BEGIN GC
+#ifdef __linux__
+  #define STACKMAP __LLVM_StackMaps
+#endif
+
+#ifdef __APPLE__
+  #define STACKMAP _LLVM_StackMaps
+#endif
+extern uint8_t STACKMAP[];
+static statepoint_table_t *rapid_global_stackmap_table;
+
+// begin generic
 typedef uint64_t RapidObjectHeader;
 
 typedef uint64_t Word;
@@ -60,6 +80,7 @@ typedef RapidObject_t *ObjPtr;
 
 int dump_obj(ObjPtr o);
 int dump_obj_i(ObjPtr o, int indent);
+void rapid_C_crash(const char *msg);
 
 extern void *rapid_C_allocate(Idris_TSO *base, int64_t size) __attribute__((__malloc__)) __attribute__((alloc_size(2)));
 
@@ -96,8 +117,43 @@ static inline void *OBJ_PAYLOAD(ObjPtr p) {
   return &(p->data);
 }
 
+static inline bool OBJ_IS_INLINE(ObjPtr p) {
+  return (p == NULL || (uint64_t)p & 0x07);
+}
+
 static inline RapidObjectHeader MAKE_HEADER(int64_t objType, int32_t sizeOrTag) {
   return (objType << 32) | sizeOrTag;
+}
+
+static inline uint32_t OBJ_TOTAL_SIZE(ObjPtr p) {
+  assert(!OBJ_IS_INLINE(p));
+
+  uint64_t h = p->hdr;
+  switch (OBJ_TYPE(p)) {
+    case OBJ_TYPE_CON_NO_ARGS:
+      return 8 + 8 * (h >> 40);
+    case OBJ_TYPE_PTR:
+      return 8 + POINTER_SIZE;
+    case OBJ_TYPE_IOREF:
+      return 8 + POINTER_SIZE;
+    case OBJ_TYPE_OPAQUE:
+      return 8 + POINTER_SIZE;
+    case OBJ_TYPE_CHAR:
+    case OBJ_TYPE_INT:
+      return 8 + 8;
+    case OBJ_TYPE_BUFFER:
+    case OBJ_TYPE_STRING:
+      return 8 + OBJ_SIZE(p);
+    case OBJ_TYPE_CLOSURE:
+      return 16 + 8 * (h & 0xffff);
+    case OBJ_TYPE_FWD_REF:
+      rapid_C_crash("invalid fwd ref in OBJ_TOTAL_SIZE");
+      return 0;
+    default:
+      fprintf(stderr, "unknown object type: 0x%08llx\n", (h>>32));
+      rapid_C_crash("unknown object type");
+      return -1;
+  }
 }
 
 extern long idris_enter(void *baseTSO);
@@ -135,11 +191,6 @@ void rapid_strreverse(char *restrict dst, const char *restrict src, int64_t size
   for (int64_t i = 0; i < size; ++i) {
     dst[size - 1 - i] = src[i];
   }
-}
-
-void idris_rts_gc(long arg0) {
-  printf("GC called: 0x%016lx\n", arg0);
-  exit(2);
 }
 
 int64_t idris_rts_int_to_str(char *dst, int64_t val) {
@@ -255,6 +306,7 @@ void rapid_putstr(Idris_TSO *base, ObjPtr strObj, ObjPtr _world) {
   assert(OBJ_TYPE(strObj) == OBJ_TYPE_STRING);
   int64_t length = OBJ_SIZE(strObj);
   fwrite(OBJ_PAYLOAD(strObj), length, 1, stdout);
+  fflush(stdout);
 }
 
 void rapid_system_file_close(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
@@ -424,7 +476,8 @@ int dump_obj_i(ObjPtr o, int indent) {
   }
 
   INDENT(indent); fprintf(stderr, "DUMP OBJ AT %p\n", (void *)o);
-  if (o == NULL) {
+  if (o == NULL || ((uint64_t)o) & 0x7) {
+    INDENT(indent); fprintf(stderr, "    (not a real object)\n");
     return 0;
   }
   INDENT(indent); fprintf(stderr, "header: 0x%016llx\n", o->hdr);
@@ -445,6 +498,9 @@ int dump_obj_i(ObjPtr o, int indent) {
   }
   if (OBJ_TYPE(o) == OBJ_TYPE_INT) {
     INDENT(indent); fprintf(stderr, "INT value: %lld\n", (int64_t)OBJ_GET_SLOT(o, 0));
+  }
+  if (OBJ_TYPE(o) == OBJ_TYPE_FWD_REF) {
+    INDENT(indent); fprintf(stderr, "FWD REF value: -> %p\n", (void *)OBJ_GET_SLOT(o, 0));
   }
   if (OBJ_TYPE(o) == OBJ_TYPE_STRING) {
     char *strCopy = malloc(1 + OBJ_SIZE(o));
@@ -469,7 +525,159 @@ void idris_rts_crash_typecheck(ObjPtr obj, int64_t expectedType) {
   exit(123);
 }
 
-void  task_start(Idris_TSO *tso) {
+static inline uint32_t aligned(uint32_t size) {
+  return 8 * ((size + 7) / 8);
+}
+
+ObjPtr alloc_during_gc(Idris_TSO *base, uint32_t size) {
+  uint8_t *p = base->nurseryNext;
+  base->nurseryNext += aligned(size);
+  return (ObjPtr)p;
+}
+
+ObjPtr copy(Idris_TSO *base, ObjPtr p) {
+  ObjPtr new;
+  uint32_t size;
+
+  if (OBJ_IS_INLINE(p)) {
+    return p;
+  }
+
+  switch (OBJ_TYPE(p)) {
+    case OBJ_TYPE_FWD_REF:
+      return (ObjPtr)OBJ_GET_SLOT(p, 0);
+    default:
+      size = OBJ_TOTAL_SIZE(p);
+      new = alloc_during_gc(base, size);
+      memcpy(new, p, size);
+      if (size >= 16) {
+        p->hdr = MAKE_HEADER(OBJ_TYPE_FWD_REF, size);
+        p->data = new;
+      }
+      return new;
+  }
+}
+
+static void cheney(Idris_TSO *base) {
+  uint8_t *scan = base->nurseryStart;
+
+  while(scan < base->nurseryNext) {
+    ObjPtr obj = (ObjPtr)scan;
+    fprintf(stderr, "================================== cheney obj start\n");
+    dump_obj(obj);
+    fprintf(stderr, "================================== cheney obj start\n");
+    assert(!OBJ_IS_INLINE(obj));
+    switch(OBJ_TYPE(obj)) {
+      case OBJ_TYPE_CLOSURE:
+        {
+          int argCount = 0xffff & obj->hdr;
+          for (int i = 0; i < argCount; ++i) {
+            ObjPtr value = OBJ_GET_SLOT(obj, i + 1);
+            ObjPtr argCopy = copy(base, value);
+            OBJ_PUT_SLOT(obj, i + 1, argCopy);
+          }
+        }
+        break;
+      case OBJ_TYPE_CON_NO_ARGS:
+        {
+          int argCount = obj->hdr >> 40;
+          for (int i = 0; i < argCount; ++i) {
+            ObjPtr value = OBJ_GET_SLOT(obj, i);
+            ObjPtr argCopy = copy(base, value);
+            OBJ_PUT_SLOT(obj, i, argCopy);
+          }
+        }
+        break;
+      case OBJ_TYPE_IOREF:
+        {
+          ObjPtr argCopy = copy(base, OBJ_GET_SLOT(obj, 0));
+          OBJ_PUT_SLOT(obj, 0, argCopy);
+        }
+        break;
+      case OBJ_TYPE_FWD_REF:
+        rapid_C_crash("illegal forward ref found");
+        break;
+      default:
+        break;
+    }
+    fprintf(stderr, "================================== cheney obj end\n");
+    dump_obj(obj);
+    fprintf(stderr, "================================== cheney obj end\n");
+    scan += aligned(OBJ_TOTAL_SIZE(obj));
+  }
+}
+
+void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
+  fprintf(stderr, "GC called for %llu bytes, stack pointer: %p\n", base->heap_alloc, (void *)sp);
+
+  uint64_t returnAddress = *((uint64_t *) sp);
+  sp += sizeof(void *);
+  fprintf(stderr, "GC begin return addr: 0x%016llx\n", returnAddress);
+  frame_info_t *frame = lookup_return_address(rapid_global_stackmap_table, returnAddress);
+  fprintf(stderr, "GC begin frame info: 0x%016llx\n", (uint64_t)frame);
+
+  uint64_t oldNurserySize = (uint64_t)base->nurseryEnd - (uint64_t)base->nurseryStart;
+  uint64_t nextNurserySize = base->next_nursery_size;
+  fprintf(stderr, "nursery size: %llu -> %llu\n", oldNurserySize, nextNurserySize);
+
+  uint8_t *oldNursery = (uint8_t *)base->nurseryStart;
+  uint8_t *newNursery = malloc(nextNurserySize);
+  fprintf(stderr, "old nursery at: %p\n", (void *)base->nurseryStart);
+  fprintf(stderr, "new nursery at: %p\n", (void *)newNursery);
+
+  base->nurseryStart = newNursery;
+  base->nurseryNext = newNursery;
+  base->nurseryEnd = (uint8_t *) ((uint64_t)newNursery + nextNurserySize);
+
+  while (frame != NULL) {
+    fprintf(stderr, "=====\nstack walk for return addr: 0x%016llx\n", returnAddress);
+    fprintf(stderr, "    frame info: 0x%016llx\n", (uint64_t)frame);
+    fprintf(stderr, "    frame size: 0x%016llx\n", (uint64_t)frame->frameSize);
+
+    for (int i = 0; i < frame->numSlots; ++i) {
+      pointer_slot_t ptrSlot = frame->slots[i];
+      fprintf(stderr, "    pointer slot %04d: kind=%02d offset + 0x%04x\n", i, ptrSlot.kind, ptrSlot.offset);
+
+      ObjPtr *stackSlot = (ObjPtr *)(sp + ptrSlot.offset);
+      dump_obj(*stackSlot);
+      if (!OBJ_IS_INLINE(*stackSlot) && OBJ_TYPE(*stackSlot) != OBJ_TYPE_FWD_REF) {
+        uint32_t size = OBJ_TOTAL_SIZE(*stackSlot);
+        uint32_t alignedSize = 8 * ((size + 7) / 8);
+        fprintf(stderr, "::object size: %d -> %d\n", size, alignedSize);
+      }
+
+      ObjPtr copied = copy(base, *stackSlot);
+      fprintf(stderr, "::copy: %p -> %p\n", (void *)*stackSlot, (void *)copied);
+      dump_obj(copied);
+      *stackSlot = copied;
+    }
+
+    sp += frame->frameSize;
+    returnAddress = *((uint64_t *) sp);
+    sp += sizeof(void *);
+
+    frame = lookup_return_address(rapid_global_stackmap_table, returnAddress);
+    fprintf(stderr, "\n  next ret: %p\n", (void *)returnAddress);
+  }
+
+  cheney(base);
+
+  uint64_t nurseryUsed = (uint64_t)base->nurseryNext - (uint64_t)base->nurseryStart;
+  if (nurseryUsed > (base->next_nursery_size >> 1)) {
+    base->next_nursery_size = base->next_nursery_size * 2;
+    fprintf(stderr, "\nnursery will grow next GC: %llu -> %llu\n", nextNurserySize, base->next_nursery_size);
+  }
+
+  memset(oldNursery, 0x5f, oldNurserySize);
+  /*free(oldNursery);*/
+
+  fprintf(stderr, "\n===============================================\n");
+  fprintf(stderr, " GC FINISHED: %llu / %llu\n", (uint64_t)base->nurseryNext - (uint64_t)base->nurseryStart, nextNurserySize);
+  fprintf(stderr, "===============================================\n");
+  /*exit(2);*/
+}
+
+void task_start(Idris_TSO *tso) {
   int jump_result;
   if ((jump_result = setjmp(tso->sched_jmp_buf)) == 0) {
     register void *top = tso->stack_top;
@@ -494,10 +702,13 @@ int main(int argc, char **argv) {
   rapid_global_argc = argc;
   rapid_global_argv = argv;
 
+  rapid_global_stackmap_table = generate_table((void *)STACKMAP, 0.5);
+
   Idris_TSO *tso = malloc(sizeof(Idris_TSO));
-  tso->nurseryStart = malloc(NURSERY_SIZE);
+  tso->nurseryStart = (uint8_t *)malloc(INITIAL_NURSERY_SIZE);
   tso->nurseryNext = tso->nurseryStart;
-  tso->nurseryEnd = (void *)((long int)tso->nurseryStart + NURSERY_SIZE);
+  tso->nurseryEnd = (uint8_t *)((long int)tso->nurseryStart + INITIAL_NURSERY_SIZE);
+  tso->next_nursery_size = INITIAL_NURSERY_SIZE;
   tso->rapid_errno = 1;
 
   tso->stack_size = RAPID_STACK_SIZE;
@@ -525,9 +736,9 @@ int main(int argc, char **argv) {
   *(int64_t *)tso->stack_top = 0x7f7d7c7b12345678;
   *((int64_t *)tso->stack_top - 1) = 0x7f7d7c7b12345678;
   *((int64_t *)tso->stack_top - 2) = 0x7f7d7c7b12345678;
-  //fprintf(stderr, "stack allocated at: %p (+%ld)\n", tso->stack_bottom, tso->stack_size);
+  fprintf(stderr, "stack allocated at: %p (+%ld) => %p\n", tso->stack_bottom, tso->stack_size, tso->stack_top);
 
-  /*GC_disable();*/
+  GC_disable();
   task_start(tso);
 
   return 0;

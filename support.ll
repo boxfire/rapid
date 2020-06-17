@@ -24,6 +24,7 @@ target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
   , i8* ; stack_bottom
   , i8* ; stack_top
   , i8* ; stack_size
+  , i64 ; heap_alloc
 }
 
 %TSOPtr = type %Idris_TSO.struct*
@@ -35,10 +36,11 @@ target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
 
 %FuncPtrClosureEntry = type %Return1 (%RuntimePtr, %TSOPtr, %RuntimePtr, %ObjPtr, %ObjPtr)*
 
-declare ccc void @idris_rts_gc(i8*)
+declare ccc void @idris_rts_gc(%TSOPtr, i8*)
 declare ccc void @idris_rts_crash(i64) noreturn
 declare ccc void @idris_rts_crash_msg(%ObjPtr) noreturn
 declare ccc void @idris_rts_crash_typecheck(%ObjPtr, i64) noreturn
+declare ccc i32 @dump_obj(%ObjPtr)
 
 declare ccc void @idris_mkcon_ok(%ObjPtr)
 declare ccc void @idris_mkcon_arg_ok(%ObjPtr, i64)
@@ -71,16 +73,33 @@ declare void @llvm.memcpy.p1i8.p1i8.i64(%i8p1 nocapture, %i8p1 nocapture, i64, i
 declare void @llvm.dbg.addr(metadata, metadata, metadata)
 
 declare i8* @llvm.frameaddress(i32)
+declare i8* @llvm.addressofreturnaddress()
 
 declare ccc i1 @llvm.expect.i1(i1, i1)
 
 declare ccc noalias i8* @GC_malloc(i64)
 declare ccc noalias %ObjPtr @log_GC_malloc(i64)
 
-define private ccc %Return1 @rapid_gc_enter() noinline {
-  %frame = call i8* @llvm.frameaddress(i32 0)
-  call ccc void @idris_rts_gc(i8* %frame)
-  ret %Return1 undef
+define private ccc %Return1 @rapid_gc_enter(%TSOPtr %BaseArg, i64 %size.aligned) noinline gc "statepoint-example" {
+  %frame = call i8* @llvm.addressofreturnaddress()
+
+  %heapAllocPtr = getelementptr inbounds %Idris_TSO.struct, %Idris_TSO.struct* %BaseArg, i32 0, i32 7
+  store i64 %size.aligned, i64* %heapAllocPtr
+
+  call ccc void @idris_rts_gc(%TSOPtr %BaseArg, i8* %frame)
+
+  ; get updated heap pointer from BaseTSO
+  %heapPtr = getelementptr inbounds %Idris_TSO.struct, %Idris_TSO.struct* %BaseArg, i32 0, i32 1
+  %heap = load %RuntimePtr, %RuntimePtr* %heapPtr
+
+  %heapNext = getelementptr i8, %RuntimePtr %heap, i64 %size.aligned
+
+  %newObject = addrspacecast %RuntimePtr %heap to %ObjPtr
+
+  %packed1 = insertvalue %Return1 undef, %RuntimePtr %heapNext, 0
+  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr undef, 1
+  %packed3 = insertvalue %Return1 %packed2, %ObjPtr %newObject, 2
+  ret %Return1 %packed3
 }
 
 define private fastcc i1 @mem_eq(%i8p1 noalias nocapture nofree nonnull %v1, %i8p1 noalias nocapture nofree nonnull %v2, i64 %size) argmemonly readonly nounwind {
@@ -160,7 +179,7 @@ define external fastcc %Return1 @rapid_allocate_mutable (%RuntimePtr %HpPtrArg, 
   ret %Return1 %packed3
 }
 
-define external fastcc %Return1 @rapid_allocate_fast (%RuntimePtr %HpPtrArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
+define external fastcc %Return1 @rapid_allocate_fast (%RuntimePtr %HpPtrArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind gc "statepoint-example" {
   %Hp = ptrtoint %RuntimePtr %HpPtrArg to i64
 
   %nurseryEndPtr = getelementptr inbounds %Idris_TSO.struct, %Idris_TSO.struct *%BaseArg, i32 0, i32 2
@@ -168,7 +187,10 @@ define external fastcc %Return1 @rapid_allocate_fast (%RuntimePtr %HpPtrArg, %TS
 
   %HpLim = ptrtoint %RuntimePtr %nurseryEnd to i64
 
-  %HpNew = add i64 %Hp, %size
+  %size.plus7 = add i64 %size, 7
+  %size.aligned = and i64 -8, %size.plus7
+
+  %HpNew = add i64 %Hp, %size.aligned
   %HpNewPtr = inttoptr i64 %HpNew to %RuntimePtr
 
   %overflow.in = icmp ugt i64 %HpNew, %HpLim
@@ -185,7 +207,7 @@ continue:
   %packed3 = insertvalue %Return1 %packed2, %ObjPtr %newAddr, 2
   ret %Return1 %packed3
 gc_enter:
-  %gcresult = call ccc %Return1 @rapid_gc_enter() noreturn
+  %gcresult = call ccc %Return1 @rapid_gc_enter(%TSOPtr %BaseArg, i64 %size.aligned)
   ret %Return1 %gcresult
 }
 

@@ -376,7 +376,7 @@ dynamicAllocate payloadSize = do
   hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
   let base = "%TSOPtr %BaseArg"
 
-  allocated <- assignSSA $ "call fastcc %Return1 @rapid_allocate(" ++ showSep ", " [hp, base, hpLim] ++ ", "++(toIR totalSize)++") alwaysinline optsize nounwind"
+  allocated <- assignSSA $ "call fastcc %Return1 @rapid_allocate_fast(" ++ showSep ", " [hp, base, hpLim] ++ ", "++(toIR totalSize)++") alwaysinline optsize nounwind"
   newHp <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 0"
   appendCode $ "store %RuntimePtr " ++ newHp ++ ", %RuntimePtr* %HpVar"
   newHpLim <- assignSSA $ "extractvalue %Return1 " ++ allocated ++ ", 1"
@@ -646,7 +646,7 @@ unboxChar objPtr = do
   pure chVal32
 
 TRACE : Bool
-TRACE = False
+TRACE = True
 
 assertObjectTypeAny : IRValue IRObjPtr -> Integer -> Codegen ()
 assertObjectTypeAny o msg = when TRACE $ do
@@ -1351,6 +1351,7 @@ getInstIR i (CONSTCASE r alts def) = case findConstCaseType alts of
 
 getInstIR {conNames} i (CASE r alts def) =
   do let def' = fromMaybe [(ERROR $ "no default in CASE")] def
+     --appendCode $ "call ccc i32 @dump_obj(" ++ toIR !(load $ reg2val r) ++ ") "
      assertObjectType r OBJECT_TYPE_ID_CON_NO_ARGS
      caseId <- mkVarName "case_"
      let labelEnd = caseId ++ "_end"
@@ -1886,7 +1887,7 @@ applyClosureHelperFunc = do
   beginLabel lblApplyViaClosureEntry
   closureEntryPtr <- assignSSA $ "bitcast " ++ (toIR funcPtr) ++ " to %FuncPtrClosureEntry"
   let argList = [hp, base, hpLim, toIR closureObj, toIR argValue]
-  callRes <- assignSSA $ "musttail call fastcc %Return1 " ++ closureEntryPtr ++ "(" ++ (showSep ", " argList) ++ ")"
+  callRes <- assignSSA $ "tail call fastcc %Return1 " ++ closureEntryPtr ++ "(" ++ (showSep ", " argList) ++ ")"
   appendCode $ "ret %Return1 " ++ callRes
   appendCode $ "unreachable"
 
@@ -1897,7 +1898,7 @@ export
 closureHelper : String
 closureHelper = fastAppend [
   funcPtrTypes,
-  "\ndefine fastcc %Return1 @idris_apply_closure(%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %closureObjArg, %ObjPtr %argumentObjArg) {\n",
+  "\ndefine fastcc %Return1 @idris_apply_closure(%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %closureObjArg, %ObjPtr %argumentObjArg) gc \"statepoint-example\" {\n",
   runCodegen applyClosureHelperFunc,
   "\n}\n\n",
   supportPrelude
