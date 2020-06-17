@@ -121,6 +121,10 @@ static inline bool OBJ_IS_INLINE(ObjPtr p) {
   return (p == NULL || (uint64_t)p & 0x07);
 }
 
+static inline bool OBJ_IS_FWD_INPLACE(ObjPtr p) {
+  return (p->hdr & 0x8000000000000000ull);
+}
+
 static inline RapidObjectHeader MAKE_HEADER(int64_t objType, int32_t sizeOrTag) {
   return (objType << 32) | sizeOrTag;
 }
@@ -481,6 +485,10 @@ int dump_obj_i(ObjPtr o, int indent) {
     return 0;
   }
   INDENT(indent); fprintf(stderr, "header: 0x%016llx\n", o->hdr);
+  if (OBJ_IS_FWD_INPLACE(o)) {
+    INDENT(indent); fprintf(stderr, "    (in place fwd) %p -> %p\n", (void *)o, (void *) (o->hdr << 1));
+    return 0;
+  }
   if (OBJ_TYPE(o) == OBJ_TYPE_CON_NO_ARGS) {
     int64_t num_args = o->hdr >> 40;
     for (int i = 0; i < num_args; ++i) {
@@ -532,6 +540,7 @@ static inline uint32_t aligned(uint32_t size) {
 ObjPtr alloc_during_gc(Idris_TSO *base, uint32_t size) {
   uint8_t *p = base->nurseryNext;
   base->nurseryNext += aligned(size);
+  assert((uint64_t)base->nurseryNext <= (uint64_t)base->nurseryEnd);
   return (ObjPtr)p;
 }
 
@@ -543,6 +552,12 @@ ObjPtr copy(Idris_TSO *base, ObjPtr p) {
     return p;
   }
 
+  if (OBJ_IS_FWD_INPLACE(p)) {
+    uint64_t fwd_target = (p->hdr << 1);
+    fprintf(stderr, "-- in place fwd: %llx -> %llx\n", (uint64_t)p, fwd_target);
+    return (ObjPtr)fwd_target;
+  }
+
   switch (OBJ_TYPE(p)) {
     case OBJ_TYPE_FWD_REF:
       return (ObjPtr)OBJ_GET_SLOT(p, 0);
@@ -550,9 +565,12 @@ ObjPtr copy(Idris_TSO *base, ObjPtr p) {
       size = OBJ_TOTAL_SIZE(p);
       new = alloc_during_gc(base, size);
       memcpy(new, p, size);
+      fprintf(stderr, "-- object copied: %p -> %p (%u bytes)\n", (void *)p, (void *)new, size);
       if (size >= 16) {
-        p->hdr = MAKE_HEADER(OBJ_TYPE_FWD_REF, size);
+        p->hdr = MAKE_HEADER(OBJ_TYPE_FWD_REF, 8);
         p->data = new;
+      } else {
+        p->hdr = 0x8000000000000000ull | (((uint64_t)new) >> 1);
       }
       return new;
   }
@@ -608,6 +626,7 @@ static void cheney(Idris_TSO *base) {
 }
 
 void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
+  uint8_t * orig_sp = sp;
   fprintf(stderr, "GC called for %llu bytes, stack pointer: %p\n", base->heap_alloc, (void *)sp);
 
   uint64_t returnAddress = *((uint64_t *) sp);
@@ -640,11 +659,6 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
 
       ObjPtr *stackSlot = (ObjPtr *)(sp + ptrSlot.offset);
       dump_obj(*stackSlot);
-      if (!OBJ_IS_INLINE(*stackSlot) && OBJ_TYPE(*stackSlot) != OBJ_TYPE_FWD_REF) {
-        uint32_t size = OBJ_TOTAL_SIZE(*stackSlot);
-        uint32_t alignedSize = 8 * ((size + 7) / 8);
-        fprintf(stderr, "::object size: %d -> %d\n", size, alignedSize);
-      }
 
       ObjPtr copied = copy(base, *stackSlot);
       fprintf(stderr, "::copy: %p -> %p\n", (void *)*stackSlot, (void *)copied);
@@ -674,7 +688,15 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
   fprintf(stderr, "\n===============================================\n");
   fprintf(stderr, " GC FINISHED: %llu / %llu\n", (uint64_t)base->nurseryNext - (uint64_t)base->nurseryStart, nextNurserySize);
   fprintf(stderr, "===============================================\n");
-  /*exit(2);*/
+
+  // There's probably a more efficient way to do this, but this should be rare
+  // enough, that it shouldn't matter too much.
+  if ((uint64_t)base->nurseryNext + base->heap_alloc > (uint64_t)base->nurseryEnd) {
+    fprintf(stderr, "WARNING: still not enough room for requested allocation of %llu bytes, recurse GC\n", base->heap_alloc);
+    idris_rts_gc(base, orig_sp);
+  }
+  assert((uint64_t)base->nurseryNext + base->heap_alloc <= (uint64_t)base->nurseryEnd);
+  base->heap_alloc = 0;
 }
 
 void task_start(Idris_TSO *tso) {
