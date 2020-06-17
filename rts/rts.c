@@ -496,6 +496,10 @@ int dump_obj_i(ObjPtr o, int indent) {
       dump_obj_i(OBJ_GET_SLOT(o, i), indent+1);
     }
   }
+  if (OBJ_TYPE(o) == OBJ_TYPE_IOREF) {
+    INDENT(indent); fprintf(stderr, "IOREF content:\n");
+    dump_obj_i(OBJ_GET_SLOT(o, 0), indent+1);
+  }
   if (OBJ_TYPE(o) == OBJ_TYPE_CLOSURE) {
     int64_t num_args = o->hdr & 0xffff;
     INDENT(indent); fprintf(stderr, "CLOSURE func: %p\n", (void *)OBJ_GET_SLOT(o, 0));
