@@ -150,6 +150,7 @@ static inline uint32_t OBJ_TOTAL_SIZE(ObjPtr p) {
     case OBJ_TYPE_OPAQUE:
       return 8 + POINTER_SIZE;
     case OBJ_TYPE_CHAR:
+      return 8;
     case OBJ_TYPE_INT:
       return 8 + 8;
     case OBJ_TYPE_BUFFER:
