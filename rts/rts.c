@@ -14,12 +14,19 @@
 #include <llvm-statepoint-tablegen.h>
 
 const size_t IDRIS_ALIGNMENT = 8;
-const size_t INITIAL_NURSERY_SIZE = 128;
+/*const size_t INITIAL_NURSERY_SIZE = 128;*/
+const size_t INITIAL_NURSERY_SIZE = 64 * 1024 * 1024;
 
 static const size_t RAPID_STACK_SIZE = 128 * 1024 * 1024;
 
 const int HEADER_SIZE = 8;
 const int POINTER_SIZE = sizeof(void*);
+
+#undef RAPID_GC_DEBUG_ENABLED
+
+#ifdef RAPID_GC_DEBUG_ENABLED
+#else // RAPID_GC_DEBUG_ENABLED
+#endif // RAPID_GC_DEBUG_ENABLED
 
 #define OBJ_TYPE_CON_NO_ARGS 0xff
 #define OBJ_TYPE_INT         0x01
@@ -529,6 +536,10 @@ int dump_obj(ObjPtr o) {
   return 0;
 }
 
+void log_alloc(uint64_t addr) {
+  fprintf(stderr, "an object has been allocated at 0x%llx\n", addr);
+}
+
 void idris_rts_crash_typecheck(ObjPtr obj, int64_t expectedType) {
   fprintf(stderr, "Object failed typecheck, expected type: %04llx\n", expectedType);
   fprintf(stderr, "  object address: %p\n", (void *)obj);
@@ -543,6 +554,7 @@ static inline uint32_t aligned(uint32_t size) {
 
 ObjPtr alloc_during_gc(Idris_TSO *base, uint32_t size) {
   uint8_t *p = base->nurseryNext;
+  assert(((uint64_t)base->nurseryNext & 0x07) == 0);
   base->nurseryNext += aligned(size);
   assert((uint64_t)base->nurseryNext <= (uint64_t)base->nurseryEnd);
   return (ObjPtr)p;
@@ -558,7 +570,9 @@ ObjPtr copy(Idris_TSO *base, ObjPtr p) {
 
   if (OBJ_IS_FWD_INPLACE(p)) {
     uint64_t fwd_target = (p->hdr << 1);
+#ifdef RAPID_GC_DEBUG_ENABLED
     fprintf(stderr, "-- in place fwd: %llx -> %llx\n", (uint64_t)p, fwd_target);
+#endif
     return (ObjPtr)fwd_target;
   }
 
@@ -569,7 +583,9 @@ ObjPtr copy(Idris_TSO *base, ObjPtr p) {
       size = OBJ_TOTAL_SIZE(p);
       new = alloc_during_gc(base, size);
       memcpy(new, p, size);
+#ifdef RAPID_GC_DEBUG_ENABLED
       fprintf(stderr, "-- object copied: %p -> %p (%u bytes)\n", (void *)p, (void *)new, size);
+#endif
       if (size >= 16) {
         p->hdr = MAKE_HEADER(OBJ_TYPE_FWD_REF, 8);
         p->data = new;
@@ -585,9 +601,11 @@ static void cheney(Idris_TSO *base) {
 
   while(scan < base->nurseryNext) {
     ObjPtr obj = (ObjPtr)scan;
+#ifdef RAPID_GC_DEBUG_ENABLED
     fprintf(stderr, "================================== cheney obj start\n");
     dump_obj(obj);
     fprintf(stderr, "================================== cheney obj start\n");
+#endif
     assert(!OBJ_IS_INLINE(obj));
     switch(OBJ_TYPE(obj)) {
       case OBJ_TYPE_CLOSURE:
@@ -622,51 +640,69 @@ static void cheney(Idris_TSO *base) {
       default:
         break;
     }
+#ifdef RAPID_GC_DEBUG_ENABLED
     fprintf(stderr, "================================== cheney obj end\n");
     dump_obj(obj);
     fprintf(stderr, "================================== cheney obj end\n");
+#endif
     scan += aligned(OBJ_TOTAL_SIZE(obj));
   }
 }
 
 void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
   uint8_t * orig_sp = sp;
+#ifdef RAPID_GC_DEBUG_ENABLED
   fprintf(stderr, "GC called for %llu bytes, stack pointer: %p\n", base->heap_alloc, (void *)sp);
+#endif
 
   uint64_t returnAddress = *((uint64_t *) sp);
   sp += sizeof(void *);
-  fprintf(stderr, "GC begin return addr: 0x%016llx\n", returnAddress);
   frame_info_t *frame = lookup_return_address(rapid_global_stackmap_table, returnAddress);
+#ifdef RAPID_GC_DEBUG_ENABLED
+  fprintf(stderr, "GC begin return addr: 0x%016llx\n", returnAddress);
   fprintf(stderr, "GC begin frame info: 0x%016llx\n", (uint64_t)frame);
+#endif
 
   uint64_t oldNurserySize = (uint64_t)base->nurseryEnd - (uint64_t)base->nurseryStart;
   uint64_t nextNurserySize = base->next_nursery_size;
-  fprintf(stderr, "nursery size: %llu -> %llu\n", oldNurserySize, nextNurserySize);
 
   uint8_t *oldNursery = (uint8_t *)base->nurseryStart;
   uint8_t *newNursery = malloc(nextNurserySize);
+  memset(newNursery, 0, nextNurserySize);
+#ifdef RAPID_GC_DEBUG_ENABLED
+  fprintf(stderr, "nursery size: %llu -> %llu\n", oldNurserySize, nextNurserySize);
   fprintf(stderr, "old nursery at: %p\n", (void *)base->nurseryStart);
   fprintf(stderr, "new nursery at: %p\n", (void *)newNursery);
+#endif
 
   base->nurseryStart = newNursery;
   base->nurseryNext = newNursery;
   base->nurseryEnd = (uint8_t *) ((uint64_t)newNursery + nextNurserySize);
 
   while (frame != NULL) {
+#ifdef RAPID_GC_DEBUG_ENABLED
     fprintf(stderr, "=====\nstack walk for return addr: 0x%016llx\n", returnAddress);
     fprintf(stderr, "    frame info: 0x%016llx\n", (uint64_t)frame);
     fprintf(stderr, "    frame size: 0x%016llx\n", (uint64_t)frame->frameSize);
+#endif
 
     for (int i = 0; i < frame->numSlots; ++i) {
       pointer_slot_t ptrSlot = frame->slots[i];
+#ifdef RAPID_GC_DEBUG_ENABLED
       fprintf(stderr, "    pointer slot %04d: kind=%02d offset + 0x%04x\n", i, ptrSlot.kind, ptrSlot.offset);
+#endif
+      assert(ptrSlot.kind == -1);
 
       ObjPtr *stackSlot = (ObjPtr *)(sp + ptrSlot.offset);
+#ifdef RAPID_GC_DEBUG_ENABLED
       dump_obj(*stackSlot);
+#endif
 
       ObjPtr copied = copy(base, *stackSlot);
+#ifdef RAPID_GC_DEBUG_ENABLED
       fprintf(stderr, "::copy: %p -> %p\n", (void *)*stackSlot, (void *)copied);
       dump_obj(copied);
+#endif
       *stackSlot = copied;
     }
 
@@ -675,7 +711,9 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
     sp += sizeof(void *);
 
     frame = lookup_return_address(rapid_global_stackmap_table, returnAddress);
+#ifdef RAPID_GC_DEBUG_ENABLED
     fprintf(stderr, "\n  next ret: %p\n", (void *)returnAddress);
+#endif
   }
 
   cheney(base);
@@ -683,20 +721,26 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
   uint64_t nurseryUsed = (uint64_t)base->nurseryNext - (uint64_t)base->nurseryStart;
   if (nurseryUsed > (base->next_nursery_size >> 1)) {
     base->next_nursery_size = base->next_nursery_size * 2;
+#ifdef RAPID_GC_DEBUG_ENABLED
     fprintf(stderr, "\nnursery will grow next GC: %llu -> %llu\n", nextNurserySize, base->next_nursery_size);
+#endif
   }
 
   memset(oldNursery, 0x5f, oldNurserySize);
   /*free(oldNursery);*/
 
+#ifdef RAPID_GC_DEBUG_ENABLED
   fprintf(stderr, "\n===============================================\n");
   fprintf(stderr, " GC FINISHED: %llu / %llu\n", (uint64_t)base->nurseryNext - (uint64_t)base->nurseryStart, nextNurserySize);
   fprintf(stderr, "===============================================\n");
+#endif
 
   // There's probably a more efficient way to do this, but this should be rare
   // enough, that it shouldn't matter too much.
   if ((uint64_t)base->nurseryNext + base->heap_alloc > (uint64_t)base->nurseryEnd) {
+#ifdef RAPID_GC_DEBUG_ENABLED
     fprintf(stderr, "WARNING: still not enough room for requested allocation of %llu bytes, recurse GC\n", base->heap_alloc);
+#endif
     idris_rts_gc(base, orig_sp);
   }
   assert((uint64_t)base->nurseryNext + base->heap_alloc <= (uint64_t)base->nurseryEnd);

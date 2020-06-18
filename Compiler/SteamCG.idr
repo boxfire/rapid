@@ -197,10 +197,13 @@ reg2val (Loc i) = SSA (Pointer 0 IRObjPtr) ("%v" ++ show i ++ "Var")
 reg2val RVal = SSA (Pointer 0 IRObjPtr) ("%rvalVar")
 reg2val Discard = IRDiscard -- idris_crash "trying to use DISCARD pseudo-register" --SSA (Pointer IRObjPtr) "undef"
 
+nullPtr : IRValue IRObjPtr
+nullPtr = SSA IRObjPtr "null"
+
 load : {t : IRType} -> IRValue (Pointer n t) -> Codegen (IRValue t)
 -- can be changed to undef if we're not in SAFE mode
 --load IRDiscard = pure $ SSA IRObjPtr "undef"
-load IRDiscard = pure $ SSA IRObjPtr "null"
+load IRDiscard = pure nullPtr
 load {t} mv = do
   loaded <- assignSSA $ "load " ++ (show t) ++ ", " ++ (toIR mv)
   pure $ SSA t loaded
@@ -339,14 +342,12 @@ putObjectSlot {t} obj pos val = store val !(getObjectSlotAddrVar obj pos)
 
 getObjectHeader : IRValue IRObjPtr -> Codegen (IRValue I64)
 getObjectHeader obj = do
-  objptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to %ObjPtr"
-  headerPtr <- SSA (Pointer 1 I64) <$> assignSSA ("getelementptr inbounds %Object, %ObjPtr " ++ objptr ++ ", i32 0, i32 0")
+  headerPtr <- SSA (Pointer 1 I64) <$> assignSSA ("getelementptr inbounds %Object, " ++ (toIR obj) ++ ", i32 0, i32 0")
   load headerPtr
 
 putObjectHeader : IRValue IRObjPtr -> IRValue I64 -> Codegen ()
 putObjectHeader obj hdr = do
-  objptr <- assignSSA $ "bitcast " ++ toIR obj ++ " to %ObjPtr"
-  headerPtr <- SSA (Pointer 1 I64) <$> assignSSA ("getelementptr inbounds %Object, %ObjPtr " ++ objptr ++ ", i32 0, i32 0")
+  headerPtr <- SSA (Pointer 1 I64) <$> assignSSA ("getelementptr inbounds %Object, " ++ (toIR obj) ++ ", i32 0, i32 0")
   store hdr headerPtr
 
 funcEntry : Codegen ()
@@ -356,6 +357,7 @@ funcEntry = do
   appendCode "%rvalVar = alloca %ObjPtr\n"
   store (SSA RuntimePtr "%HpArg") globalHpVar
   store (SSA RuntimePtr "%HpLimArg") globalHpLimVar
+  store nullPtr globalRValVar
 
 funcReturn : Codegen ()
 funcReturn = do
@@ -646,7 +648,7 @@ unboxChar objPtr = do
   pure chVal32
 
 TRACE : Bool
-TRACE = True
+TRACE = False
 
 assertObjectTypeAny : IRValue IRObjPtr -> Integer -> Codegen ()
 assertObjectTypeAny o msg = when TRACE $ do
@@ -1678,7 +1680,7 @@ mk_prim__systemInfoCodegen [] = do
 
 mkSupport : {n : Nat} -> Name -> (Vect n (IRValue IRObjPtr) -> Codegen ()) -> String
 mkSupport {n} name f = runCodegen (do
-          appendCode ("define external fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ toList $ map toIR args) ++ ") {")
+          appendCode ("define external fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ toList $ map toIR args) ++ ") gc \"statepoint-example\" {")
           funcEntry
           f args
           funcReturn
@@ -1743,7 +1745,7 @@ transformArg (arg, _) = pure (toIR arg)
 genericForeign : String -> Name -> (argTypes : List CFType) -> CFType -> Codegen ()
 genericForeign foreignName name argTypes ret = do
   let args = map (\(i, _) => SSA IRObjPtr ("%arg" ++ show i)) (enumerate argTypes)
-  appendCode ("define private fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ map toIR args) ++ ") {")
+  appendCode ("define private fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ map toIR args) ++ ") gc \"statepoint-example\" {")
   funcEntry
   if cftypeIsUnit ret then
     foreignVoidCall ("@" ++ foreignName) !(traverse transformArg (zip args argTypes))
