@@ -523,10 +523,16 @@ int dump_obj_i(ObjPtr o, int indent) {
     INDENT(indent); fprintf(stderr, "FWD REF value: -> %p\n", (void *)OBJ_GET_SLOT(o, 0));
   }
   if (OBJ_TYPE(o) == OBJ_TYPE_STRING) {
-    char *strCopy = malloc(1 + OBJ_SIZE(o));
-    memcpy(strCopy, OBJ_PAYLOAD(o), OBJ_SIZE(o));
-    strCopy[OBJ_SIZE(o)] = '\0';
-    INDENT(indent); fprintf(stderr, "STRING(%d): \"%s\"\n", OBJ_SIZE(o), strCopy);
+    uint32_t strsize = OBJ_SIZE(o);
+    const char *truncated = "";
+    if (strsize > 40) {
+      strsize = 40;
+      truncated = "[...]";
+    }
+    char *strCopy = malloc(1 + strsize);
+    memcpy(strCopy, OBJ_PAYLOAD(o), strsize);
+    strCopy[strsize] = '\0';
+    INDENT(indent); fprintf(stderr, "STRING(%d): \"%s\"%s\n", OBJ_SIZE(o), strCopy, truncated);
     free(strCopy);
   }
   return 0;
