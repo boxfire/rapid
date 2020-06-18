@@ -795,6 +795,7 @@ intBinary op dest a b = do
 getInstIR : {auto conNames : SortedMap Name Int} -> Int -> VMInst -> Codegen ()
 getInstIR i (DECLARE (Loc r)) = do
   appendCode $ "  %v" ++ show r ++ "Var = alloca %ObjPtr"
+  appendCode $ "  store %ObjPtr null, %ObjPtr* %v" ++ show r ++ "Var"
   when TRACE $ do
     weird <- assignSSA $ "inttoptr " ++ (toIR (Const I64 0xf7f7f7f7f4f3f2f1)) ++ " to %ObjPtr"
     appendCode $ "  store %ObjPtr " ++ weird ++ ", %ObjPtr* %v" ++ show r ++ "Var"
