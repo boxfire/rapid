@@ -10,7 +10,6 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
-#include <gc.h>
 #include <llvm-statepoint-tablegen.h>
 
 const size_t IDRIS_ALIGNMENT = 8;
@@ -89,7 +88,11 @@ int dump_obj(ObjPtr o);
 int dump_obj_i(ObjPtr o, int indent);
 void rapid_C_crash(const char *msg);
 
-extern void *rapid_C_allocate(Idris_TSO *base, int64_t size) __attribute__((__malloc__)) __attribute__((alloc_size(2)));
+void *rapid_C_allocate(Idris_TSO *base, int32_t size) __attribute__((__malloc__)) __attribute__((alloc_size(2)));
+
+void *rapid_C_allocate(Idris_TSO *base, int32_t size) {
+  return malloc(size);
+}
 
 static inline uint32_t OBJ_TYPE(ObjPtr p) {
   //return ((p->hdr >> 32) & 0xffffffff);
@@ -774,8 +777,6 @@ void task_start(Idris_TSO *tso) {
 }
 
 int main(int argc, char **argv) {
-  GC_INIT();
-
   rapid_global_argc = argc;
   rapid_global_argv = argv;
 
@@ -815,7 +816,6 @@ int main(int argc, char **argv) {
   *((int64_t *)tso->stack_top - 2) = 0x7f7d7c7b12345678;
   fprintf(stderr, "stack allocated at: %p (+%ld) => %p\n", tso->stack_bottom, tso->stack_size, tso->stack_top);
 
-  GC_disable();
   task_start(tso);
 
   return 0;

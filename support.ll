@@ -78,9 +78,6 @@ declare i8* @llvm.addressofreturnaddress()
 
 declare ccc i1 @llvm.expect.i1(i1, i1)
 
-declare ccc noalias i8* @GC_malloc(i64)
-declare ccc noalias %ObjPtr @log_GC_malloc(i64)
-
 define private ccc %Return1 @rapid_gc_enter(%TSOPtr %BaseArg, i64 %size.aligned) noinline gc "statepoint-example" {
   %frame = call i8* @llvm.addressofreturnaddress()
 
@@ -151,23 +148,6 @@ finished_neq:
 
 finished_eq:
   ret i32 0
-}
-
-define external fastcc %Return1 @rapid_allocate (%RuntimePtr %HpPtrArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) allocsize(3) alwaysinline optsize nounwind {
-  ;%addr = call ccc %ObjPtr @log_GC_malloc(i64 %size)
-  %addr.raw = call ccc noalias i8* @GC_malloc(i64 %size)
-  %addr = addrspacecast i8* %addr.raw to %ObjPtr
-
-  %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpPtrArg, 0
-  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 1
-  %packed3 = insertvalue %Return1 %packed2, %ObjPtr %addr, 2
-  ret %Return1 %packed3
-}
-
-define external ccc noalias i8* @rapid_C_allocate (%TSOPtr %Base, i64 %size) allocsize(1) {
-  %addr = call ccc noalias i8* @GC_malloc(i64 %size)
-
-  ret i8* %addr
 }
 
 define external fastcc %Return1 @rapid_allocate_fast (%RuntimePtr %HpPtrArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind gc "statepoint-example" {

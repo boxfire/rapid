@@ -7,22 +7,13 @@ rapid:
 cg:
 	idris2 --build rapid-cg.ipkg
 
-rts: bdw-gc rts/rts.bc
+rts: rts/rts.bc
 
 rts/rts.bc: Makefile rts/rts.c
-	clang -flto -g -c -Wall -Wpedantic -Werror -I ./external/bdwgc/include -I ./external/llvm-statepoint-utils/dist -std=c99 -o rts/rts.bc rts/rts.c
-
-bdw-gc: external/bdwgc/.libs/libgc.a
-
-external/bdwgc/.libs/libgc.a: Makefile
-	( cd external/bdwgc && test -f Makefile.in || autoreconf -vif && automake --add-missing )
-	( cd external/bdwgc && test -f Makefile || ./configure --disable-debug --disable-gcj-support --enable-large-config --enable-static --disable-shared )
-	make -j`nproc` -C external/bdwgc
-	test -f $@ && touch $@
+	clang -flto -g -c -Wall -Wpedantic -Werror -I ./external/llvm-statepoint-utils/dist -std=c99 -o rts/rts.bc rts/rts.c
 
 clean: clean-tests
 	rm -rf build rts/rts.bc samples/build
-	-make -C external/bdwgc distclean
 
 clean-tests:
 	rm -rf tests/chez/*/build
@@ -34,4 +25,4 @@ check: test
 test: rts
 	./runtests.sh --good
 
-.PHONY: all bdw-gc check clean clean-tests rapid rts test
+.PHONY: all check clean clean-tests rapid rts test
