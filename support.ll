@@ -170,16 +170,6 @@ define external ccc noalias i8* @rapid_C_allocate (%TSOPtr %Base, i64 %size) all
   ret i8* %addr
 }
 
-define external fastcc %Return1 @rapid_allocate_mutable (%RuntimePtr %HpPtrArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind {
-  %addr.raw = call ccc noalias i8* @GC_malloc(i64 %size)
-  %addr = addrspacecast i8* %addr.raw to %ObjPtr
-
-  %packed1 = insertvalue %Return1 undef, %RuntimePtr %HpPtrArg, 0
-  %packed2 = insertvalue %Return1 %packed1, %RuntimePtr %HpLimPtrArg, 1
-  %packed3 = insertvalue %Return1 %packed2, %ObjPtr %addr, 2
-  ret %Return1 %packed3
-}
-
 define external fastcc %Return1 @rapid_allocate_fast (%RuntimePtr %HpPtrArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind gc "statepoint-example" {
   %Hp = ptrtoint %RuntimePtr %HpPtrArg to i64
 
@@ -217,7 +207,7 @@ gc_enter:
 }
 
 define private fastcc %Return1 @_extprim_Data.IORef.prim__newIORef(%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %val, %ObjPtr %world) {
-  %allocated.ret = call fastcc %Return1 @rapid_allocate_mutable (%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, i64 16)
+  %allocated.ret = call fastcc %Return1 @rapid_allocate_fast (%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, i64 16)
   %hpnew = extractvalue %Return1 %allocated.ret, 0
   %hplimnew = extractvalue %Return1 %allocated.ret, 1
   %newobj = extractvalue %Return1 %allocated.ret, 2
