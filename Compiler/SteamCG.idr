@@ -1693,23 +1693,7 @@ mkSupport {n} name f = runCodegen (do
 
 supportPrelude : String
 supportPrelude = fastAppend [
-    mkSupport (NS ["Buffer", "Data"] (UN "prim__newBuffer")) mk_prim__bufferNew
-  , mkSupport (NS ["Buffer", "Data"] (UN "prim__bufferSize")) mk_prim__bufferSize
-  , mkSupport (NS ["Buffer", "Data"] (UN "prim__getByte")) mk_prim__bufferGetByte
-  , mkSupport (NS ["Buffer", "Data"] (UN "prim__getDouble")) mk_prim__bufferGetDouble
-  , mkSupport (NS ["Buffer", "Data"] (UN "prim__setDouble")) mk_prim__bufferSetDouble
-  , mkSupport (NS ["Buffer", "Data"] (UN "prim__getInt")) mk_prim__bufferGetInt
-  , mkSupport (NS ["Buffer", "Data"] (UN "prim__setInt")) mk_prim__bufferSetInt
-  , mkSupport (NS ["Buffer", "Data"] (UN "prim__getInt32")) mk_prim__bufferGetInt32
-  , mkSupport (NS ["Buffer", "Data"] (UN "prim__setInt32")) mk_prim__bufferSetInt32
-  , mkSupport (NS ["Buffer", "Data"] (UN "prim__getString")) mk_prim__bufferGetString
-  , mkSupport (NS ["Buffer", "Data"] (UN "prim__setString")) mk_prim__bufferSetString
-  , mkSupport (NS ["Buffer", "Data"] (UN "prim__isBuffer")) mk_prim__isBuffer
-  , mkSupport (NS ["Directory", "System"] (UN "prim_currentDir")) mk_prim__currentDir
-  , mkSupport (NS ["File", "System"] (UN "prim_fileErrno")) mk_prim__fileErrno
-  , mkSupport (NS ["PrimIO"] (UN "prim__nullAnyPtr")) mk_prim__nullAnyPtr
-  , mkSupport (NS ["PrimIO"] (UN "prim__getString")) mk_prim__getString
-  , mkSupport (NS ["Strings", "Data"] (UN "fastAppend")) mk_prelude_fastAppend
+    mkSupport (NS ["Strings", "Data"] (UN "fastAppend")) mk_prelude_fastAppend
   , mkSupport (NS ["Prelude"] (UN "fastPack")) mk_prelude_fastPack
   , mkSupport (NS ["Info", "_extprim_System"] (UN "prim__os")) mk_prim__systemInfoOs
   , mkSupport (NS ["Info", "_extprim_System"] (UN "prim__codegen")) mk_prim__systemInfoCodegen
@@ -1756,6 +1740,40 @@ genericForeign foreignName name argTypes ret = do
   funcReturn
   appendCode "\n}\n"
 
+builtinPrimitives : List (String, (n : Nat ** (Vect n (IRValue IRObjPtr) -> Codegen ())))
+builtinPrimitives = [
+    ("prim/blodwen-new-buffer", (2 ** mk_prim__bufferNew))
+  , ("prim/blodwen-buffer-size", (1 ** mk_prim__bufferSize))
+  --, ("prim/blodwen-buffer-setbyte", (3 ** mk_prim__bufferSetByte)
+  , ("prim/blodwen-buffer-getbyte", (3 ** mk_prim__bufferGetByte))
+  , ("prim/blodwen-buffer-setint32", (4 ** mk_prim__bufferSetInt32))
+  , ("prim/blodwen-buffer-getint32", (3 ** mk_prim__bufferGetInt32))
+  , ("prim/blodwen-buffer-setint", (4 ** mk_prim__bufferSetInt))
+  , ("prim/blodwen-buffer-getint", (3 ** mk_prim__bufferGetInt))
+  , ("prim/blodwen-buffer-setdouble", (4 ** mk_prim__bufferSetDouble))
+  , ("prim/blodwen-buffer-getdouble", (3 ** mk_prim__bufferGetDouble))
+  , ("prim/blodwen-buffer-setstring", (4 ** mk_prim__bufferSetString))
+  , ("prim/blodwen-buffer-getstring", (4 ** mk_prim__bufferGetString))
+  --, ("prim/blodwen-buffer-copydata", (2 ** mk_prim__bufferSetInt))
+
+  , ("prim/isNull", (1 ** mk_prim__nullAnyPtr))
+  , ("prim/fileErrno", (1 ** mk_prim__fileErrno))
+  , ("prim/getString", (1 ** mk_prim__getString))
+  ]
+
+builtinForeign : (n : Nat ** (Vect n (IRValue IRObjPtr) -> Codegen ())) -> Name -> (argTypes : List CFType) -> CFType -> Codegen ()
+builtinForeign builtin name argTypes ret = do
+  let (n ** f) = builtin
+  appendCode ("define private fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ toList $ map toIR (args n)) ++ ") gc \"statepoint-example\" {")
+  funcEntry
+  f (args n)
+  funcReturn
+  appendCode "\n}\n"
+  where
+  args : (n : Nat) -> Vect n (IRValue IRObjPtr)
+  args n = map (\i => SSA IRObjPtr $ "%arg" ++ show (finToNat i)) range
+
+
 foreignRedirectMap : List (String, String)
 foreignRedirectMap = [
     ("C:idris2_openFile, libidris2_support", "rapid_system_file_open")
@@ -1764,10 +1782,36 @@ foreignRedirectMap = [
   , ("C:idris2_readLine, libidris2_support", "rapid_system_file_read_line")
   , ("C:idris2_writeLine, libidris2_support", "rapid_system_file_write_string")
   , ("C:idris2_eof, libidris2_support", "rapid_system_file_eof")
+  , ("C:idris2_currentDirectory, libidris2_support", "rapid_system_current_dir")
   , ("C:idris2_putStr,libidris2_support", "rapid_putstr")
   , ("C:idris2_readBufferData,libidris2_support", "idris_rts_read_buffer_data")
   , ("C:idris2_writeBufferData,libidris2_support", "idris_rts_write_buffer_data")
+  , ("C:idris2_isNull, libidris2_support", "prim/isNull")
+  , ("C:idris2_fileErrno, libidris2_support", "prim/fileErrno")
+  , ("C:idris2_getString, libidris2_support", "prim/getString")
   , ("scheme:blodwen-args", "rapid_system_getargs")
+
+  , ("scheme:blodwen-new-buffer", "prim/blodwen-new-buffer")
+
+  , ("scheme:blodwen-buffer-size", "prim/blodwen-buffer-size")
+  , ("scheme:blodwen-new-buffer", "prim/blodwen-new-buffer")
+  , ("scheme:blodwen-buffer-setbyte", "prim/blodwen-buffer-setbyte")
+  , ("scheme:blodwen-buffer-getbyte", "prim/blodwen-buffer-getbyte")
+  , ("scheme:blodwen-buffer-setbits16", "prim/blodwen-buffer-setbits16")
+  , ("scheme:blodwen-buffer-getbits16", "prim/blodwen-buffer-getbits16")
+  , ("scheme:blodwen-buffer-setbits32", "prim/blodwen-buffer-setbits32")
+  , ("scheme:blodwen-buffer-getbits32", "prim/blodwen-buffer-getbits32")
+  , ("scheme:blodwen-buffer-setbits64", "prim/blodwen-buffer-setbits64")
+  , ("scheme:blodwen-buffer-getbits64", "prim/blodwen-buffer-getbits64")
+  , ("scheme:blodwen-buffer-setint32", "prim/blodwen-buffer-setint32")
+  , ("scheme:blodwen-buffer-getint32", "prim/blodwen-buffer-getint32")
+  , ("scheme:blodwen-buffer-setint", "prim/blodwen-buffer-setint")
+  , ("scheme:blodwen-buffer-getint", "prim/blodwen-buffer-getint")
+  , ("scheme:blodwen-buffer-setdouble", "prim/blodwen-buffer-setdouble")
+  , ("scheme:blodwen-buffer-getdouble", "prim/blodwen-buffer-getdouble")
+  , ("scheme:blodwen-buffer-setstring", "prim/blodwen-buffer-setstring")
+  , ("scheme:blodwen-buffer-getstring", "prim/blodwen-buffer-getstring")
+  , ("scheme:blodwen-buffer-copydata", "prim/blodwen-buffer-copydata")
   ]
 
 findForeignName : List String -> Maybe String
@@ -1779,9 +1823,11 @@ findForeignName cs =
 getForeignFunctionIR : Bool -> Int -> Name -> List String -> List CFType -> CFType -> Codegen ()
 getForeignFunctionIR debug i name cs args ret = do
   let found = findForeignName cs
-  case found of
-       Just funcName => do genericForeign funcName name args ret
-       Nothing => appendCode $ "; missing foreign: " ++ show name ++ " <- " ++ show cs ++ "\n"
+  let builtin = found >>= ((flip lookup) builtinPrimitives)
+  case (builtin, found) of
+       (Just b, _) => do builtinForeign b name args ret
+       (Nothing, Just funcName) => do genericForeign funcName name args ret
+       (Nothing, Nothing) => appendCode $ "; missing foreign: " ++ show name ++ " <- " ++ show cs ++ "\n"
 
 export
 compileForeign : Bool -> (Int, (Name, NamedDef)) -> String
