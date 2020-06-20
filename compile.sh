@@ -44,4 +44,4 @@ opt "${workfile}.full.ll" $optimize | tee "${workfile}.bc" | llc $tco -o "${work
 echo $'\n.globl __LLVM_StackMaps' >> "${workfile}.s"
 
 clang -g -c -o "${workfile}.o" "${workfile}.s"
-clang -g -o "${workfile}.native" "${workfile}.o" rts/rts.bc external/llvm-statepoint-utils/dist/llvm-statepoint-tablegen.a
+clang -g -o "${workfile}.native" "${workfile}.o" rts/build/runtime.bc external/llvm-statepoint-utils/dist/llvm-statepoint-tablegen.a

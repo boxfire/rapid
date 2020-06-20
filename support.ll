@@ -40,8 +40,6 @@ declare ccc void @idris_rts_gc(%TSOPtr, i8*)
 declare ccc void @idris_rts_crash(i64) noreturn
 declare ccc void @idris_rts_crash_msg(%ObjPtr) noreturn
 declare ccc void @idris_rts_crash_typecheck(%ObjPtr, i64) noreturn
-declare ccc i32 @dump_obj(%ObjPtr)
-declare ccc void @log_alloc(%ObjPtr)
 
 declare ccc void @idris_mkcon_ok(%ObjPtr)
 declare ccc void @idris_mkcon_arg_ok(%ObjPtr, i64)
@@ -179,7 +177,6 @@ continue:
   %newAddrIn1 = addrspacecast %RuntimePtr %HpPtrArg to i8 addrspace(1)*
   %newAddr = bitcast i8 addrspace(1)* %newAddrIn1 to %ObjPtr
   %packed3 = insertvalue %Return1 %packed2, %ObjPtr %newAddr, 2
-  ;call ccc void @log_alloc(%ObjPtr %newAddr) "gc-leaf-function"
   ret %Return1 %packed3
 gc_enter:
   %gcresult = call ccc %Return1 @rapid_gc_enter(%TSOPtr %BaseArg, i64 %size.aligned)

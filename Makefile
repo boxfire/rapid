@@ -7,13 +7,12 @@ rapid:
 cg:
 	idris2 --build rapid-cg.ipkg
 
-rts: rts/rts.bc
-
-rts/rts.bc: Makefile rts/rts.c
-	clang -flto -g -c -Wall -Wpedantic -Werror -I ./external/llvm-statepoint-utils/dist -std=c99 -o rts/rts.bc rts/rts.c
+rts:
+	make -j `nproc` -C rts
 
 clean: clean-tests
-	rm -rf build rts/rts.bc samples/build
+	make -C rts clean
+	rm -rf build samples/build
 
 clean-tests:
 	rm -rf tests/chez/*/build
