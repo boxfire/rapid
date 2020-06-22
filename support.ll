@@ -1,4 +1,4 @@
-target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
+target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128-ni:1"
 
 ; generic boxed object
 %Object = type {
@@ -148,6 +148,13 @@ finished_eq:
   ret i32 0
 }
 
+define private fastcc i1 @rapid.ptrisnull(%ObjPtr noalias nocapture nofree readonly %p) readnone nounwind alwaysinline {
+  %p.addrcasted = addrspacecast %Object addrspace(1)* %p to %Object addrspace(2)*
+  %p.int = ptrtoint %Object addrspace(2)* %p.addrcasted to i64
+  %isnull = icmp eq i64 0, %p.int
+  ret i1 %isnull
+}
+
 define external fastcc %Return1 @rapid_allocate_fast (%RuntimePtr %HpPtrArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind gc "statepoint-example" {
   %Hp = ptrtoint %RuntimePtr %HpPtrArg to i64
 
@@ -183,7 +190,7 @@ gc_enter:
   ret %Return1 %gcresult
 }
 
-define private fastcc %Return1 @_extprim_Data.IORef.prim__newIORef(%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %val, %ObjPtr %world) {
+define private fastcc %Return1 @_extprim_Data.IORef.prim__newIORef(%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %val, %ObjPtr %world) gc "statepoint-example" {
   %allocated.ret = call fastcc %Return1 @rapid_allocate_fast (%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, i64 16)
   %hpnew = extractvalue %Return1 %allocated.ret, 0
   %hplimnew = extractvalue %Return1 %allocated.ret, 1
@@ -204,7 +211,7 @@ define private fastcc %Return1 @_extprim_Data.IORef.prim__newIORef(%RuntimePtr %
   ret %Return1 %packed3
 }
 
-define private fastcc %Return1 @_extprim_Data.IORef.prim__readIORef(%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %ref, %ObjPtr %world) alwaysinline {
+define private fastcc %Return1 @_extprim_Data.IORef.prim__readIORef(%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %ref, %ObjPtr %world) alwaysinline gc "statepoint-example" {
   %objptr = bitcast %ObjPtr %ref to %i64p1
   %payload.ptr = getelementptr inbounds i64, %i64p1 %objptr, i64 1
   %payload.objptr = bitcast %i64p1 %payload.ptr to %ObjPtrPtr
@@ -216,7 +223,7 @@ define private fastcc %Return1 @_extprim_Data.IORef.prim__readIORef(%RuntimePtr 
   ret %Return1 %packed3
 }
 
-define private fastcc %Return1 @_extprim_Data.IORef.prim__writeIORef(%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %ref, %ObjPtr %val, %ObjPtr %world) alwaysinline {
+define private fastcc %Return1 @_extprim_Data.IORef.prim__writeIORef(%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %discard0, %ObjPtr %ref, %ObjPtr %val, %ObjPtr %world) alwaysinline gc "statepoint-example" {
   %objptr = bitcast %ObjPtr %ref to %i64p1
   %payload.ptr = getelementptr inbounds i64, %i64p1 %objptr, i64 1
   %payload.objptr = bitcast %i64p1 %payload.ptr to %ObjPtrPtr

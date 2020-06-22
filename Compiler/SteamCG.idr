@@ -599,13 +599,8 @@ prepareArgCallConv : List String -> List String
 prepareArgCallConv l = prepareArgCallConv' l
 
 prepareArg : Reg -> Codegen String
--- can be changed to undef
---prepareArg Discard = pure $ "%ObjPtr undef"
 prepareArg Discard = do
-  discard <- assignSSA $ "inttoptr " ++ (toIR $ Const I64 0x987654321) ++ " to %ObjPtr"
-  pure ("%ObjPtr " ++ discard)
-  --pure $ "%ObjPtr null"
-  --pure $ "%ObjPtr null"
+  pure ("%ObjPtr null")
 prepareArg (Loc i) = do
   tmp <- assignSSA $ "load %ObjPtr, %ObjPtr* %v" ++ (show i) ++ "Var"
   pure $ "%ObjPtr " ++ tmp
@@ -1300,7 +1295,7 @@ getInstIR i (MKCLOSURE r n missingN args) = do
       putObjectSlot newObj (Const I64 $ cast $ i+1) argObj
       pure ()
                               )
-  appendCode $ "  store " ++ toIR newObj ++ ", %ObjPtr* " ++ toIR r ++ "Var"
+  store newObj (reg2val r)
 
 getInstIR i (APPLY r fun arg) = do
   hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
@@ -1612,8 +1607,7 @@ mk_prim__nullAnyPtr [p] = do
   jump lblStart
   beginLabel lblStart
 
-  ptrObjAsInt <- SSA I64 <$> assignSSA ("ptrtoint " ++ toIR p ++ " to i64")
-  ptrObjIsZero <- icmp "eq" (ConstI64 0) ptrObjAsInt
+  ptrObjIsZero <- SSA I1 <$> assignSSA ("call fastcc i1 @rapid.ptrisnull(" ++ toIR p ++ ")")
   branch ptrObjIsZero lblEnd lblInside
 
   beginLabel lblInside

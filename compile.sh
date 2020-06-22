@@ -23,17 +23,32 @@ optimizeO2="$optimizeO1 -functionattrs -ipsccp -sccp -simplifycfg -gvn -ipconstp
 optimizeO3="$optimizeO2"
 if [ -z "$opt" ]; then
   debug="--debug"
-  optimize="-mem2reg -sccp -dce -rewrite-statepoints-for-gc"
+  optimize="-mem2reg -constmerge -sccp -dce -rewrite-statepoints-for-gc"
 fi
 if [ "$opt" = "-O1" ]; then
   debug="--debug"
-  optimize="$optimizeO1 -O1"
+  optimize="-mem2reg -constmerge -sccp -dce -globaldce -rewrite-statepoints-for-gc"
 fi
 if [ "$opt" = "-O2" ]; then
-  optimize="$optimizeO2 -O2 -tailcallelim"
+  #optimize="-globaldce -mem2reg  -tailcallelim -simplifycfg -sccp -dce -rewrite-statepoints-for-gc -dse -die -constprop -constmerge -basicaa -memdep -sccp -dce -die -gvn -mergefunc -globaldce -dce -sccp"
+  optimize="-globaldce -mem2reg -basicaa -memdep -gvn -sroa -functionattrs -tailcallelim -sccp -dce -constprop -constmerge -dse -dce -die -adce -mergefunc -ipconstprop -ipsccp -dce -die -dse -deadargelim -argpromotion -rewrite-statepoints-for-gc"
 fi
 if [ "$opt" = "-O3" ]; then
-  optimize="$optimizeO3 -O3"
+  optimize="-globaldce -mem2reg -basicaa -memdep -sroa -functionattrs -tailcallelim -sccp -dce -constprop -constmerge -dse -dce -die -adce -mergefunc -ipconstprop -ipsccp -deadargelim -argpromotion -inline -rewrite-statepoints-for-gc"
+fi
+
+
+if [ "$opt" = "-test1" ]; then
+  debug="--debug"
+  optimize="-mem2reg -constmerge -sccp -dce -globaldce -rewrite-statepoints-for-gc"
+fi
+if [ "$opt" = "-test2" ]; then
+  debug="--debug"
+  optimize="-mem2reg -constmerge -sccp -dce -globaldce -instcombine -rewrite-statepoints-for-gc"
+fi
+if [ "$opt" = "-test3" ]; then
+  debug="--debug"
+  optimize="-mem2reg -constmerge -constprop -sccp -dce -globaldce -basicaa -memdep -reassociate -mergefunc -instcombine -functionattrs -ipsccp -simplifycfg -gvn -ipconstprop -adce -die -deadargelim -die -dse -dce -argpromotion -rewrite-statepoints-for-gc -inline -dse -die -dce"
 fi
 
 set -x
@@ -41,6 +56,7 @@ set -x
 ./build/exec/rapid2-cg $debug "${workfile}.sexp"
 cat support.ll "${workfile}.sexp.output.ll" > "${workfile}.full.ll"
 opt "${workfile}.full.ll" $optimize | tee "${workfile}.bc" | llc $tco -o "${workfile}.s"
+opt -S < "${workfile}.bc" > "${workfile}.opt.ll"
 echo $'\n.globl __LLVM_StackMaps' >> "${workfile}.s"
 
 clang -g -c -o "${workfile}.o" "${workfile}.s"

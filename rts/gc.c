@@ -5,6 +5,7 @@
 #include "rts.h"
 
 #undef RAPID_GC_DEBUG_ENABLED
+/*#define RAPID_GC_DEBUG_ENABLED*/
 
 #ifdef __linux__
   #define STACKMAP __LLVM_StackMaps
@@ -199,13 +200,15 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
 #endif
   }
 
+  // TODO: keep old nursery around and realloc() it during the next iteration
   memset(oldNursery, 0x5f, oldNurserySize);
-  /*free(oldNursery);*/
+  free(oldNursery);
 
 #ifdef RAPID_GC_DEBUG_ENABLED
   fprintf(stderr, "\n===============================================\n");
   fprintf(stderr, " GC FINISHED: %llu / %llu\n", (uint64_t)base->nurseryNext - (uint64_t)base->nurseryStart, nextNurserySize);
   fprintf(stderr, "===============================================\n");
+  fprintf(stderr, " next object: %p\n", (void *)base->nurseryNext);
 #endif
 
   // There's probably a more efficient way to do this, but this should be rare
