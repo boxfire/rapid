@@ -49,6 +49,9 @@ OBJECT_TYPE_ID_OPAQUE = 0x07
 OBJECT_TYPE_ID_POINTER : Int
 OBJECT_TYPE_ID_POINTER = 0x08
 
+OBJECT_TYPE_ID_IOARRAY : Int
+OBJECT_TYPE_ID_IOARRAY = 0x09
+
 CLOSURE_MAX_ARGS : Int
 CLOSURE_MAX_ARGS = 1024
 
@@ -1412,6 +1415,51 @@ getInstIR i START = pure ()
 getInstIR i inst = idris_crash $ ";=============\n; NOT IMPLEMENTED: " ++ show inst ++ "\n;=============\n"
 
 compileExtPrim : Int -> Name -> Reg -> List Reg -> Codegen ()
+compileExtPrim i (NS ["IOArray", "Data"] (UN "prim__newArray")) r [_, countReg, elemReg, _] = do
+  lblStart <- genLabel "new_array_init_start"
+  lblLoop <- genLabel "new_array_init_loop"
+  lblEnd <- genLabel "new_array_init_end"
+  count <- unboxInt (reg2val countReg)
+  elem <- load (reg2val elemReg)
+  size <- mkMul (Const I64 8) count
+  newObj <- dynamicAllocate size
+  hdr <- mkOr count (Const I64 $ header OBJECT_TYPE_ID_IOARRAY)
+  putObjectHeader newObj hdr
+  jump lblStart
+  beginLabel lblStart
+
+  jump lblLoop
+  beginLabel lblLoop
+  iPlus1name <- mkVarName "%iplus1."
+  let iPlus1 = SSA I64 iPlus1name
+  i <- phi [(Const I64 0, lblStart), (iPlus1, lblLoop)]
+
+  addr <- getObjectSlotAddrVar newObj i
+  store elem addr
+
+  appendCode $ iPlus1name ++ " = add " ++ toIR i ++ ", 1"
+  continue <- icmp "ult" iPlus1 count
+  branch continue lblLoop lblEnd
+  beginLabel lblEnd
+  store newObj (reg2val r)
+
+compileExtPrim i (NS ["IOArray", "Data"] (UN "prim__arrayGet")) r [_, arrReg, indexReg, _] = do
+  index <- unboxInt (reg2val indexReg)
+  array <- load (reg2val arrReg)
+
+  addr <- getObjectSlotAddrVar array index
+  val <- load addr
+
+  store val (reg2val r)
+
+compileExtPrim i (NS ["IOArray", "Data"] (UN "prim__arraySet")) r [_, arrReg, indexReg, valReg, _] = do
+  index <- unboxInt (reg2val indexReg)
+  array <- load (reg2val arrReg)
+  val <- load (reg2val valReg)
+
+  addr <- getObjectSlotAddrVar array index
+  store val addr
+
 compileExtPrim i (NS ["Info", "System"] (UN "prim__codegen")) r [] = do
   store !(mkStr i "rapid") (reg2val r)
 compileExtPrim i (NS ["Info", "System"] (UN "prim__os")) r [] = do

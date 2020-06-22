@@ -24,6 +24,7 @@
 #define OBJ_TYPE_BUFFER      0x06
 #define OBJ_TYPE_OPAQUE      0x07
 #define OBJ_TYPE_PTR         0x08
+#define OBJ_TYPE_IOARRAY     0x09
 
 #define OBJ_TYPE_FWD_REF     0xfd
 
@@ -109,6 +110,8 @@ static inline uint32_t OBJ_TOTAL_SIZE(ObjPtr p) {
       return 8 + OBJ_SIZE(p);
     case OBJ_TYPE_CLOSURE:
       return 16 + 8 * (h & 0xffff);
+    case OBJ_TYPE_IOARRAY:
+      return 8 + 8 * OBJ_SIZE(p);
     case OBJ_TYPE_FWD_REF:
       rapid_C_crash("invalid fwd ref in OBJ_TOTAL_SIZE");
       return 0;

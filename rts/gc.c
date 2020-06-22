@@ -108,6 +108,16 @@ static void cheney(Idris_TSO *base) {
           OBJ_PUT_SLOT(obj, 0, argCopy);
         }
         break;
+      case OBJ_TYPE_IOARRAY:
+        {
+          int arraySize = OBJ_SIZE(obj);
+          for (int i = 0; i < arraySize; ++i) {
+            ObjPtr value = OBJ_GET_SLOT(obj, i);
+            ObjPtr valCopy = copy(base, value);
+            OBJ_PUT_SLOT(obj, i, valCopy);
+          }
+        }
+        break;
       case OBJ_TYPE_FWD_REF:
         rapid_C_crash("illegal forward ref found");
         break;
