@@ -1406,7 +1406,18 @@ getInstIR i (PROJECT r o pos) = do
   assertObjectTypeAny slot 0xf0
   store slot (reg2val r)
 
-getInstIR i (EXTPRIM r n args) =
+getInstIR i (EXTPRIM r n args) = compileExtPrim i n r args
+
+getInstIR i START = pure ()
+getInstIR i inst = idris_crash $ ";=============\n; NOT IMPLEMENTED: " ++ show inst ++ "\n;=============\n"
+
+compileExtPrim : Int -> Name -> Reg -> List Reg -> Codegen ()
+compileExtPrim i (NS ["Info", "System"] (UN "prim__codegen")) r [] = do
+  store !(mkStr i "rapid") (reg2val r)
+compileExtPrim i (NS ["Info", "System"] (UN "prim__os")) r [] = do
+  -- no cross compiling for now:
+  store !(mkStr i System.Info.os) (reg2val r)
+compileExtPrim i n r args =
   do argsV <- traverse prepareArg args
      hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
      hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
@@ -1419,9 +1430,6 @@ getInstIR i (EXTPRIM r n args) =
      appendCode $ "store %RuntimePtr " ++ newHpLim ++ ", %RuntimePtr* %HpLimVar"
      returnValue <- SSA IRObjPtr <$> assignSSA ("extractvalue %Return1 " ++ result ++ ", 2")
      store returnValue (reg2val r)
-
-getInstIR i START = pure ()
-getInstIR i inst = idris_crash $ ";=============\n; NOT IMPLEMENTED: " ++ show inst ++ "\n;=============\n"
 
 getInstIRWithComment : {auto conNames : SortedMap Name Int} -> Int -> VMInst -> Codegen ()
 getInstIRWithComment i instr = do
@@ -1661,18 +1669,6 @@ mk_prelude_fastAppend [stringListObj] = do
   newObj <- foreignCall {t=IRObjPtr} "@rapid_fast_append" [toIR stringListObj]
   store newObj (reg2val RVal)
 
-mk_prim__systemInfoOs : Vect 0 (IRValue IRObjPtr) -> Codegen ()
-mk_prim__systemInfoOs [] = do
-  -- no cross compiling for now
-  str <- mkStr 2 System.Info.os
-  store str (reg2val RVal)
-
-mk_prim__systemInfoCodegen : Vect 0 (IRValue IRObjPtr) -> Codegen ()
-mk_prim__systemInfoCodegen [] = do
-  str <- mkStr 3 "rapid"
-  store str (reg2val RVal)
-
-
 mkSupport : {n : Nat} -> Name -> (Vect n (IRValue IRObjPtr) -> Codegen ()) -> String
 mkSupport {n} name f = runCodegen (do
           appendCode ("define external fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ toList $ map toIR args) ++ ") gc \"statepoint-example\" {")
@@ -1689,8 +1685,6 @@ supportPrelude : String
 supportPrelude = fastAppend [
     mkSupport (NS ["Strings", "Data"] (UN "fastAppend")) mk_prelude_fastAppend
   , mkSupport (NS ["Prelude"] (UN "fastPack")) mk_prelude_fastPack
-  , mkSupport (NS ["Info", "_extprim_System"] (UN "prim__os")) mk_prim__systemInfoOs
-  , mkSupport (NS ["Info", "_extprim_System"] (UN "prim__codegen")) mk_prim__systemInfoCodegen
   ]
 
 fromCFType : CFType -> IRType
