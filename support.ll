@@ -148,11 +148,26 @@ finished_eq:
   ret i32 0
 }
 
-define private fastcc i1 @rapid.ptrisnull(%ObjPtr noalias nocapture nofree readonly %p) readnone nounwind alwaysinline {
+define private fastcc i1 @rapid.ptrisnull(%ObjPtr noalias nocapture nofree readonly %p) "gc-leaf-function" readnone nounwind alwaysinline {
   %p.addrcasted = addrspacecast %Object addrspace(1)* %p to %Object addrspace(2)*
   %p.int = ptrtoint %Object addrspace(2)* %p.addrcasted to i64
   %isnull = icmp eq i64 0, %p.int
   ret i1 %isnull
+}
+
+define private fastcc noalias %ObjPtr @rapid.boxint(i64 %val) "gc-leaf-function" readnone nounwind alwaysinline {
+  %t0 = shl i64 %val, 1
+  %t1 = or i64 %t0, 1
+  %t2 = inttoptr i64 %t1 to %Object addrspace(3)*
+  %t3 = addrspacecast %Object addrspace(3)* %t2 to %Object addrspace(1)*
+  ret %ObjPtr %t3
+}
+
+define private fastcc i64 @rapid.unboxint(%ObjPtr noalias nocapture nofree %val) "gc-leaf-function" readnone nounwind alwaysinline {
+  %t0 = addrspacecast %Object addrspace(1)* %val to %Object addrspace(2)*
+  %t1 = ptrtoint %Object addrspace(2)* %t0 to i64
+  %t2 = ashr i64 %t1, 1
+  ret i64 %t2
 }
 
 define external fastcc %Return1 @rapid_allocate_fast (%RuntimePtr %HpPtrArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimPtrArg, i64 %size) alwaysinline optsize nounwind gc "statepoint-example" {

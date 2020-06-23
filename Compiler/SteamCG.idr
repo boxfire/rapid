@@ -396,10 +396,8 @@ header i = (cast i) `prim__shl_Integer` 32
 
 cgMkInt : IRValue I64 -> Codegen (IRValue IRObjPtr)
 cgMkInt val = do
-  newObj <- dynamicAllocate (ConstI64 8)
-  putObjectHeader newObj (ConstI64 $ header OBJECT_TYPE_ID_INT)
-  putObjectSlot newObj (ConstI64 0) val
-  pure newObj
+  boxed <- assignSSA $ "tail call fastcc noalias %ObjPtr @rapid.boxint(" ++ toIR val ++ ") \"gc-leaf-function\" alwaysinline"
+  pure (SSA IRObjPtr boxed)
 
 cgMkDouble : IRValue F64 -> Codegen (IRValue IRObjPtr)
 cgMkDouble val = do
@@ -552,11 +550,11 @@ enumerate l = enumerate' 0 l where
   enumerate' _ [] = []
   enumerate' i (x::xs) = (i, x)::(enumerate' (i+1) xs)
 
-unboxInt : IRValue (Pointer 0 IRObjPtr) -> Codegen (IRValue I64)
-unboxInt src = getObjectSlot {t=I64} !(load src) 0
-
 unboxInt' : IRValue IRObjPtr -> Codegen (IRValue I64)
-unboxInt' src = getObjectSlot {t=I64} src 0
+unboxInt' src = SSA I64 <$> assignSSA ("tail call fastcc i64 @rapid.unboxint(" ++ toIR src ++ ") \"gc-leaf-function\" alwaysinline")
+
+unboxInt : IRValue (Pointer 0 IRObjPtr) -> Codegen (IRValue I64)
+unboxInt src = unboxInt' !(load src)
 
 unboxFloat64 : IRValue (Pointer 0 IRObjPtr) -> Codegen (IRValue F64)
 unboxFloat64 src = getObjectSlot {t=F64} !(load src) 0
@@ -977,7 +975,7 @@ getInstIR i (OP r (GT  StringType) [r1, r2]) = store !(stringCompare GT  r1 r2) 
 
 getInstIR i (OP r (Cast IntegerType StringType) [r1]) = do
   theIntObj <- load (reg2val r1)
-  theInt <- getObjectSlot {t=I64} theIntObj 0
+  theInt <- unboxInt' theIntObj
 
   -- max size of 2^64 = 20 + (optional "-" prefix) + NUL byte (from snprintf)
   newStr <- dynamicAllocate (ConstI64 24)
@@ -989,7 +987,7 @@ getInstIR i (OP r (Cast IntegerType StringType) [r1]) = do
 
 getInstIR i (OP r (Cast IntType StringType) [r1]) = do
   theIntObj <- load (reg2val r1)
-  theInt <- getObjectSlot {t=I64} theIntObj 0
+  theInt <- unboxInt' theIntObj
 
   -- max size of 2^64 = 20 + (optional "-" prefix) + NUL byte (from snprintf)
   newStr <- dynamicAllocate (ConstI64 24)

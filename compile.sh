@@ -18,12 +18,12 @@ opt="${2:-}"
 tco="-tailcallopt"
 debug=
 optimize=
-optimizeO1="-mem2reg -always-inline -sccp -dce -rewrite-statepoints-for-gc -inline"
+optimizeO1="-mem2reg -sccp -dce -rewrite-statepoints-for-gc -inline"
 optimizeO2="$optimizeO1 -functionattrs -ipsccp -sccp -simplifycfg -gvn -ipconstprop -constprop -constmerge -adce -die -dse -deadargelim -globaldce -argpromotion"
 optimizeO3="$optimizeO2"
 if [ -z "$opt" ]; then
   debug="--debug"
-  optimize="-mem2reg -constmerge -sccp -dce -rewrite-statepoints-for-gc"
+  optimize="-mem2reg -constmerge -sccp -dce -rewrite-statepoints-for-gc -always-inline"
 fi
 if [ "$opt" = "-O1" ]; then
   debug="--debug"
@@ -31,10 +31,10 @@ if [ "$opt" = "-O1" ]; then
 fi
 if [ "$opt" = "-O2" ]; then
   #optimize="-globaldce -mem2reg  -tailcallelim -simplifycfg -sccp -dce -rewrite-statepoints-for-gc -dse -die -constprop -constmerge -basicaa -memdep -sccp -dce -die -gvn -mergefunc -globaldce -dce -sccp"
-  optimize="-globaldce -mem2reg -basicaa -memdep -gvn -sroa -functionattrs -tailcallelim -sccp -dce -constprop -constmerge -dse -dce -die -adce -mergefunc -ipconstprop -ipsccp -dce -die -dse -deadargelim -argpromotion -rewrite-statepoints-for-gc"
+  optimize="-globaldce -mem2reg -basicaa -memdep -gvn -sroa -functionattrs -sccp -dce -constprop -constmerge -dse -dce -die -adce -mergefunc -ipconstprop -ipsccp -dce -die -dse -deadargelim -argpromotion -rewrite-statepoints-for-gc -always-inline -inline"
 fi
 if [ "$opt" = "-O3" ]; then
-  optimize="-globaldce -mem2reg -basicaa -memdep -sroa -functionattrs -tailcallelim -sccp -dce -constprop -constmerge -dse -dce -die -adce -mergefunc -ipconstprop -ipsccp -deadargelim -argpromotion -inline -rewrite-statepoints-for-gc"
+  optimize="-globaldce -mem2reg -basicaa -memdep -gvn -sroa -functionattrs -sccp -dce -constprop -constmerge -dse -dce -die -adce -mergefunc -ipconstprop -ipsccp -dce -die -dse -deadargelim -argpromotion -rewrite-statepoints-for-gc -always-inline -inline -O3"
 fi
 
 
@@ -48,7 +48,7 @@ if [ "$opt" = "-test2" ]; then
 fi
 if [ "$opt" = "-test3" ]; then
   debug="--debug"
-  optimize="-mem2reg -constmerge -constprop -sccp -dce -globaldce -basicaa -memdep -reassociate -mergefunc -instcombine -functionattrs -ipsccp -simplifycfg -gvn -ipconstprop -adce -die -deadargelim -die -dse -dce -argpromotion -rewrite-statepoints-for-gc -inline -dse -die -dce"
+  optimize="-mem2reg -constmerge -constprop -sccp -dce -globaldce -basicaa -memdep -reassociate -mergefunc -instcombine -functionattrs -ipsccp -simplifycfg -gvn -ipconstprop -adce -die -deadargelim -die -dse -dce -argpromotion -rewrite-statepoints-for-gc -always-inline -inline -dse -die -dce"
 fi
 
 set -x
@@ -60,4 +60,4 @@ opt -S < "${workfile}.bc" > "${workfile}.opt.ll"
 echo $'\n.globl __LLVM_StackMaps' >> "${workfile}.s"
 
 clang -g -c -o "${workfile}.o" "${workfile}.s"
-clang -g -o "${workfile}.native" "${workfile}.o" rts/build/runtime.bc external/llvm-statepoint-utils/dist/llvm-statepoint-tablegen.a
+clang -g -O3 -o "${workfile}.native" "${workfile}.o" rts/build/runtime.bc external/llvm-statepoint-utils/dist/llvm-statepoint-tablegen.a

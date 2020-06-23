@@ -151,7 +151,7 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
   uint64_t nextNurserySize = base->next_nursery_size;
 
   uint8_t *oldNursery = (uint8_t *)base->nurseryStart;
-  uint8_t *newNursery = malloc(nextNurserySize);
+  uint8_t *newNursery = realloc(base->heap_aux, nextNurserySize);
   memset(newNursery, 0, nextNurserySize);
 #ifdef RAPID_GC_DEBUG_ENABLED
   fprintf(stderr, "nursery size: %llu -> %llu\n", oldNurserySize, nextNurserySize);
@@ -210,9 +210,8 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
 #endif
   }
 
-  // TODO: keep old nursery around and realloc() it during the next iteration
-  memset(oldNursery, 0x5f, oldNurserySize);
-  free(oldNursery);
+  base->heap_aux = oldNursery;
+  memset(base->heap_aux, 0x5f, oldNurserySize);
 
 #ifdef RAPID_GC_DEBUG_ENABLED
   fprintf(stderr, "\n===============================================\n");

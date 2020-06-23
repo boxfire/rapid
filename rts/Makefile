@@ -10,7 +10,7 @@ build:
 
 	#$(RTS_HEADERS) Makefile
 %.bc: %.c
-	clang -flto -g -c -Wall -Wpedantic -Werror -I . -I ../external/llvm-statepoint-utils/dist -std=c11 -o $@ $<
+	clang -flto -g -O3 -c -Wall -Wpedantic -Werror -I . -I ../external/llvm-statepoint-utils/dist -std=c11 -o $@ $<
 
 clean:
 	rm -f *.bc
