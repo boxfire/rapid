@@ -2,6 +2,14 @@
 
 #include <unistd.h>
 #include <setjmp.h>
+#include <stdbool.h>
+
+struct RTSConfig {
+  bool debug_always_gc;
+  bool debug_heap_write_poison;
+};
+
+extern struct RTSConfig *rapid_global_config;
 
 struct Idris_TSO_t {
   uint8_t *nurseryStart;

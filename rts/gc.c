@@ -211,7 +211,10 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
   }
 
   base->heap_aux = oldNursery;
-  memset(base->heap_aux, 0x5f, oldNurserySize);
+
+  if (rapid_global_config->debug_heap_write_poison) {
+    memset(base->heap_aux, 0x5f, oldNurserySize);
+  }
 
 #ifdef RAPID_GC_DEBUG_ENABLED
   fprintf(stderr, "\n===============================================\n");

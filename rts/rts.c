@@ -21,6 +21,8 @@ static const size_t RAPID_STACK_SIZE = 128 * 1024 * 1024;
 
 extern long idris_enter(void *baseTSO);
 
+struct RTSConfig *rapid_global_config;
+
 void idris_rts_crash(long arg0) {
   printf("CRASH called: %ld\n", arg0);
   exit(3);
@@ -33,6 +35,11 @@ void idris_rts_crash_msg(ObjPtr msg) {
   fwrite(str, length, 1, stderr);
   fprintf(stderr, "\n");
   exit(4);
+}
+
+void rapid_crash(const char *msg) {
+  fprintf(stderr, "ERROR: %s\n", msg);
+  exit(10);
 }
 
 void rapid_C_crash(const char *msg) {
@@ -59,7 +66,14 @@ void task_start(Idris_TSO *tso) {
   // we can not return from this function
 }
 
+void rapid_rts_init() {
+  rapid_global_config = malloc(sizeof(struct RTSConfig));
+  rapid_global_config->debug_always_gc = false;
+  rapid_global_config->debug_heap_write_poison = false;
+}
+
 int main(int argc, char **argv) {
+  rapid_rts_init();
   rapid_gc_init();
   rapid_builtin_init(argc, argv);
 

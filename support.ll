@@ -37,9 +37,10 @@ target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128-ni:1"
 %FuncPtrClosureEntry = type %Return1 (%RuntimePtr, %TSOPtr, %RuntimePtr, %ObjPtr, %ObjPtr)*
 
 declare ccc void @idris_rts_gc(%TSOPtr, i8*)
-declare ccc void @idris_rts_crash(i64) noreturn
-declare ccc void @idris_rts_crash_msg(%ObjPtr) noreturn
-declare ccc void @idris_rts_crash_typecheck(%ObjPtr, i64) noreturn
+declare ccc void @idris_rts_crash(i64) "gc-leaf-function" noreturn
+declare ccc void @idris_rts_crash_msg(%ObjPtr) "gc-leaf-function" noreturn
+declare ccc void @rapid_crash(i8*) "gc-leaf-function" noreturn
+declare ccc void @idris_rts_crash_typecheck(%ObjPtr, i64) "gc-leaf-function" noreturn
 
 declare ccc void @idris_mkcon_ok(%ObjPtr)
 declare ccc void @idris_mkcon_arg_ok(%ObjPtr, i64)
@@ -76,7 +77,7 @@ declare i8* @llvm.addressofreturnaddress()
 
 declare ccc i1 @llvm.expect.i1(i1, i1)
 
-define private ccc %Return1 @rapid_gc_enter(%TSOPtr %BaseArg, i64 %size.aligned) noinline gc "statepoint-example" {
+define private fastcc %Return1 @rapid_gc_enter(%TSOPtr %BaseArg, i64 %size.aligned) noinline gc "statepoint-example" {
   %frame = call i8* @llvm.addressofreturnaddress()
 
   %heapAllocPtr = getelementptr inbounds %Idris_TSO.struct, %Idris_TSO.struct* %BaseArg, i32 0, i32 7
@@ -201,7 +202,7 @@ continue:
   %packed3 = insertvalue %Return1 %packed2, %ObjPtr %newAddr, 2
   ret %Return1 %packed3
 gc_enter:
-  %gcresult = call ccc %Return1 @rapid_gc_enter(%TSOPtr %BaseArg, i64 %size.aligned)
+  %gcresult = tail call fastcc %Return1 @rapid_gc_enter(%TSOPtr %BaseArg, i64 %size.aligned)
   ret %Return1 %gcresult
 }
 
