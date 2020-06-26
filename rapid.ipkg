@@ -1,0 +1,6 @@
+package rapidc
+
+depends = idris2, contrib, network
+
+main = Rapid.Main
+executable = rapidc

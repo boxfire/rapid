@@ -9,6 +9,7 @@ cg:
 
 rts:
 	make -j `nproc` -C rts
+	cp -v rts/build/runtime.bc support/rapid/runtime.bc
 
 clean: clean-tests
 	make -C rts clean

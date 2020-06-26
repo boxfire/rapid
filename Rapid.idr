@@ -1,4 +1,4 @@
-module Main
+module Rapid
 
 import Data.List
 import Data.SortedMap

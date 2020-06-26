@@ -16,8 +16,6 @@ import Core.TT
 import Codegen
 import Utils.Hex
 
-%default partial
-
 OBJECT_TYPE_ID_CON_NO_ARGS : Int
 OBJECT_TYPE_ID_CON_NO_ARGS = 0xff
 
@@ -110,7 +108,7 @@ asHex2 c = let s = asHex c in
 
 doubleToHex : Double -> String
 doubleToHex d = let bytes = unsafePerformIO (do
-                                buf <- (fromMaybe $ idris_crash "no buf") <$> newBuffer 8
+                                buf <- (assert_total $ fromMaybe $ idris_crash "no buf") <$> newBuffer 8
                                 setDouble buf 0 d
                                 bufferData buf
                                 ) in
@@ -198,7 +196,7 @@ isReturn _ = False
 reg2val : Reg -> IRValue (Pointer 0 IRObjPtr)
 reg2val (Loc i) = SSA (Pointer 0 IRObjPtr) ("%v" ++ show i ++ "Var")
 reg2val RVal = SSA (Pointer 0 IRObjPtr) ("%rvalVar")
-reg2val Discard = IRDiscard -- idris_crash "trying to use DISCARD pseudo-register" --SSA (Pointer IRObjPtr) "undef"
+reg2val Discard = IRDiscard
 
 nullPtr : IRValue IRObjPtr
 nullPtr = SSA IRObjPtr "null"
@@ -586,12 +584,13 @@ makeConstCaseLabel caseId (c,_) = "const case error: " ++ (showConstant c)
 makeNameId : Int -> Int
 makeNameId nid = 0x80000000 + nid
 
-makeCaseLabel : {auto conNames : SortedMap Name Int} -> String -> (Either Int Name, a) -> String
-makeCaseLabel caseId (Left i,_) = "i64 " ++ show i ++ ", label %" ++ caseId ++ "_tag_is_" ++ show i
+makeCaseLabel : {auto conNames : SortedMap Name Int} -> String -> (Either Int Name, a) -> Codegen String
+makeCaseLabel caseId (Left i,_) = pure $ "i64 " ++ show i ++ ", label %" ++ caseId ++ "_tag_is_" ++ show i
 makeCaseLabel {conNames} caseId (Right n,_) =
   case lookup n conNames of
-       Just nameId => "i64 " ++ show (makeNameId nameId) ++ ", label %" ++ caseId ++ "_name_is_" ++ show (makeNameId nameId)
-       Nothing => idris_crash $ "name not found: " ++ show n
+       Just nameId => pure $ "i64 " ++ show (makeNameId nameId) ++ ", label %" ++ caseId ++ "_name_is_" ++ show (makeNameId nameId)
+       Nothing => do addError $ "name not found: " ++ show n
+                     pure "error"
 
 instrAsComment : VMInst -> String
 instrAsComment i = ";" ++ (unwords $ lines $ show i)
@@ -610,15 +609,17 @@ prepareArg Discard = do
 prepareArg (Loc i) = do
   tmp <- assignSSA $ "load %ObjPtr, %ObjPtr* %v" ++ (show i) ++ "Var"
   pure $ "%ObjPtr " ++ tmp
-prepareArg RVal = idris_crash "cannot use rval as call arg"
+prepareArg RVal = do
+  addError "cannot use rval as call arg"
+  pure "error"
 
 findConstCaseType : List (Constant, List VMInst) -> Constant
-findConstCaseType [] = idris_crash "empty const case"
+findConstCaseType [] = assert_total $ idris_crash "empty const case"
 findConstCaseType ((I _,_)::_) = IntType
 findConstCaseType ((BI _,_)::_) = IntegerType
 findConstCaseType ((Str _,_)::_) = StringType
 findConstCaseType ((Ch _,_)::_) = CharType
-findConstCaseType t = idris_crash $ "unknwon const case type" ++ show t
+findConstCaseType t = assert_total $ idris_crash $ "unknwon const case type" ++ show t
 
 compareStr : IRValue IRObjPtr -> IRValue IRObjPtr -> Codegen (IRValue I1)
 compareStr obj1 obj2 = do
@@ -1274,13 +1275,13 @@ getInstIR {conNames} i (MKCON r (Right n) args) = do
   case lookup n conNames of
        Just nameId => do obj <- mkCon (makeNameId nameId) args
                          store obj (reg2val r)
-       Nothing => idris_crash $ "MKCON name not found: " ++ show n
+       Nothing => addError $ "MKCON name not found: " ++ show n
 
 getInstIR i (MKCLOSURE r n missingN args) = do
   let missing = cast {to=Integer} missingN
   let len = cast {to=Integer} $ length args
   let totalArgsExpected = missing + len
-  if totalArgsExpected > (cast CLOSURE_MAX_ARGS) then idris_crash $ "ERROR : too many closure arguments: " ++ show totalArgsExpected ++ " > " ++ show CLOSURE_MAX_ARGS else do
+  if totalArgsExpected > (cast CLOSURE_MAX_ARGS) then addError $ "ERROR : too many closure arguments: " ++ show totalArgsExpected ++ " > " ++ show CLOSURE_MAX_ARGS else do
   let header = (header OBJECT_TYPE_ID_CLOSURE) + (missing * 0x10000) + len
   newObj <- dynamicAllocate $ ConstI64 (8 + 8 * len)
   putObjectHeader newObj (ConstI64 $ header)
@@ -1349,6 +1350,7 @@ getInstIR i (CONSTCASE r alts def) = case findConstCaseType alts of
                                           IntegerType => getInstForConstCaseInt i r alts def
                                           StringType => getInstForConstCaseString i r alts def
                                           CharType => getInstForConstCaseChar i r alts def
+                                          t => addError "unknwon constcase type"
 
 getInstIR {conNames} i (CASE r alts def) =
   do let def' = fromMaybe [(ERROR $ "no default in CASE")] def
@@ -1360,7 +1362,7 @@ getInstIR {conNames} i (CASE r alts def) =
      header <- getObjectHeader o1
      -- object tag is stored in the least significat 32 bits of header
      scrutinee <- assignSSA $ "and i64 " ++ (show 0xffffffff) ++ ", " ++ showWithoutType header
-     appendCode $ "  switch i64 " ++ scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeCaseLabel caseId) alts)) ++ " ]"
+     appendCode $ "  switch i64 " ++ scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " !(traverse (makeCaseLabel caseId) alts)) ++ " ]"
      appendCode $ caseId ++ "_default:"
      traverse (getInstIRWithComment i) def'
      appendCode $ "br label %" ++ labelEnd
@@ -1380,7 +1382,7 @@ getInstIR {conNames} i (CASE r alts def) =
              appendCode (caseId ++ "_name_is_" ++ (show (makeNameId nameId)) ++ ":")
              traverse_ (getInstIRWithComment i) is
              appendCode ("br label %" ++ caseId ++ "_end")
-           Nothing => idris_crash $ "name for case not found: " ++ show n
+           Nothing => addError $ "name for case not found: " ++ show n
 
 getInstIR i (CALL r tailpos n args) =
   do argsV <- traverse prepareArg args
@@ -1412,10 +1414,10 @@ getInstIR i (PROJECT r o pos) = do
 getInstIR i (EXTPRIM r n args) = compileExtPrim i n r args
 
 getInstIR i START = pure ()
-getInstIR i inst = idris_crash $ ";=============\n; NOT IMPLEMENTED: " ++ show inst ++ "\n;=============\n"
+getInstIR i inst = addError $ ";=============\n; NOT IMPLEMENTED: " ++ show inst ++ "\n;=============\n"
 
 compileExtPrim : Int -> Name -> Reg -> List Reg -> Codegen ()
-compileExtPrim i (NS ["IOArray", "Data"] (UN "prim__newArray")) r [_, countReg, elemReg, _] = do
+compileExtPrim i (NS ["Prims", "IOArray", "Data"] (UN "prim__newArray")) r [_, countReg, elemReg, _] = do
   lblStart <- genLabel "new_array_init_start"
   lblLoop <- genLabel "new_array_init_loop"
   lblEnd <- genLabel "new_array_init_end"
@@ -1443,7 +1445,7 @@ compileExtPrim i (NS ["IOArray", "Data"] (UN "prim__newArray")) r [_, countReg, 
   beginLabel lblEnd
   store newObj (reg2val r)
 
-compileExtPrim i (NS ["IOArray", "Data"] (UN "prim__arrayGet")) r [_, arrReg, indexReg, _] = do
+compileExtPrim i (NS ["Prims", "IOArray", "Data"] (UN "prim__arrayGet")) r [_, arrReg, indexReg, _] = do
   index <- unboxInt (reg2val indexReg)
   array <- load (reg2val arrReg)
 
@@ -1452,7 +1454,7 @@ compileExtPrim i (NS ["IOArray", "Data"] (UN "prim__arrayGet")) r [_, arrReg, in
 
   store val (reg2val r)
 
-compileExtPrim i (NS ["IOArray", "Data"] (UN "prim__arraySet")) r [_, arrReg, indexReg, valReg, _] = do
+compileExtPrim i (NS ["Prims", "IOArray", "Data"] (UN "prim__arraySet")) r [_, arrReg, indexReg, valReg, _] = do
   index <- unboxInt (reg2val indexReg)
   array <- load (reg2val arrReg)
   val <- load (reg2val valReg)
@@ -1481,7 +1483,7 @@ compileExtPrim i n r args =
 
 getInstIRWithComment : {auto conNames : SortedMap Name Int} -> Int -> VMInst -> Codegen ()
 getInstIRWithComment i instr = do
-  appendCode (instrAsComment instr)
+  --appendCode (instrAsComment instr)
   getInstIR i instr
 
 getFunIR : Bool -> SortedMap Name Int -> Int -> Name -> List Reg -> List VMInst -> Codegen ()
@@ -1498,7 +1500,7 @@ getFunIR debug conNames i n args body = do
   where
     copyArg : Reg -> String
     copyArg (Loc i) = let r = show i in "  %v" ++ r ++ "Var = alloca %ObjPtr\n  store %ObjPtr %v" ++ r ++ ", %ObjPtr* %v" ++ r ++ "Var"
-    copyArg _ = idris_crash "not an argument"
+    copyArg _ = "ERROR: not an argument"
 
 getFunIRClosureEntry : Bool -> SortedMap Name Int -> Int -> Name -> (args : List Int) -> {auto ok : NonEmpty args} -> List VMInst -> Codegen ()
 getFunIRClosureEntry debug conNames i n args body = do
@@ -1519,7 +1521,6 @@ getFunIRClosureEntry debug conNames i n args body = do
         appendCode $ "  %v" ++ show i ++ "Var = alloca %ObjPtr"
         arg <- getObjectSlot clObj (index + 1)
         store arg (reg2val (Loc i))
-    copyArg _ = idris_crash "not an argument"
 
 mk_prim__bufferNew : Vect 2 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__bufferNew [sizeObj, _] = do
@@ -1753,6 +1754,9 @@ wrapForeignResult (CFIORes CFInt) v = cgMkInt v
 wrapForeignResult (CFDouble) v = cgMkDouble v
 wrapForeignResult (CFIORes CFDouble) v = cgMkDouble v
 wrapForeignResult _ (SSA _ v) = pure (SSA IRObjPtr v)
+wrapForeignResult _ _ = do
+  addError "can not wrap foreign result"
+  pure (SSA IRObjPtr "error")
 
 transformArg : (IRValue IRObjPtr, CFType) -> Codegen String
 transformArg (arg, CFInt) = do
@@ -1863,7 +1867,7 @@ getForeignFunctionIR debug i name cs args ret = do
   case (builtin, found) of
        (Just b, _) => do builtinForeign b name args ret
        (Nothing, Just funcName) => do genericForeign funcName name args ret
-       (Nothing, Nothing) => appendCode $ "; missing foreign: " ++ show name ++ " <- " ++ show cs ++ "\n"
+       (_, _) => appendCode $ "; missing foreign: " ++ show name ++ " <- " ++ show cs ++ "\n"
 
 export
 compileForeign : Bool -> (Int, (Name, NamedDef)) -> String
