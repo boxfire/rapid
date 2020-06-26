@@ -50,6 +50,13 @@ ObjPtr copy(Idris_TSO *base, ObjPtr p) {
     return (ObjPtr)fwd_target;
   }
 
+  // TODO: replace this with more efficient pointer tagging
+  if ( !(((uint64_t)p >= (uint64_t)base->heap_aux) && ((uint64_t)p < (uint64_t)base->heap_aux_end)) ) {
+    // object is not inside the old nursery, keep it where it is
+    return p;
+  }
+  assert(((uint64_t)p >= (uint64_t)base->heap_aux) && ((uint64_t)p < (uint64_t)base->heap_aux_end) && "object is not inside old nursery");
+
   switch (OBJ_TYPE(p)) {
     case OBJ_TYPE_FWD_REF:
       return (ObjPtr)OBJ_GET_SLOT(p, 0);
@@ -155,13 +162,16 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
   memset(newNursery, 0, nextNurserySize);
 #ifdef RAPID_GC_DEBUG_ENABLED
   fprintf(stderr, "nursery size: %llu -> %llu\n", oldNurserySize, nextNurserySize);
-  fprintf(stderr, "old nursery at: %p\n", (void *)base->nurseryStart);
+  fprintf(stderr, "old nursery at: %p - %p\n", (void *)base->nurseryStart, (void *)base->nurseryEnd);
   fprintf(stderr, "new nursery at: %p\n", (void *)newNursery);
 #endif
 
   base->nurseryStart = newNursery;
   base->nurseryNext = newNursery;
   base->nurseryEnd = (uint8_t *) ((uint64_t)newNursery + nextNurserySize);
+
+  base->heap_aux = oldNursery;
+  base->heap_aux_end = oldNursery + oldNurserySize;
 
   while (frame != NULL) {
 #ifdef RAPID_GC_DEBUG_ENABLED
@@ -209,8 +219,6 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
     fprintf(stderr, "\nnursery will grow next GC: %llu -> %llu\n", nextNurserySize, base->next_nursery_size);
 #endif
   }
-
-  base->heap_aux = oldNursery;
 
   if (rapid_global_config->debug_heap_write_poison) {
     memset(base->heap_aux, 0x5f, oldNurserySize);

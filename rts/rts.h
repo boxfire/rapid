@@ -25,6 +25,7 @@ struct Idris_TSO_t {
   uint64_t heap_alloc;
   uint64_t next_nursery_size;
   uint8_t *heap_aux;
+  uint8_t *heap_aux_end;
 
   jmp_buf sched_jmp_buf;
 };

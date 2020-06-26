@@ -82,6 +82,7 @@ int main(int argc, char **argv) {
   tso->nurseryNext = tso->nurseryStart;
   tso->nurseryEnd = (uint8_t *)((long int)tso->nurseryStart + INITIAL_NURSERY_SIZE);
   tso->next_nursery_size = INITIAL_NURSERY_SIZE;
+  tso->heap_aux = NULL;
   tso->rapid_errno = 1;
 
   tso->stack_size = RAPID_STACK_SIZE;
