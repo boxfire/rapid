@@ -62,8 +62,8 @@ main = do
          let vmcodeAll = getVMDefs (filter isVmdef parsed)
          let vmcode = filter (not . isBlacklisted) vmcodeAll
          --putStrLn $ show $ vmcode
-         (Right support) <- readFile "support.ll"
-         | Left _ => pure ()
+         (Right support) <- readFile "support/rapid/support.ll"
+         | Left _ => putStrLn "support.ll not found"
          let support = ""
          let nameMap = getNameMap $ map snd vmcode
 

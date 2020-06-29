@@ -2,7 +2,7 @@ all: rapid rts
 
 rapid:
 	idris2 --build rapid-cg.ipkg
-	idris2 --build rapid-fe.ipkg
+	idris2 --build rapidc.ipkg
 
 cg:
 	idris2 --build rapid-cg.ipkg

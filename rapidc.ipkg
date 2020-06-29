@@ -2,5 +2,7 @@ package rapidc
 
 depends = idris2, contrib, network
 
+sourcedir = "src"
+
 main = Rapid.Main
 executable = rapidc

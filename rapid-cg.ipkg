@@ -2,5 +2,7 @@ package rapidcg
 
 depends = idris2, contrib
 
+sourcedir = "src"
+
 main = Rapid
 executable = rapid2-cg
