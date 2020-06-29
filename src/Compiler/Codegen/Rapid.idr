@@ -24,6 +24,13 @@ shell args = showSep " " $ map shellQuote args
     shellQuote : String -> String
     shellQuote s = s
 
+runShell : List String -> IO ()
+runShell args = do
+  let cmd = shell args
+  putStrLn $ "+" ++ cmd
+  system cmd
+  pure ()
+
 globalizeStackmap : String -> IO Bool
 globalizeStackmap fname = do
   (Right outFile) <- openFile fname Append
@@ -60,12 +67,12 @@ compile defs tmpDir outputDir term outfile = do
   coreLift $ writeIR allFunctions foreigns support outputFileName
 
   coreLift $ do
-    system $ shell $ ["opt", outputFileName] ++ optFlags ++ ["-o=" ++ bcFileName]
-    system $ shell ["llc", "-tailcallopt", "-o=" ++ asmFileName, bcFileName]
+    runShell $ ["opt", outputFileName] ++ optFlags ++ ["-o=" ++ bcFileName]
+    runShell ["llc", "-tailcallopt", "-o=" ++ asmFileName, bcFileName]
     True <- globalizeStackmap asmFileName
     | False => putStrLn "error"
-    system $ shell ["clang", "-c", "-o", objectFileName, asmFileName]
-    system $ shell ["clang", "-o", binaryFileName, objectFileName, runtime]
+    runShell ["clang", "-c", "-o", objectFileName, asmFileName]
+    runShell ["clang", "-o", binaryFileName, objectFileName, runtime]
 
     pure ()
 
