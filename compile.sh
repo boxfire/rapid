@@ -9,9 +9,10 @@ root=$PWD
 
 fdir="$(dirname "$1")"
 fbase="$(basename "$1")"
+fnoext="${fbase/%.idr/}"
 
-workdir="$fdir/build/rapid"
-workfile="$workdir/${fbase/%.idr/}"
+workdir="$fdir/build/exec/${fnoext}_rapid"
+workfile="$workdir/${fnoext}"
 mkdir -p "$workdir"
 
 opt="${2:-}"
@@ -24,7 +25,7 @@ optimizeO2="$optimizeO1 -functionattrs -ipsccp -sccp -simplifycfg -gvn -ipconstp
 optimizeO3="$optimizeO2"
 if [ -z "$opt" ]; then
   debug="--debug"
-  optimize="-globaldce -mem2reg -constmerge -sccp -dce -rewrite-statepoints-for-gc -always-inline"
+  optimize="-globaldce -mem2reg -constprop -constmerge -sccp -dce -rewrite-statepoints-for-gc -always-inline"
   clangopt="-O0"
 fi
 if [ "$opt" = "-O1" ]; then
@@ -62,10 +63,10 @@ if [ -n "$debug" ]; then
 fi
 
 set -x
-(cd "$fdir" && "$root/build/exec/rapid2-fe" "${fbase}")
+(cd "$fdir" && "$root/build/exec/rapidc" --codegen vmcode-sexp -o "${fnoext}" "${fbase}")
 ./build/exec/rapid2-cg $debug "${workfile}.sexp"
-cat support.ll "${workfile}.sexp.output.ll" > "${workfile}.full.ll"
-opt "${workfile}.full.ll" $optimize | tee "${workfile}.bc" | llc $tco -o "${workfile}.s"
+#cat support.ll "${workfile}.sexp.output.ll" > "${workfile}.full.ll"
+opt "${workfile}.sexp.output.ll" $optimize | tee "${workfile}.bc" | llc $tco -o "${workfile}.s"
 opt -S < "${workfile}.bc" > "${workfile}.opt.ll"
 echo $'\n.globl __LLVM_StackMaps' >> "${workfile}.s"
 

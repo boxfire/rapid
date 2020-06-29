@@ -32,8 +32,9 @@ if [[ -n "$1" ]]; then
 fi
 
 for test in ${tests[*]}; do
-  testdir=tests/chez/$test
+  testdir="$PWD/tests/chez/$test"
   idr=$(echo ${testdir}/*.idr)
+  pushd "$testdir" >/dev/null
   if $rapidc -o "$test" "$idr" >& "${testdir}/compile.log"; then
     "./build/exec/$test" > "${testdir}/output"
     #"$testdir/build/rapid/$(basename "$idr" .idr).native" > "${testdir}/output"
@@ -46,4 +47,5 @@ for test in ${tests[*]}; do
     echo "COMPILE ERROR: $test"
     cat "${testdir}/compile.log"
   fi
+  popd >/dev/null
 done
