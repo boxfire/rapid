@@ -12,24 +12,11 @@ import Compiler.Common
 import Compiler.VMCode
 import Utils.Path
 
-import Compiler.PrepareCode
-import Compiler.SteamCG
+import Rapid.Driver
 
-isBlocked : (Name, a) -> Bool
-isBlocked ((NS ["PrimIO"] (UN "schemeCall")), _) = True
-isBlocked ((NS ["PrimIO"] (UN "prim__schemeCall")), _) = True
-isBlocked ((NS ["Prelude"] (UN "fastPack")), _) = True
-isBlocked ((NS ["Prelude"] (MN "fastPack" _)), _) = True
-isBlocked ((NS ["Strings", "Data"] (UN "fastAppend")), _) = True
-isBlocked ((NS ["Strings", "Data"] (MN "fastAppend" _)), _) = True
-isBlocked _ = False
-
-isFgn : (Name, FC, NamedDef) -> Bool
+isFgn : (Name, a, NamedDef) -> Bool
 isFgn (_, _, (MkNmForeign _ _ _)) = True
 isFgn _ = False
-
-debug : Bool
-debug = False
 
 shell : List String -> String
 shell args = showSep " " $ map shellQuote args
@@ -65,33 +52,12 @@ compile defs tmpDir outputDir term outfile = do
   cd <- getCompileData VMCode term
   coreLift $ putStrLn $ "got compiledata"
   let foreigns = map (\(n,_,d) => (n,d)) $ filter isFgn $ namedDefs cd
-  let foreignCode = map (compileForeign debug) (enumerate foreigns)
   let allFunctions = vmcode cd
-  let functions = filter (not . isBlocked) allFunctions
-  let nameMap = getNameMap $ map snd functions
-  let indexedFuncs = enumerate functions
-  let fcount = length indexedFuncs
   let optFlags = [
     "-mem2reg", "-constprop", "-constmerge", "-sccp", "-dce", "-globaldce",
     "-rewrite-statepoints-for-gc"]
 
-  coreLift $ putStrLn $ "functions to compile: " ++ show (length indexedFuncs)
-  --let funCode = map (getVMIR debug nameMap) indexedFuncs
-  coreLift $ do
-    (Right outFile) <- openFile outputFileName WriteTruncate
-    | Left err => putStrLn $ "error opening output file: " ++ show err
-    fPutStr outFile support
-    fPutStr outFile closureHelper
-    fPutStr outFile $ fastAppend foreignCode
-
-    --putStrLn $ "number of foreign decls: " ++ show (length foreigns)
-
-    for indexedFuncs (\c => do
-      putStrLn $ "compile fun " ++ show (1 + fst c) ++ "/" ++ (show fcount) ++ ": " ++ safeName (fst (snd c))
-      let funcIr = getVMIR debug nameMap c
-      fPutStr outFile funcIr
-      )
-    closeFile outFile
+  coreLift $ writeIR allFunctions foreigns support outputFileName
 
   coreLift $ do
     system $ shell $ ["opt", outputFileName] ++ optFlags ++ ["-o=" ++ bcFileName]

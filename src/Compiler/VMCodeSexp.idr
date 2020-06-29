@@ -409,9 +409,8 @@ FromSexp (Name, NamedDef) where
   fromSexp l = Left ("invalid foreign decl: " ++ show l)
 
 export
-partial
-getVMDefs : List Sexp -> List (Name, VMDef)
-getVMDefs s = either (\error=>idris_crash ("failed to read VMCode from Sexp: " ++ error ++ "\n")) id $ traverse fromSexp s
+getVMDefs : List Sexp -> Either String (List (Name, VMDef))
+getVMDefs s = either (\error=>Left ("failed to read VMCode from Sexp: " ++ error ++ "\n")) Right $ traverse fromSexp s
 
 export
 getForeignDefs : List Sexp -> Either String (List (Name, NamedDef))
