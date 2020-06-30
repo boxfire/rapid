@@ -1878,9 +1878,11 @@ export
 getVMIR : Bool -> SortedMap Name Int -> (Int, (Name, VMDef)) -> String
 getVMIR debug conNames (i, n, MkVMFun args body) = (runCodegen $ getFunIR debug conNames ((2*i)+1000) n (map Loc args) body) ++ closureEntry where
   closureEntry : String
-  closureEntry = case args of
-                      [] => ""
-                      neArgs@(_::_) => runCodegen $ getFunIRClosureEntry debug conNames ((2*i + 1)+1000) n neArgs body
+  closureEntry = if (cast $ length args) <= FAT_CLOSURE_LIMIT
+                    then ""
+                    else case args of
+                              [] => ""
+                              neArgs@(_::_) => runCodegen $ getFunIRClosureEntry debug conNames ((2*i + 1)+1000) n neArgs body
 getVMIR _ _ _ = ""
 
 funcPtrTypes : String
