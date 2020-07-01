@@ -9,3 +9,5 @@
 /tests/**/output
 *.o
 *.bc
+CMakeFiles
+CMakeCache.txt

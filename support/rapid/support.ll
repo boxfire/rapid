@@ -77,6 +77,9 @@ declare i8* @llvm.addressofreturnaddress()
 
 declare ccc i1 @llvm.expect.i1(i1, i1)
 
+; Custom Intrinsics
+;declare fastcc i64 @rapid.unboxint(%ObjPtr noalias nocapture nofree) "gc-leaf-function" readnone nounwind
+
 define private fastcc %Return1 @rapid_gc_enter(%TSOPtr %BaseArg, i64 %size.aligned) noinline gc "statepoint-example" {
   %frame = call i8* @llvm.addressofreturnaddress()
 
