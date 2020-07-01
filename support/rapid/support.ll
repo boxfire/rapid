@@ -77,6 +77,8 @@ declare i8* @llvm.addressofreturnaddress()
 
 declare ccc i1 @llvm.expect.i1(i1, i1)
 
+declare %ObjPtr @llvm.ptrmask.p1obj.i64(%ObjPtr, i64)
+
 ; Custom Intrinsics
 declare fastcc noalias %ObjPtr @llvm.rapid.boxint(i64) "gc-leaf-function" readnone nounwind
 declare fastcc i64 @llvm.rapid.unboxint(%ObjPtr noalias nocapture nofree) "gc-leaf-function" readnone nounwind
