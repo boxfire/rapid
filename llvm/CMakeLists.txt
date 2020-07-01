@@ -12,11 +12,12 @@ add_definitions(${LLVM_DEFINITIONS})
 add_library(rapid MODULE Passes/LowerRapidIntrinsics.cpp)
 
 set_property(TARGET rapid PROPERTY CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Allow undefined symbols
 target_link_libraries(rapid
   "$<$<PLATFORM_ID:Darwin>:-undefined dynamic_lookup>")
 
 add_custom_target(test
-                  COMMAND lit test
+                  COMMAND lit test -v
                   DEPENDS rapid)
