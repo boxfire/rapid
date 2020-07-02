@@ -55,19 +55,21 @@ compile defs tmpDir outputDir term outfile = do
   -- load supporting files first, so we can fail early
   support <- readDataFile $ "rapid" </> "support.ll"
   runtime <- findDataFile $ "rapid" </> "runtime.bc"
+  rapidLLVMPlugin <- findDataFile $ "rapid" </> "librapid.so"
 
   cd <- getCompileData VMCode term
   coreLift $ putStrLn $ "got compiledata"
   let foreigns = map (\(n,_,d) => (n,d)) $ filter isFgn $ namedDefs cd
   let allFunctions = vmcode cd
-  let optFlags = [
+  let optFlags = ["-O3",
     "-mem2reg", "-constprop", "-constmerge", "-sccp", "-dce", "-globaldce",
     "-rewrite-statepoints-for-gc"]
 
   coreLift $ writeIR allFunctions foreigns support outputFileName
 
+  let lateTransformFlags = ["-rapid-lower"]
   coreLift $ do
-    runShell $ ["opt", outputFileName] ++ optFlags ++ ["-o=" ++ bcFileName]
+    runShell $ ["opt", outputFileName, "-load=" ++ rapidLLVMPlugin] ++ optFlags ++ lateTransformFlags ++ ["-o=" ++ bcFileName]
     runShell ["llc", "-tailcallopt", "-o=" ++ asmFileName, bcFileName]
     True <- globalizeStackmap asmFileName
     | False => putStrLn "error"

@@ -13,7 +13,8 @@ rts:
 
 llvm-passes:
 	(cd llvm && test -f Makefile || cmake .)
-	make -C llvm
+	make -j `nproc` -C llvm
+	cp -v llvm/librapid.so support/rapid/librapid.so
 
 clean: clean-tests
 	make -C rts clean

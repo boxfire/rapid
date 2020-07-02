@@ -102,13 +102,13 @@ struct LowerRapidIntrinsics : public FunctionPass {
         auto callee = CI->getCalledValue();
 
         if (callee == rapid_boxint) {
-          errs().write_escaped("found rapid.boxint") << '\n';
+          //errs().write_escaped("found rapid.boxint") << '\n';
           replaceInstruction(CI, lowerBoxint(CI, F), it);
         } else if (callee == rapid_unboxint) {
-          errs().write_escaped("found rapid.unboxint") << '\n';
+          //errs().write_escaped("found rapid.unboxint") << '\n';
           replaceInstruction(CI, lowerUnboxint(CI, F), it);
         } else if (callee == rapid_isdirect) {
-          errs().write_escaped("found rapid.isdirect") << '\n';
+          //errs().write_escaped("found rapid.isdirect") << '\n';
           replaceInstruction(CI, lowerIsDirect(CI, F), it);
         } else {
           ++it;
@@ -126,8 +126,3 @@ char LowerRapidIntrinsics::ID = 0;
 static RegisterPass<LowerRapidIntrinsics> X("rapid-lower", "Lower Rapid Intrinsics",
                              false /* Only looks at CFG */,
                              false /* Analysis Pass */);
-
-static RegisterStandardPasses Y(
-    PassManagerBuilder::EP_EarlyAsPossible,
-    [](const PassManagerBuilder &Builder,
-       legacy::PassManagerBase &PM) { PM.add(new LowerRapidIntrinsics()); });

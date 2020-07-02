@@ -394,7 +394,7 @@ header i = (cast i) `prim__shl_Integer` 32
 
 cgMkInt : IRValue I64 -> Codegen (IRValue IRObjPtr)
 cgMkInt val = do
-  boxed <- assignSSA $ "tail call fastcc noalias %ObjPtr @rapid.boxint(" ++ toIR val ++ ") \"gc-leaf-function\" alwaysinline"
+  boxed <- assignSSA $ "tail call fastcc noalias %ObjPtr @llvm.rapid.boxint(" ++ toIR val ++ ") \"gc-leaf-function\""
   pure (SSA IRObjPtr boxed)
 
 cgMkDouble : IRValue F64 -> Codegen (IRValue IRObjPtr)
@@ -554,7 +554,7 @@ enumerate l = enumerate' 0 l where
   enumerate' i (x::xs) = (i, x)::(enumerate' (i+1) xs)
 
 unboxInt' : IRValue IRObjPtr -> Codegen (IRValue I64)
-unboxInt' src = SSA I64 <$> assignSSA ("tail call fastcc i64 @rapid.unboxint(" ++ toIR src ++ ") \"gc-leaf-function\" alwaysinline")
+unboxInt' src = SSA I64 <$> assignSSA ("tail call fastcc i64 @llvm.rapid.unboxint(" ++ toIR src ++ ") \"gc-leaf-function\"")
 
 unboxInt : IRValue (Pointer 0 IRObjPtr) -> Codegen (IRValue I64)
 unboxInt src = unboxInt' !(load src)
