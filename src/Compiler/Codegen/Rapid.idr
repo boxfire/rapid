@@ -61,7 +61,7 @@ compile defs tmpDir outputDir term outfile = do
   coreLift $ putStrLn $ "got compiledata"
   let foreigns = map (\(n,_,d) => (n,d)) $ filter isFgn $ namedDefs cd
   let allFunctions = vmcode cd
-  let optFlags = ["-O3",
+  let optFlags = [
     "-mem2reg", "-constprop", "-constmerge", "-sccp", "-dce", "-globaldce",
     "-rewrite-statepoints-for-gc"]
 
