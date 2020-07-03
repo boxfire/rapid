@@ -13,18 +13,20 @@ import Core.Name
 import Data.Sexp
 import Data.Sexp.Lexer
 import Data.Sexp.Parser
-import Compiler.VMCodeSexp
+import Compiler.Optimize
 import Compiler.PrepareCode
 import Compiler.SteamCG
+import Compiler.VMCodeSexp
 import Rapid.Driver
 
 record CliOptions where
   constructor MkOptions
   debugEnabled : Bool
+  optimizationsEnabled : Bool
   inputFilename : String
 
 emptyOpts : CliOptions
-emptyOpts = MkOptions False ""
+emptyOpts = MkOptions False False ""
 
 parseCliArgs : List String -> Either String CliOptions
 parseCliArgs [] = Left "missing argument"
@@ -32,7 +34,11 @@ parseCliArgs (_::args) = go args emptyOpts where
   go : List String -> CliOptions -> Either String CliOptions
   go [] opts = if inputFilename opts /= "" then Right opts else Left "missing input filename"
   go ("--debug"::rest) opts = go rest $ record { debugEnabled = True } opts
+  go ("--opt"::rest) opts = go rest $ record { optimizationsEnabled = True } opts
   go (fname::rest) opts = go rest $ record { inputFilename = fname } opts
+
+dumpDef : (Name, VMDef) -> String
+dumpDef d = (show $ toSexp d) ++ "\n\n"
 
 main : IO ()
 main = do
@@ -57,4 +63,13 @@ main = do
   (Right foreigns) <- pure $ getForeignDefs foreignSexps
   | Left e => putStrLn $ "error parsing foreign decls: " ++ e
 
-  writeIR allFunctions foreigns support (filename ++ ".output.ll")
+  optimizedFunctions <- if opts.optimizationsEnabled
+    then do
+      let optimized = optimize allFunctions
+      let optSexp = map dumpDef (optimized)
+      writeFile (filename ++ ".opt.sexp") (fastAppend optSexp)
+      pure optimized
+    else do
+      pure allFunctions
+
+  writeIR optimizedFunctions foreigns support (filename ++ ".output.ll")
