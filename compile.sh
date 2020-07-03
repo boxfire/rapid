@@ -60,7 +60,7 @@ if [ "$opt" = "-test3" ]; then
 fi
 if [ "$opt" = "-test4" ]; then
   debug=""
-  optimize="-mem2reg -constprop -constmerge -sccp -dce -globaldce -rewrite-statepoints-for-gc"
+  optimize="-mem2reg -constprop -constmerge -sccp -dce -globaldce -dce -rewrite-statepoints-for-gc -dce"
 fi
 
 clangdebug=

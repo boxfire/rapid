@@ -63,7 +63,7 @@ compile defs tmpDir outputDir term outfile = do
   let allFunctions = vmcode cd
   let optFlags = [
     "-mem2reg", "-constprop", "-constmerge", "-sccp", "-dce", "-globaldce",
-    "-rewrite-statepoints-for-gc"]
+    "-rewrite-statepoints-for-gc", "-dce"]
 
   coreLift $ writeIR allFunctions foreigns support outputFileName
 
