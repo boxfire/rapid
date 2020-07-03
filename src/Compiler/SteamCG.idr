@@ -1550,6 +1550,17 @@ mk_prim__bufferGetByte [buf, offsetObj, _] = do
   val <- mkZext {to=I64} byte
   store !(cgMkInt val) (reg2val RVal)
 
+mk_prim__bufferSetByte : Vect 4 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferSetByte [buf, offsetObj, valObj, _] = do
+  -- TODO: size check in safe mode
+  --hdr <- getObjectHeader buf
+  --size <- mkAnd hdr (ConstI64 0xffffffff)
+  offset <- unboxInt' offsetObj
+  payloadStart <- getObjectPayloadAddr {t=I8} buf
+  bytePtr <- getElementPtr payloadStart offset
+  val <- mkTrunc {to=I8} !(unboxInt' valObj)
+  store val bytePtr
+
 mk_prim__bufferGetDouble : Vect 3 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__bufferGetDouble [buf, offsetObj, _] = do
   -- TODO: size check in safe mode
@@ -1784,7 +1795,7 @@ builtinPrimitives : List (String, (n : Nat ** (Vect n (IRValue IRObjPtr) -> Code
 builtinPrimitives = [
     ("prim/blodwen-new-buffer", (2 ** mk_prim__bufferNew))
   , ("prim/blodwen-buffer-size", (1 ** mk_prim__bufferSize))
-  --, ("prim/blodwen-buffer-setbyte", (3 ** mk_prim__bufferSetByte)
+  , ("prim/blodwen-buffer-setbyte", (4 ** mk_prim__bufferSetByte))
   , ("prim/blodwen-buffer-getbyte", (3 ** mk_prim__bufferGetByte))
   , ("prim/blodwen-buffer-setint32", (4 ** mk_prim__bufferSetInt32))
   , ("prim/blodwen-buffer-getint32", (3 ** mk_prim__bufferGetInt32))
@@ -1794,7 +1805,7 @@ builtinPrimitives = [
   , ("prim/blodwen-buffer-getdouble", (3 ** mk_prim__bufferGetDouble))
   , ("prim/blodwen-buffer-setstring", (4 ** mk_prim__bufferSetString))
   , ("prim/blodwen-buffer-getstring", (4 ** mk_prim__bufferGetString))
-  --, ("prim/blodwen-buffer-copydata", (2 ** mk_prim__bufferSetInt))
+  --, ("prim/blodwen-buffer-copydata", (2 ** mk_prim__bufferCopyData))
 
   , ("prim/isNull", (1 ** mk_prim__nullAnyPtr))
   , ("prim/fileErrno", (1 ** mk_prim__fileErrno))
