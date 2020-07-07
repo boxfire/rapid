@@ -62,9 +62,16 @@ repeatStr s 0 = ""
 repeatStr s (S x) = s ++ repeatStr s x
 
 fullShow : Name -> String
-fullShow (DN _ n) = fullShow n
 fullShow (NS ns n) = showSep "." (reverse ns) ++ "." ++ fullShow n
-fullShow n = show n
+fullShow (UN n) = n
+fullShow (MN n i) = "{" ++ n ++ ":" ++ show i ++ "}"
+fullShow (PV n i) = "{P:" ++ fullShow n ++ ":" ++ show i ++ "}"
+fullShow (DN _ n) = fullShow n
+fullShow (RF n) = "." ++ n
+fullShow (Nested (outer, idx) inner) = show outer ++ "/" ++ show idx ++ "/" ++ fullShow inner
+fullShow (CaseBlock outer i) = "case/" ++ outer ++ "$" ++ show i
+fullShow (WithBlock outer i) = "with/" ++ outer ++ "$" ++ show i
+fullShow (Resolved i) = "resolved/" ++ show i
 
 isSafeChar : Char -> Bool
 isSafeChar '.' = True
