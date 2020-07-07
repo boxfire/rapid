@@ -180,11 +180,32 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
     fprintf(stderr, "    frame size: 0x%016llx\n", (uint64_t)frame->frameSize);
 #endif
 
-    for (int i = 0; i < frame->numSlots; ++i) {
+    // Replace each derived pointer with its offset relative to base pointer.
+    // The actual relocation will happen after all base pointers have been
+    // relocated.
+    for (int i = frame->numBaseSlots; i < frame->numSlots; ++i) {
+      pointer_slot_t ptrSlot = frame->slots[i];
+      assert(ptrSlot.kind >= 0 && "must be a derived pointer");
+
+      pointer_slot_t baseSlot = frame->slots[ptrSlot.kind];
+      ObjPtr *baseStackSlot = (ObjPtr *)(sp + baseSlot.offset);
+      ObjPtr *derivedStackSlot = (ObjPtr *)(sp + ptrSlot.offset);
+      *derivedStackSlot = (void *)((uint64_t)(*derivedStackSlot) - (uint64_t)(*baseStackSlot));
+    }
+
+    for (int i = 0; i < frame->numBaseSlots; ++i) {
       pointer_slot_t ptrSlot = frame->slots[i];
 #ifdef RAPID_GC_DEBUG_ENABLED
       fprintf(stderr, "    pointer slot %04d: kind=%02d offset + 0x%04x\n", i, ptrSlot.kind, ptrSlot.offset);
 #endif
+      if (ptrSlot.kind != -1) {
+        assert((ptrSlot.kind < frame->numSlots) && "basse idx out of bounds");
+        pointer_slot_t baseSlot = frame->slots[ptrSlot.kind];
+        fprintf(stderr, "    pointer slot %04d: kind=%02d offset + 0x%04x = %p\n", i, ptrSlot.kind, ptrSlot.offset, *(void **)(sp + ptrSlot.offset));
+        fprintf(stderr, "    -->base slot %04d: kind=%02d offset + 0x%04x = %p\n", ptrSlot.kind, baseSlot.kind, baseSlot.offset, *(void **)(sp + baseSlot.offset));
+        ObjPtr *stackSlot = (ObjPtr *)(sp + baseSlot.offset);
+        dump_obj(*stackSlot);
+      }
       assert(ptrSlot.kind == -1);
 
       ObjPtr *stackSlot = (ObjPtr *)(sp + ptrSlot.offset);
@@ -198,6 +219,20 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
       dump_obj(copied);
 #endif
       *stackSlot = copied;
+    }
+
+    // relocate all derived pointers
+    for (int i = frame->numBaseSlots; i < frame->numSlots; ++i) {
+      pointer_slot_t ptrSlot = frame->slots[i];
+      assert(ptrSlot.kind >= 0 && "must be a derived pointer");
+
+      pointer_slot_t baseSlot = frame->slots[ptrSlot.kind];
+      ObjPtr *baseStackSlot = (ObjPtr *)(sp + baseSlot.offset);
+      ObjPtr *derivedStackSlot = (ObjPtr *)(sp + ptrSlot.offset);
+      *derivedStackSlot = (void *)((uint64_t)(*derivedStackSlot) + (uint64_t)(*baseStackSlot));
+#ifdef RAPID_GC_DEBUG_ENABLED
+      fprintf(stderr, "derived ptr relocated\n");
+#endif
     }
 
     sp += frame->frameSize;
