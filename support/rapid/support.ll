@@ -53,6 +53,8 @@ declare ccc i64 @idris_rts_str_to_int(%ObjPtr noalias nocapture nofree nonnull) 
 declare ccc void @rapid_strreverse(%i8p1 noalias nocapture nofree nonnull writeonly, %i8p1 noalias nocapture nofree nonnull readonly, i64) argmemonly
 
 declare ccc void @rapid_system_exit(%TSOPtr, i64, %ObjPtr)
+declare ccc i64 @rapid_system_system(%TSOPtr, %ObjPtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_system_get_env(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc i64 @idris_rts_write_buffer_data(%TSOPtr, %ObjPtr, %ObjPtr, i64, i64, %ObjPtr)
 declare ccc i64 @idris_rts_read_buffer_data(%TSOPtr, %ObjPtr, %ObjPtr, i64, i64, %ObjPtr)
 declare ccc %ObjPtr @rapid_system_file_open(%TSOPtr, %ObjPtr, %ObjPtr, %ObjPtr)

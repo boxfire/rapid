@@ -1870,6 +1870,8 @@ foreignRedirectMap = [
   , ("C:idris2_fileErrno, libidris2_support", "prim/fileErrno")
   , ("C:idris2_getString, libidris2_support", "prim/getString")
   , ("C:exit, libc 6", "rapid_system_exit")
+  , ("C:system, libc 6", "rapid_system_system")
+  , ("C:getenv, libc 6", "rapid_system_get_env")
   , ("scheme:blodwen-args", "rapid_system_getargs")
 
   , ("scheme:blodwen-new-buffer", "prim/blodwen-new-buffer")

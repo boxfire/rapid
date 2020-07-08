@@ -57,6 +57,42 @@ void rapid_system_exit(Idris_TSO *base, int64_t exitCode, ObjPtr _world) {
   exit(exitCode);
 }
 
+int64_t rapid_system_system(Idris_TSO *base, ObjPtr cmdObj, ObjPtr _world) {
+  assert(OBJ_TYPE(cmdObj) == OBJ_TYPE_STRING);
+  int length = OBJ_SIZE(cmdObj);
+  const char *str = (const char *)OBJ_PAYLOAD(cmdObj);
+  char *cmdCstr = (char *)alloca(length + 1);
+  memcpy(cmdCstr, str, length);
+  cmdCstr[length] = '\0';
+
+  int rc = system(cmdCstr);
+  return rc;
+}
+
+// return type: Ptr String
+ObjPtr rapid_system_get_env(Idris_TSO *base, ObjPtr varObj, ObjPtr _world) {
+  assert(OBJ_TYPE(varObj) == OBJ_TYPE_STRING);
+  int length = OBJ_SIZE(varObj);
+  const char *str = (const char *)OBJ_PAYLOAD(varObj);
+  char *varCstr = (char *)alloca(length + 1);
+  memcpy(varCstr, str, length);
+  varCstr[length] = '\0';
+
+  char *value = getenv(varCstr);
+  size_t value_len = strlen(value);
+
+  ObjPtr newStr = rapid_C_allocate(base, HEADER_SIZE + value_len);
+  newStr->hdr = MAKE_HEADER(OBJ_TYPE_STRING, value_len);
+  memcpy(OBJ_PAYLOAD(newStr), value, value_len);
+
+  ObjPtr newPtr = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
+  newPtr->hdr = MAKE_HEADER(OBJ_TYPE_PTR, 1);
+  OBJ_PUT_SLOT(newPtr, 0, newStr);
+
+  return newPtr;
+}
+
+
 int64_t rapid_system_file_size(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
   assert (OBJ_TYPE(filePtrObj) == OBJ_TYPE_OPAQUE);
   assert (OBJ_SIZE(filePtrObj) == POINTER_SIZE);
