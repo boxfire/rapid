@@ -1,4 +1,4 @@
-RTS_SOURCES = builtin.c gc.c object.c rts.c ../external/llvm-statepoint-utils/build/statepoint.c
+RTS_SOURCES = builtin.c gc.c getline.c object.c rts.c ../external/llvm-statepoint-utils/build/statepoint.c
 RTS_HEADERS = gc.h object.h
 RTS_BITCODE = $(RTS_SOURCES:.c=.bc)
 

@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 
 #include "gc.h"
+#include "getline.h"
 #include "object.h"
 #include "rts.h"
 
@@ -170,11 +171,16 @@ ObjPtr rapid_system_file_read_line(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _w
   }
 
   FILE *f = *(FILE **)OBJ_PAYLOAD(filePtrObj);
-  size_t length = 0;
-  char *buffer = fgetln(f, &length);
+  size_t bufsize = 0;
+  char *buffer = NULL;
+  ssize_t length = getline(&buffer, &bufsize, f);
   if (errno != 0) {
     base->rapid_errno = errno;
     rapid_C_crash("getline failed");
+  }
+
+  if (length < 0 || buffer == NULL) {
+    length = 0;
   }
 
   ObjPtr newStr = rapid_C_allocate(base, HEADER_SIZE + length);
@@ -186,6 +192,31 @@ ObjPtr rapid_system_file_read_line(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _w
   OBJ_PUT_SLOT(newPtr, 0, newStr);
 
   return newPtr;
+}
+
+ObjPtr rapid_system_stdin_getline(Idris_TSO *base, ObjPtr _world) {
+  size_t bufsize = 0;
+  char *buffer = NULL;
+  ssize_t length = getline(&buffer, &bufsize, stdin);
+  if (errno != 0) {
+    base->rapid_errno = errno;
+    rapid_C_crash("getline failed");
+  }
+
+  if (length < 0 || buffer == NULL) {
+    length = 0;
+  }
+
+  // cut off trailing newline character(s)
+  while (length > 0 && (buffer[length - 1] == '\r' || buffer[length - 1] == '\n')) {
+    length--;
+  }
+
+  ObjPtr newStr = rapid_C_allocate(base, HEADER_SIZE + length);
+  newStr->hdr = MAKE_HEADER(OBJ_TYPE_STRING, length);
+  memcpy(OBJ_PAYLOAD(newStr), buffer, length);
+
+  return newStr;
 }
 
 Word rapid_system_file_eof(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {

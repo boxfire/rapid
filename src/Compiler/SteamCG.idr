@@ -1850,6 +1850,7 @@ foreignRedirectMap = [
   , ("C:idris2_closeFile, libidris2_support", "rapid_system_file_close")
   , ("C:idris2_fileSize, libidris2_support", "rapid_system_file_size")
   , ("C:idris2_readLine, libidris2_support", "rapid_system_file_read_line")
+  , ("C:idris2_getStr,libidris2_support", "rapid_system_stdin_getline")
   , ("C:idris2_writeLine, libidris2_support", "rapid_system_file_write_string")
   , ("C:idris2_eof, libidris2_support", "rapid_system_file_eof")
   , ("C:idris2_currentDirectory, libidris2_support", "rapid_system_current_dir")
