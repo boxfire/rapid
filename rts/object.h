@@ -77,6 +77,7 @@ static inline void *OBJ_PAYLOAD(ObjPtr p) {
 }
 
 #define OBJ_IS_INLINE(p) ((p) == NULL || (uint64_t)(p) & 0x07)
+#define OBJ_UNBOX_INT(p) ((int64_t)(p) >> 1)
 
 static inline bool OBJ_IS_FWD_INPLACE(ObjPtr p) {
   return (p->hdr & 0x8000000000000000ull);

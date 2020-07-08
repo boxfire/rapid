@@ -78,6 +78,14 @@ int64_t rapid_system_file_error(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _worl
   return ferror(f);
 }
 
+int64_t rapid_system_file_read_char(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
+  assert (OBJ_TYPE(filePtrObj) == OBJ_TYPE_OPAQUE);
+  assert (OBJ_SIZE(filePtrObj) == POINTER_SIZE);
+
+  FILE *f = *(FILE **)OBJ_GET_SLOT_ADDR(filePtrObj, 0);
+  return fgetc(f);
+}
+
 int64_t idris_rts_write_buffer_data(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr bufObj, int64_t loc, int64_t maxSize, ObjPtr _world) {
   assert (loc >= 0);
   assert (maxSize >= 0);
@@ -201,6 +209,27 @@ Word rapid_system_file_write_string(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr s
     return 1;
   }
   return 0;
+}
+
+// return type: Ptr String
+ObjPtr rapid_system_file_read_chars(Idris_TSO *base, uint64_t max, ObjPtr filePtrObj, ObjPtr _world) {
+  if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
+    rapid_C_crash("invalid object passed to file_read_chars");
+  }
+
+  FILE *f = *(FILE **)OBJ_PAYLOAD(filePtrObj);
+  size_t bufsize = max;
+
+  ObjPtr newStr = rapid_C_allocate(base, HEADER_SIZE + bufsize);
+
+  size_t read = fread(OBJ_PAYLOAD(newStr), 1, bufsize, f);
+  newStr->hdr = MAKE_HEADER(OBJ_TYPE_STRING, read);
+
+  ObjPtr newPtr = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
+  newPtr->hdr = MAKE_HEADER(OBJ_TYPE_PTR, 1);
+  OBJ_PUT_SLOT(newPtr, 0, newStr);
+
+  return newPtr;
 }
 
 // return type: Ptr String

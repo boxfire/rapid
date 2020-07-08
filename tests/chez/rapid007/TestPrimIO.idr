@@ -8,3 +8,10 @@ main = do
   fPutStr stderr "to:stderr\n"
   line <- getLine
   putStrLn $ "input was: " ++ show line
+  putStrLn $ "please press any key to continue..."
+  ch <- fGetChar stdin
+  putStrLn $ "thanks for pressing " ++ show ch
+  fourChars <- fGetChars stdin 4
+  putStrLn $ "thanks for entering " ++ show fourChars
+  rest <- fGetChars stdin 1024
+  putStrLn $ "rest was: " ++ show rest
