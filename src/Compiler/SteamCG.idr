@@ -1853,6 +1853,7 @@ foreignRedirectMap = [
   , ("C:idris2_getStr,libidris2_support", "rapid_system_stdin_getline")
   , ("C:idris2_writeLine, libidris2_support", "rapid_system_file_write_string")
   , ("C:idris2_eof, libidris2_support", "rapid_system_file_eof")
+  , ("C:idris2_removeFile, libidris2_support", "rapid_system_file_remove")
   , ("C:idris2_fileError, libidris2_support", "rapid_system_file_error")
   , ("C:idris2_stdin, libidris2_support", "rapid_system_file_stdin")
   , ("C:idris2_stdout, libidris2_support", "rapid_system_file_stdout")

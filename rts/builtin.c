@@ -162,6 +162,16 @@ ObjPtr rapid_system_file_open(Idris_TSO *base, ObjPtr fnameObj, ObjPtr modeObj, 
   return ptrObj;
 }
 
+Word rapid_system_file_remove(Idris_TSO *base, ObjPtr fnameObj, ObjPtr _world) {
+  int length = OBJ_SIZE(fnameObj);
+  const char *str = (const char *)OBJ_PAYLOAD(fnameObj);
+  char *fnameCstr = (char *)alloca(length + 1);
+  memcpy(fnameCstr, str, length);
+  fnameCstr[length] = '\0';
+
+  return remove(fnameCstr);
+}
+
 void rapid_putstr(Idris_TSO *base, ObjPtr strObj, ObjPtr _world) {
   assert(OBJ_TYPE(strObj) == OBJ_TYPE_STRING);
   int64_t length = OBJ_SIZE(strObj);

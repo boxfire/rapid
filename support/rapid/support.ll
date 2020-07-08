@@ -57,6 +57,7 @@ declare ccc i64 @idris_rts_read_buffer_data(%TSOPtr, %ObjPtr, %ObjPtr, i64, i64,
 declare ccc %ObjPtr @rapid_system_file_open(%TSOPtr, %ObjPtr, %ObjPtr, %ObjPtr)
 declare ccc void @rapid_system_file_close(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc %Word @rapid_system_file_eof(%TSOPtr, %ObjPtr, %ObjPtr)
+declare ccc %Word @rapid_system_file_remove(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc i64 @rapid_system_file_error(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc i64 @rapid_system_file_size(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_system_file_stdin(%TSOPtr)
