@@ -54,7 +54,7 @@ declare ccc void @rapid_strreverse(%i8p1 noalias nocapture nofree nonnull writeo
 
 declare ccc i64 @idris_rts_write_buffer_data(%TSOPtr, %ObjPtr, %ObjPtr, i64, i64, %ObjPtr)
 declare ccc i64 @idris_rts_read_buffer_data(%TSOPtr, %ObjPtr, %ObjPtr, i64, i64, %ObjPtr)
-declare ccc %ObjPtr @rapid_system_file_open(%TSOPtr, %ObjPtr, %ObjPtr, i64, %ObjPtr)
+declare ccc %ObjPtr @rapid_system_file_open(%TSOPtr, %ObjPtr, %ObjPtr, %ObjPtr)
 declare ccc void @rapid_system_file_close(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc %Word @rapid_system_file_eof(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc i64 @rapid_system_file_size(%TSOPtr, %ObjPtr, %ObjPtr)

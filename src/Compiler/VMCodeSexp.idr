@@ -31,7 +31,6 @@ ToSexp Name where
   toSexp (DN d n) = SList [SAtom "DN", SAtom d, toSexp n]
   toSexp (MN s i) = SList [SAtom "MN", SAtom s, SAtom $ cast i]
   toSexp (PV n i) = SList [SAtom "PV", toSexp n, SAtom $ cast i]
-  toSexp (RF s) = SList [SAtom "RF", SAtom s]
   toSexp (CaseBlock outer i) = SList [SAtom "CaseBlock", SAtom $ outer, SAtom $ cast i]
   toSexp (WithBlock outer i) = SList [SAtom "WithBlock", SAtom $ outer, SAtom $ cast i]
   toSexp (Nested (outer, idx) inner) = SList [SAtom "Nested", SAtom $ cast outer, SAtom $ cast idx, toSexp inner]
@@ -44,7 +43,6 @@ FromSexp Name where
   fromSexp (SList [SAtom "DN", SAtom d, n]) = pure $ (DN d !(fromSexp n))
   fromSexp (SList [SAtom "MN", SAtom s, SAtom i]) = pure $ (MN s !(maybeToEither "invalid MN int" $ parseInteger i))
   fromSexp (SList [SAtom "PV", n, SAtom i]) = pure $ (PV !(fromSexp n) !(maybeToEither "invalid PV int" $ parseInteger i))
-  fromSexp (SList [SAtom "RF", SAtom s]) = pure $ RF s
   fromSexp (SList [SAtom "CaseBlock", SAtom o, SAtom i]) = pure $ (CaseBlock o !(maybeToEither "invalid caseblock inner int" $ parseInteger i))
   fromSexp (SList [SAtom "WithBlock", SAtom o, SAtom i]) = pure $ (WithBlock o !(maybeToEither "invalid withblock inner int" $ parseInteger i))
   fromSexp (SList [SAtom "NS", SList ns, n]) = do
