@@ -8,6 +8,7 @@
 #include <sys/errno.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 
 #include "gc.h"
 #include "getline.h"
@@ -50,6 +51,10 @@ int64_t idris_rts_str_to_int(ObjPtr obj) {
   memcpy(scopy, str, length);
   scopy[length] = '\0';
   return strtoll(scopy, NULL, 10);
+}
+
+void rapid_system_exit(Idris_TSO *base, int64_t exitCode, ObjPtr _world) {
+  exit(exitCode);
 }
 
 int64_t rapid_system_file_size(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
@@ -185,6 +190,25 @@ void rapid_putstr(Idris_TSO *base, ObjPtr strObj, ObjPtr _world) {
   int64_t length = OBJ_SIZE(strObj);
   fwrite(OBJ_PAYLOAD(strObj), length, 1, stdout);
   fflush(stdout);
+}
+
+int64_t rapid_system_file_chmod(Idris_TSO *base, ObjPtr fnameObj, uint64_t mode, ObjPtr _world) {
+  int length = OBJ_SIZE(fnameObj);
+  const char *str = (const char *)OBJ_PAYLOAD(fnameObj);
+  char *fnameCstr = (char *)alloca(length + 1);
+  memcpy(fnameCstr, str, length);
+  fnameCstr[length] = '\0';
+
+  return chmod(fnameCstr, (mode_t)mode);
+}
+
+int64_t rapid_system_file_flush(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
+  if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
+    rapid_C_crash("invalid object passed to file_flush");
+  }
+
+  FILE *f = *(FILE **)OBJ_PAYLOAD(filePtrObj);
+  return fflush(f);
 }
 
 void rapid_system_file_close(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
