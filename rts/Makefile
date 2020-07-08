@@ -8,8 +8,7 @@ build/runtime.bc: Makefile build $(RTS_BITCODE)
 build:
 	-mkdir -p $@
 
-	#$(RTS_HEADERS) Makefile
-%.bc: %.c
+%.bc: %.c $(RTS_HEADERS) Makefile
 	clang -flto -g -O3 -c -Wall -Wpedantic -Werror -I . -I ../external/llvm-statepoint-utils/dist -std=c11 -o $@ $<
 
 clean:

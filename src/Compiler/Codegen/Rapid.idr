@@ -28,8 +28,11 @@ runShell : List String -> IO ()
 runShell args = do
   let cmd = shell args
   putStrLn $ "+" ++ cmd
-  system cmd
-  pure ()
+  rc <- system cmd
+  case rc of
+       0 => pure ()
+       err_rc => do putStrLn $ "command failed with exit code " ++ show err_rc
+                    exitFailure
 
 globalizeStackmap : String -> IO Bool
 globalizeStackmap fname = do
