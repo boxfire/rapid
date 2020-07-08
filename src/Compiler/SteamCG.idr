@@ -320,7 +320,7 @@ foreignCall {t} name args = do
   hpLim <- load globalHpLimVar
   baseHpPointer <- SSA (Pointer 0 RuntimePtr) <$> assignSSA ("getelementptr inbounds %Idris_TSO.struct, %TSOPtr %BaseArg, i32 0, i32 1")
   store hp baseHpPointer
-  result <- SSA t <$> (assignSSA $ "  call ccc " ++ show t ++ " " ++ name ++ "(%TSOPtr %BaseArg, " ++ (showSep ", " args) ++ ")")
+  result <- SSA t <$> (assignSSA $ "  call ccc " ++ show t ++ " " ++ name ++ "(" ++ (showSep ", " ("%TSOPtr %BaseArg"::args)) ++ ")")
   store !(load baseHpPointer) globalHpVar
   pure result
 
@@ -330,7 +330,7 @@ foreignVoidCall name args = do
   hpLim <- load globalHpLimVar
   baseHpPointer <- SSA (Pointer 0 RuntimePtr) <$> assignSSA ("getelementptr inbounds %Idris_TSO.struct, %TSOPtr %BaseArg, i32 0, i32 1")
   store hp baseHpPointer
-  appendCode $ "  call ccc void " ++ name ++ "(%TSOPtr %BaseArg, " ++ (showSep ", " args) ++ ")"
+  appendCode $ "  call ccc void " ++ name ++ "(" ++ (showSep ", " ("%TSOPtr %BaseArg"::args)) ++ ")"
   store !(load baseHpPointer) globalHpVar
 
 getObjectSlotAddrVar : {t : IRType} -> IRValue IRObjPtr -> IRValue I64 -> Codegen (IRValue (Pointer 1 t))
@@ -1853,6 +1853,10 @@ foreignRedirectMap = [
   , ("C:idris2_getStr,libidris2_support", "rapid_system_stdin_getline")
   , ("C:idris2_writeLine, libidris2_support", "rapid_system_file_write_string")
   , ("C:idris2_eof, libidris2_support", "rapid_system_file_eof")
+  , ("C:idris2_fileError, libidris2_support", "rapid_system_file_error")
+  , ("C:idris2_stdin, libidris2_support", "rapid_system_file_stdin")
+  , ("C:idris2_stdout, libidris2_support", "rapid_system_file_stdout")
+  , ("C:idris2_stderr, libidris2_support", "rapid_system_file_stderr")
   , ("C:idris2_currentDirectory, libidris2_support", "rapid_system_current_dir")
   , ("C:idris2_putStr,libidris2_support", "rapid_putstr")
   , ("C:idris2_readBufferData,libidris2_support", "idris_rts_read_buffer_data")

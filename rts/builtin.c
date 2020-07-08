@@ -70,6 +70,14 @@ int64_t rapid_system_file_size(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world
   return stat_buf.st_size;
 }
 
+int64_t rapid_system_file_error(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
+  assert (OBJ_TYPE(filePtrObj) == OBJ_TYPE_OPAQUE);
+  assert (OBJ_SIZE(filePtrObj) == POINTER_SIZE);
+
+  FILE *f = *(FILE **)OBJ_GET_SLOT_ADDR(filePtrObj, 0);
+  return ferror(f);
+}
+
 int64_t idris_rts_write_buffer_data(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr bufObj, int64_t loc, int64_t maxSize, ObjPtr _world) {
   assert (loc >= 0);
   assert (maxSize >= 0);
@@ -104,6 +112,27 @@ int64_t idris_rts_read_buffer_data(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr bu
   }
 
   return read;
+}
+
+ObjPtr rapid_system_file_stdin(Idris_TSO *base) {
+  ObjPtr ptrObj = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
+  ptrObj->hdr = MAKE_HEADER(OBJ_TYPE_OPAQUE, POINTER_SIZE);
+  ptrObj->data = stdin;
+  return ptrObj;
+}
+
+ObjPtr rapid_system_file_stdout(Idris_TSO *base) {
+  ObjPtr ptrObj = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
+  ptrObj->hdr = MAKE_HEADER(OBJ_TYPE_OPAQUE, POINTER_SIZE);
+  ptrObj->data = stdout;
+  return ptrObj;
+}
+
+ObjPtr rapid_system_file_stderr(Idris_TSO *base) {
+  ObjPtr ptrObj = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
+  ptrObj->hdr = MAKE_HEADER(OBJ_TYPE_OPAQUE, POINTER_SIZE);
+  ptrObj->data = stderr;
+  return ptrObj;
 }
 
 ObjPtr rapid_system_file_open(Idris_TSO *base, ObjPtr fnameObj, ObjPtr modeObj, ObjPtr _world) {
