@@ -1672,6 +1672,19 @@ mk_prim__bufferSetString [buf, offsetObj, valObj, _] = do
   appendCode $ "  call void @llvm.memcpy.p1i8.p1i8.i64(" ++ toIR bytePtr ++ ", " ++ toIR strPayload ++ ", " ++ toIR strLength ++ ", i1 false)"
 
 
+mk_prim__bufferCopyData : Vect 6 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferCopyData [src, startObj, lenObj, dest, locObj, _] = do
+  start <- unboxInt' startObj
+  len <- unboxInt' lenObj
+  srcPayloadStart <- getObjectPayloadAddr {t=I8} src
+  srcPtr <- getElementPtr srcPayloadStart start
+
+  loc <- unboxInt' locObj
+  dstPayloadStart <- getObjectPayloadAddr {t=I8} dest
+  dstPtr <- getElementPtr dstPayloadStart loc
+
+  appendCode $ "  call void @llvm.memmove.p1i8.p1i8.i64(" ++ toIR dstPtr ++ ", " ++ toIR srcPtr ++ ", " ++ toIR len ++ ", i1 false)"
+
 mk_prim__nullAnyPtr : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__nullAnyPtr [p] = do
   lblStart <- genLabel "nullAnyPtr_start"
@@ -1811,7 +1824,7 @@ builtinPrimitives = [
   , ("prim/blodwen-buffer-getdouble", (3 ** mk_prim__bufferGetDouble))
   , ("prim/blodwen-buffer-setstring", (4 ** mk_prim__bufferSetString))
   , ("prim/blodwen-buffer-getstring", (4 ** mk_prim__bufferGetString))
-  --, ("prim/blodwen-buffer-copydata", (2 ** mk_prim__bufferCopyData))
+  , ("prim/blodwen-buffer-copydata", (6 ** mk_prim__bufferCopyData))
 
   , ("prim/isNull", (1 ** mk_prim__nullAnyPtr))
   , ("prim/fileErrno", (1 ** mk_prim__fileErrno))

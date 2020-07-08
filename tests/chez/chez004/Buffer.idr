@@ -24,6 +24,8 @@ main
          val <- getString buf 26 6
          printLn val
 
+         copyData buf 6 11 buf 60
+
          ds <- bufferData buf
          printLn ds
 
