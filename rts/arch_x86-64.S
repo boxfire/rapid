@@ -1,4 +1,10 @@
+#ifndef __APPLE__
+#define SYM(s) s
+#endif
+
+#ifdef __APPLE__
 #define SYM(s) _##s
+#endif
 
 # args:
 #   %rdi  func_ptr
