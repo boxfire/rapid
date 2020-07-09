@@ -2,8 +2,13 @@ RTS_SOURCES = builtin.c gc.c getline.c object.c rts.c ../external/llvm-statepoin
 RTS_HEADERS = gc.h object.h
 RTS_BITCODE = $(RTS_SOURCES:.c=.bc)
 
+all: build/runtime.bc build/platform.a
+
 build/runtime.bc: Makefile build $(RTS_BITCODE)
 	llvm-link -o $@ $(RTS_BITCODE)
+
+build/platform.a: Makefile build arch.o
+	llvm-ar rcsu $@ arch.o
 
 build:
 	-mkdir -p $@
@@ -11,8 +16,11 @@ build:
 %.bc: %.c $(RTS_HEADERS) Makefile
 	clang -flto -g -O3 -c -Wall -Wpedantic -Werror -I . -I ../external/llvm-statepoint-utils/dist -std=c11 -o $@ $<
 
+arch.o: arch_x86-64.s
+	clang -c -o $@ $<
+
 clean:
 	rm -f *.bc
 	rm -rf build/
 
-.PHONY: clean
+.PHONY: all clean

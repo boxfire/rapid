@@ -10,6 +10,7 @@ cg:
 rts:
 	make -j `nproc` -C rts
 	cp -v rts/build/runtime.bc support/rapid/runtime.bc
+	cp -v rts/build/platform.a support/rapid/platform.a
 
 llvm-passes:
 	(cd llvm && test -f Makefile || cmake .)

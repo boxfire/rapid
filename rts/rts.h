@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <setjmp.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 struct RTSConfig {
   bool debug_always_gc;

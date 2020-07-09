@@ -19,7 +19,9 @@ const size_t INITIAL_NURSERY_SIZE = 64 * 1024 * 1024;
 
 static const size_t RAPID_STACK_SIZE = 128 * 1024 * 1024;
 
-extern long idris_enter(void *baseTSO);
+extern int64_t idris_enter(Idris_TSO *baseTSO);
+typedef int64_t (* taskfun)(Idris_TSO *);
+extern void rapid_run_task(taskfun f, Idris_TSO *tso, jmp_buf jmpBack, void *stackTop);
 
 struct RTSConfig *rapid_global_config;
 
@@ -50,15 +52,8 @@ void rapid_C_crash(const char *msg) {
 void task_start(Idris_TSO *tso) {
   int jump_result;
   if ((jump_result = setjmp(tso->sched_jmp_buf)) == 0) {
-    register void *top = tso->stack_top;
-    __asm__ volatile(
-        "mov %[rs], %%rsp \n"
-        : [ rs ] "+r" (top) ::
-        );
-
-    idris_enter(tso);
-
-    longjmp(tso->sched_jmp_buf, 127);
+    rapid_run_task(idris_enter, tso, tso->sched_jmp_buf, tso->stack_top);
+    assert(0 && "rapid_run_task does not return");
   } else {
     // fprintf(stderr, "task finished: %d\n", jump_result);
   }

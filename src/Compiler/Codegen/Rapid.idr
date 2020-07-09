@@ -58,6 +58,7 @@ compile defs tmpDir outputDir term outfile = do
   -- load supporting files first, so we can fail early
   support <- readDataFile $ "rapid" </> "support.ll"
   runtime <- findDataFile $ "rapid" </> "runtime.bc"
+  platformLib <- findDataFile $ "rapid" </> "platform.a"
   rapidLLVMPlugin <- findDataFile $ "rapid" </> "librapid.so"
 
   cd <- getCompileData VMCode term
@@ -77,7 +78,7 @@ compile defs tmpDir outputDir term outfile = do
     True <- globalizeStackmap asmFileName
     | False => putStrLn "error"
     runShell ["clang", "-c", "-o", objectFileName, asmFileName]
-    runShell ["clang", "-o", binaryFileName, objectFileName, runtime]
+    runShell ["clang", "-o", binaryFileName, objectFileName, runtime, platformLib]
 
     pure ()
 
