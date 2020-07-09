@@ -1,3 +1,6 @@
+#define _POSIX_C_SOURCE 200809L
+#define _GNU_SOURCE
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -81,7 +84,7 @@ int main(int argc, char **argv) {
   tso->rapid_errno = 1;
 
   tso->stack_size = RAPID_STACK_SIZE;
-  size_t pagesize = getpagesize();
+  size_t pagesize = sysconf(_SC_PAGESIZE);
   void *stackmem = mmap(0, tso->stack_size + 2 * pagesize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (stackmem == MAP_FAILED) {
     fprintf(stderr, "stack alloc failed\n");

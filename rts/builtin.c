@@ -1,3 +1,6 @@
+#define _POSIX_C_SOURCE 200809L
+
+#include <alloca.h>
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
