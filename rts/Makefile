@@ -2,6 +2,20 @@ RTS_SOURCES = builtin.c gc.c getline.c object.c rts.c ../external/llvm-statepoin
 RTS_HEADERS = gc.h object.h
 RTS_BITCODE = $(RTS_SOURCES:.c=.bc)
 
+UNAME_S := $(shell uname -s)
+
+CFLAGS = -D_POSIX_C_SOURCE=200809L
+
+ifeq ($(UNAME_S),Linux)
+	CFLAGS += -D_GNU_SOURCE
+endif
+ifeq ($(UNAME_S),Darwin)
+	CFLAGS += -D_DARWIN_C_SOURCE
+endif
+
+CFLAGS += -I .
+CFLAGS += -I ../external/llvm-statepoint-utils/dist
+
 all: build/runtime.bc build/platform.a
 
 build/runtime.bc: Makefile build $(RTS_BITCODE)
@@ -14,7 +28,7 @@ build:
 	-mkdir -p $@
 
 %.bc: %.c $(RTS_HEADERS) Makefile
-	clang -flto -g -O3 -c -Wall -Wpedantic -Werror -Wno-format -I . -I ../external/llvm-statepoint-utils/dist -std=c11 -o $@ $<
+	clang -flto -g -O3 -c -Wall -Wpedantic -Werror -Wno-format $(CFLAGS) -std=c11 -o $@ $<
 
 arch.o: arch_x86-64.s
 	clang -c -o $@ $<
