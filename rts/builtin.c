@@ -93,6 +93,60 @@ ObjPtr rapid_system_get_env(Idris_TSO *base, ObjPtr varObj, ObjPtr _world) {
 }
 
 
+int64_t rapid_system_file_atime(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
+  assert (OBJ_TYPE(filePtrObj) == OBJ_TYPE_OPAQUE);
+  assert (OBJ_SIZE(filePtrObj) == POINTER_SIZE);
+
+  struct stat stat_buf;
+
+  FILE *f = *(FILE **)OBJ_GET_SLOT_ADDR(filePtrObj, 0);
+  int fd = fileno(f);
+  int stat_error = fstat(fd, &stat_buf);
+
+  if (stat_error != 0) {
+    base->rapid_errno = errno;
+    return -1;
+  }
+
+  return stat_buf.st_atime;
+}
+
+int64_t rapid_system_file_ctime(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
+  assert (OBJ_TYPE(filePtrObj) == OBJ_TYPE_OPAQUE);
+  assert (OBJ_SIZE(filePtrObj) == POINTER_SIZE);
+
+  struct stat stat_buf;
+
+  FILE *f = *(FILE **)OBJ_GET_SLOT_ADDR(filePtrObj, 0);
+  int fd = fileno(f);
+  int stat_error = fstat(fd, &stat_buf);
+
+  if (stat_error != 0) {
+    base->rapid_errno = errno;
+    return -1;
+  }
+
+  return stat_buf.st_ctime;
+}
+
+int64_t rapid_system_file_mtime(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
+  assert (OBJ_TYPE(filePtrObj) == OBJ_TYPE_OPAQUE);
+  assert (OBJ_SIZE(filePtrObj) == POINTER_SIZE);
+
+  struct stat stat_buf;
+
+  FILE *f = *(FILE **)OBJ_GET_SLOT_ADDR(filePtrObj, 0);
+  int fd = fileno(f);
+  int stat_error = fstat(fd, &stat_buf);
+
+  if (stat_error != 0) {
+    base->rapid_errno = errno;
+    return -1;
+  }
+
+  return stat_buf.st_mtime;
+}
+
 int64_t rapid_system_file_size(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
   assert (OBJ_TYPE(filePtrObj) == OBJ_TYPE_OPAQUE);
   assert (OBJ_SIZE(filePtrObj) == POINTER_SIZE);

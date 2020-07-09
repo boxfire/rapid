@@ -5,6 +5,15 @@ import System.File
 
 main : IO ()
 main = do
+  efh <- openFile "temporarytestfile" Read
+  case efh of
+    Right fh => do
+      printLn $ "mtime: " ++ show !(fileModifiedTime fh)
+      printLn $ "atime: " ++ show !(fileAccessTime fh)
+      printLn $ "ctime: " ++ show !(fileStatusTime fh)
+      closeFile fh
+    Left err => putStrLn $ "file error: " ++ show err
+
   writeFile "temporarytestfile" "#!/usr/bin/env true\n"
   chmodRaw "temporarytestfile" 0o755
   rc1 <- system "/usr/bin/true"
