@@ -19,7 +19,9 @@ extern uint8_t STACKMAP[];
 static statepoint_table_t *rapid_global_stackmap_table;
 
 void *rapid_C_allocate(Idris_TSO *base, int32_t size) {
-  return malloc(size);
+  void *m = malloc(size);
+  assert(((0x0f & (uint64_t)m) == 0) && "rapid_C_allocate returned non-aligned memory");
+  return m;
 }
 
 static inline uint32_t aligned(uint32_t size) {
@@ -160,15 +162,15 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
   uint8_t *oldNursery = (uint8_t *)base->nurseryStart;
   uint8_t *newNursery = realloc(base->heap_aux, nextNurserySize);
   memset(newNursery, 0, nextNurserySize);
-#ifdef RAPID_GC_DEBUG_ENABLED
-  fprintf(stderr, "nursery size: %llu -> %llu\n", oldNurserySize, nextNurserySize);
-  fprintf(stderr, "old nursery at: %p - %p\n", (void *)base->nurseryStart, (void *)base->nurseryEnd);
-  fprintf(stderr, "new nursery at: %p\n", (void *)newNursery);
-#endif
-
   base->nurseryStart = newNursery;
   base->nurseryNext = newNursery;
   base->nurseryEnd = (uint8_t *) ((uint64_t)newNursery + nextNurserySize);
+
+#ifdef RAPID_GC_DEBUG_ENABLED
+  fprintf(stderr, "nursery size: %llu -> %llu\n", oldNurserySize, nextNurserySize);
+  fprintf(stderr, "old nursery at: %p - %p\n", (void *)oldNursery, (void *)((uint64_t)oldNursery + oldNurserySize));
+  fprintf(stderr, "new nursery at: %p - %p\n", (void *)newNursery, (void *)base->nurseryEnd);
+#endif
 
   base->heap_aux = oldNursery;
   base->heap_aux_end = oldNursery + oldNurserySize;
@@ -177,6 +179,7 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
 #ifdef RAPID_GC_DEBUG_ENABLED
     fprintf(stderr, "=====\nstack walk for return addr: 0x%016llx\n", returnAddress);
     fprintf(stderr, "    frame info: 0x%016llx\n", (uint64_t)frame);
+    fprintf(stderr, "    stack ptr : 0x%016llx\n", (uint64_t)sp);
     fprintf(stderr, "    frame size: 0x%016llx\n", (uint64_t)frame->frameSize);
 #endif
 
