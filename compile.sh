@@ -81,4 +81,4 @@ opt -S < "${workfile}.bc" > "${workfile}.opt.ll"
 echo $'\n.globl __LLVM_StackMaps' >> "${workfile}.s"
 
 clang $clangdebug -c -o "${workfile}.o" "${workfile}.s"
-clang $clangdebug $clangopt -o "${workfile}.native" "${workfile}.o" rts/build/runtime.bc external/llvm-statepoint-utils/dist/llvm-statepoint-tablegen.a
+clang $clangdebug $clangopt -o "${workfile}.native" "${workfile}.o" rts/build/runtime.bc rts/build/platform.a external/llvm-statepoint-utils/dist/llvm-statepoint-tablegen.a
