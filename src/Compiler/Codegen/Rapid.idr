@@ -74,7 +74,7 @@ compile defs tmpDir outputDir term outfile = do
   let lateTransformFlags = ["-rapid-lower"]
   coreLift $ do
     runShell $ ["opt", outputFileName, "-load=" ++ rapidLLVMPlugin] ++ optFlags ++ lateTransformFlags ++ ["-o=" ++ bcFileName]
-    runShell ["llc", "-tailcallopt", "-o=" ++ asmFileName, bcFileName]
+    runShell ["llc", "--frame-pointer=all", "-tailcallopt", "-o=" ++ asmFileName, bcFileName]
     True <- globalizeStackmap asmFileName
     | False => putStrLn "error"
     runShell ["clang", "-c", "-o", objectFileName, asmFileName]

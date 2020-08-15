@@ -28,6 +28,28 @@ static inline uint32_t aligned(uint32_t size) {
   return 8 * ((size + 7) / 8);
 }
 
+#define DERIVED_PTRSLOT_GET_BASE_IDX(p) (((p).kind) >> 1)
+
+static inline ObjPtr *get_stack_slot(uint8_t *sp, uint8_t *bp, pointer_slot_t slot) {
+  if (slot.kind == -1) {
+    assert(slot.offset >= 0);
+    return (ObjPtr *)(sp + slot.offset);
+  } else if (slot.kind == -2) {
+    assert(slot.offset < 0);
+    return (ObjPtr *)(bp + slot.offset);
+  } else {
+    // kind LSB: 0 -> relative to stack pointer
+    // kind LSB: 1 -> relative to base pointer
+    if ((slot.kind & 0x01) == 0) {
+      assert(slot.offset >= 0);
+      return (ObjPtr *)(sp + slot.offset);
+    } else {
+      assert(slot.offset < 0);
+      return (ObjPtr *)(bp + slot.offset);
+    }
+  }
+}
+
 ObjPtr alloc_during_gc(Idris_TSO *base, uint32_t size) {
   uint8_t *p = base->nurseryNext;
   assert(((uint64_t)base->nurseryNext & 0x07) == 0);
@@ -149,6 +171,7 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
 #endif
 
   uint64_t returnAddress = *((uint64_t *) sp);
+  uint8_t *fp = sp - sizeof(void *);
   sp += sizeof(void *);
   frame_info_t *frame = lookup_return_address(rapid_global_stackmap_table, returnAddress);
 #ifdef RAPID_GC_DEBUG_ENABLED
@@ -176,10 +199,13 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
   base->heap_aux_end = oldNursery + oldNurserySize;
 
   while (frame != NULL) {
+    uint8_t *bp = *(uint8_t **)fp;
 #ifdef RAPID_GC_DEBUG_ENABLED
     fprintf(stderr, "=====\nstack walk for return addr: 0x%016llx\n", returnAddress);
     fprintf(stderr, "    frame info: 0x%016llx\n", (uint64_t)frame);
     fprintf(stderr, "    stack ptr : 0x%016llx\n", (uint64_t)sp);
+    fprintf(stderr, "    frame ptr : 0x%016llx\n", (uint64_t)sp - sizeof(void *));
+    fprintf(stderr, "    fp val    : 0x%016llx\n", *(uint64_t *)fp);
     fprintf(stderr, "    frame size: 0x%016llx\n", (uint64_t)frame->frameSize);
 #endif
 
@@ -190,9 +216,9 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
       pointer_slot_t ptrSlot = frame->slots[i];
       assert(ptrSlot.kind >= 0 && "must be a derived pointer");
 
-      pointer_slot_t baseSlot = frame->slots[ptrSlot.kind];
-      ObjPtr *baseStackSlot = (ObjPtr *)(sp + baseSlot.offset);
-      ObjPtr *derivedStackSlot = (ObjPtr *)(sp + ptrSlot.offset);
+      pointer_slot_t baseSlot = frame->slots[DERIVED_PTRSLOT_GET_BASE_IDX(ptrSlot)];
+      ObjPtr *baseStackSlot = get_stack_slot(sp, bp, baseSlot);
+      ObjPtr *derivedStackSlot = get_stack_slot(sp, bp, ptrSlot);
       *derivedStackSlot = (void *)((uint64_t)(*derivedStackSlot) - (uint64_t)(*baseStackSlot));
     }
 
@@ -201,17 +227,9 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
 #ifdef RAPID_GC_DEBUG_ENABLED
       fprintf(stderr, "    pointer slot %04d: kind=%02d offset + 0x%04x\n", i, ptrSlot.kind, ptrSlot.offset);
 #endif
-      if (ptrSlot.kind != -1) {
-        assert((ptrSlot.kind < frame->numSlots) && "basse idx out of bounds");
-        pointer_slot_t baseSlot = frame->slots[ptrSlot.kind];
-        fprintf(stderr, "    pointer slot %04d: kind=%02d offset + 0x%04x = %p\n", i, ptrSlot.kind, ptrSlot.offset, *(void **)(sp + ptrSlot.offset));
-        fprintf(stderr, "    -->base slot %04d: kind=%02d offset + 0x%04x = %p\n", ptrSlot.kind, baseSlot.kind, baseSlot.offset, *(void **)(sp + baseSlot.offset));
-        ObjPtr *stackSlot = (ObjPtr *)(sp + baseSlot.offset);
-        dump_obj(*stackSlot);
-      }
-      assert(ptrSlot.kind == -1);
+      assert((ptrSlot.kind == -1) || (ptrSlot.kind == -2));
 
-      ObjPtr *stackSlot = (ObjPtr *)(sp + ptrSlot.offset);
+      ObjPtr *stackSlot = get_stack_slot(sp, bp, ptrSlot);
 #ifdef RAPID_GC_DEBUG_ENABLED
       dump_obj(*stackSlot);
 #endif
@@ -229,17 +247,18 @@ void idris_rts_gc(Idris_TSO *base, uint8_t *sp) {
       pointer_slot_t ptrSlot = frame->slots[i];
       assert(ptrSlot.kind >= 0 && "must be a derived pointer");
 
-      pointer_slot_t baseSlot = frame->slots[ptrSlot.kind];
-      ObjPtr *baseStackSlot = (ObjPtr *)(sp + baseSlot.offset);
-      ObjPtr *derivedStackSlot = (ObjPtr *)(sp + ptrSlot.offset);
+      pointer_slot_t baseSlot = frame->slots[DERIVED_PTRSLOT_GET_BASE_IDX(ptrSlot)];
+      ObjPtr *baseStackSlot = get_stack_slot(sp, bp, baseSlot);
+      ObjPtr *derivedStackSlot = get_stack_slot(sp, bp, ptrSlot);
       *derivedStackSlot = (void *)((uint64_t)(*derivedStackSlot) + (uint64_t)(*baseStackSlot));
 #ifdef RAPID_GC_DEBUG_ENABLED
       fprintf(stderr, "derived ptr relocated\n");
 #endif
     }
 
-    sp += frame->frameSize;
+    sp = bp + sizeof(void *);
     returnAddress = *((uint64_t *) sp);
+    fp = bp;
     sp += sizeof(void *);
 
     frame = lookup_return_address(rapid_global_stackmap_table, returnAddress);

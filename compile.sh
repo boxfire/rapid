@@ -76,7 +76,7 @@ set -x
 (cd "$fdir" && "$root/build/exec/rapidc" --codegen vmcode-sexp -o "${fnoext}" "${fbase}")
 ./build/exec/rapid2-cg $debug "${workfile}.sexp"
 #cat support.ll "${workfile}.sexp.output.ll" > "${workfile}.full.ll"
-opt -load "${rapid_lib}/librapid.so" "${workfile}.sexp.output.ll" $optimize -rapid-lower | tee "${workfile}.bc" | llc $tco -o "${workfile}.s"
+opt -load "${rapid_lib}/librapid.so" "${workfile}.sexp.output.ll" $optimize -rapid-lower | tee "${workfile}.bc" | llc --frame-pointer=all $tco -o "${workfile}.s"
 opt -S < "${workfile}.bc" > "${workfile}.opt.ll"
 echo $'\n.globl __LLVM_StackMaps' >> "${workfile}.s"
 
