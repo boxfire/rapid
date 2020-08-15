@@ -4,6 +4,8 @@ import public Control.Monad.State
 import Data.List
 import Data.Strings
 
+import Debug.Trace
+
 ConstDef : Type
 ConstDef = (String, String)
 
@@ -41,8 +43,9 @@ addConstant i v = do
 export
 addError : String -> Codegen ()
 addError msg = do
+  appendCode ("; ERROR: " ++ msg)
   (MkCGBuf i c l e) <- get
-  put (MkCGBuf i c l (msg::e))
+  put $ trace ("add error: " ++ msg) (MkCGBuf i c l (msg::e))
 
 export
 addMetadata : Int -> String -> Codegen String
