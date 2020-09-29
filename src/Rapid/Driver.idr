@@ -18,8 +18,8 @@ import Compiler.SteamCG
 isBlocked : (Name, a) -> Bool
 isBlocked ((NS ["PrimIO"] (UN "schemeCall")), _) = True
 isBlocked ((NS ["PrimIO"] (UN "prim__schemeCall")), _) = True
-isBlocked ((NS ["Prelude"] (UN "fastPack")), _) = True
-isBlocked ((NS ["Prelude"] (MN "fastPack" _)), _) = True
+isBlocked ((NS ["Types", "Prelude"] (UN "fastPack")), _) = True
+isBlocked ((NS ["Types", "Prelude"] (MN "fastPack" _)), _) = True
 isBlocked ((NS ["Strings", "Data"] (UN "fastAppend")), _) = True
 isBlocked ((NS ["Strings", "Data"] (MN "fastAppend" _)), _) = True
 isBlocked _ = False

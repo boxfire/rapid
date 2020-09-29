@@ -3,6 +3,7 @@
 /rapid
 /rts/build/
 /samples/build/
+/src/build/
 /tests/**/build/
 /tests/**/compile.log
 /tests/**/output

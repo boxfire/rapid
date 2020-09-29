@@ -1763,7 +1763,7 @@ mkSupport {n} name f = runCodegen (do
 supportPrelude : String
 supportPrelude = fastAppend [
     mkSupport (NS ["Strings", "Data"] (UN "fastAppend")) mk_prelude_fastAppend
-  , mkSupport (NS ["Prelude"] (UN "fastPack")) mk_prelude_fastPack
+  , mkSupport (NS ["Types", "Prelude"] (UN "fastPack")) mk_prelude_fastPack
   ]
 
 fromCFType : CFType -> IRType
