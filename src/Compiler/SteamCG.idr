@@ -62,11 +62,12 @@ repeatStr s 0 = ""
 repeatStr s (S x) = s ++ repeatStr s x
 
 fullShow : Name -> String
-fullShow (NS ns n) = showSep "." (reverse ns) ++ "." ++ fullShow n
+fullShow (NS ns n) = showNSWithSep "." ns ++ "." ++ fullShow n
 fullShow (UN n) = n
 fullShow (MN n i) = "{" ++ n ++ ":" ++ show i ++ "}"
 fullShow (PV n i) = "{P:" ++ fullShow n ++ ":" ++ show i ++ "}"
 fullShow (DN _ n) = fullShow n
+fullShow (RF n) = ".(" ++ n ++ ")"
 fullShow (Nested (outer, idx) inner) = show outer ++ "/" ++ show idx ++ "/" ++ fullShow inner
 fullShow (CaseBlock outer i) = "case/" ++ outer ++ "$" ++ show i
 fullShow (WithBlock outer i) = "with/" ++ outer ++ "$" ++ show i
@@ -1422,58 +1423,8 @@ getInstIR i (EXTPRIM r n args) = compileExtPrim i n r args
 getInstIR i START = pure ()
 getInstIR i inst = addError $ ";=============\n; NOT IMPLEMENTED: " ++ show inst ++ "\n;=============\n"
 
-compileExtPrim : Int -> Name -> Reg -> List Reg -> Codegen ()
-compileExtPrim i (NS ["Prims", "IOArray", "Data"] (UN "prim__newArray")) r [_, countReg, elemReg, _] = do
-  lblStart <- genLabel "new_array_init_start"
-  lblLoop <- genLabel "new_array_init_loop"
-  lblEnd <- genLabel "new_array_init_end"
-  count <- unboxInt (reg2val countReg)
-  elem <- load (reg2val elemReg)
-  size <- mkMul (Const I64 8) count
-  newObj <- dynamicAllocate size
-  hdr <- mkOr count (Const I64 $ header OBJECT_TYPE_ID_IOARRAY)
-  putObjectHeader newObj hdr
-  jump lblStart
-  beginLabel lblStart
-
-  jump lblLoop
-  beginLabel lblLoop
-  iPlus1name <- mkVarName "%iplus1."
-  let iPlus1 = SSA I64 iPlus1name
-  i <- phi [(Const I64 0, lblStart), (iPlus1, lblLoop)]
-
-  addr <- getObjectSlotAddrVar newObj i
-  store elem addr
-
-  appendCode $ iPlus1name ++ " = add " ++ toIR i ++ ", 1"
-  continue <- icmp "ult" iPlus1 count
-  branch continue lblLoop lblEnd
-  beginLabel lblEnd
-  store newObj (reg2val r)
-
-compileExtPrim i (NS ["Prims", "IOArray", "Data"] (UN "prim__arrayGet")) r [_, arrReg, indexReg, _] = do
-  index <- unboxInt (reg2val indexReg)
-  array <- load (reg2val arrReg)
-
-  addr <- getObjectSlotAddrVar array index
-  val <- load addr
-
-  store val (reg2val r)
-
-compileExtPrim i (NS ["Prims", "IOArray", "Data"] (UN "prim__arraySet")) r [_, arrReg, indexReg, valReg, _] = do
-  index <- unboxInt (reg2val indexReg)
-  array <- load (reg2val arrReg)
-  val <- load (reg2val valReg)
-
-  addr <- getObjectSlotAddrVar array index
-  store val addr
-
-compileExtPrim i (NS ["Info", "System"] (UN "prim__codegen")) r [] = do
-  store !(mkStr i "rapid") (reg2val r)
-compileExtPrim i (NS ["Info", "System"] (UN "prim__os")) r [] = do
-  -- no cross compiling for now:
-  store !(mkStr i System.Info.os) (reg2val r)
-compileExtPrim i n r args =
+compileExtPrimFallback : Name -> Reg -> List Reg -> Codegen ()
+compileExtPrimFallback n r args =
   do argsV <- traverse prepareArg args
      hp <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpVar"
      hpLim <- ((++) "%RuntimePtr ") <$> assignSSA "load %RuntimePtr, %RuntimePtr* %HpLimVar"
@@ -1486,6 +1437,61 @@ compileExtPrim i n r args =
      appendCode $ "store %RuntimePtr " ++ newHpLim ++ ", %RuntimePtr* %HpLimVar"
      returnValue <- SSA IRObjPtr <$> assignSSA ("extractvalue %Return1 " ++ result ++ ", 2")
      store returnValue (reg2val r)
+
+compileExtPrim : Int -> Name -> Reg -> List Reg -> Codegen ()
+compileExtPrim i (NS ns n) r args with (unsafeUnfoldNamespace ns)
+  compileExtPrim i (NS ns (UN "prim__newArray")) r [_, countReg, elemReg, _] | ["Prims", "IOArray", "Data"] = do
+    lblStart <- genLabel "new_array_init_start"
+    lblLoop <- genLabel "new_array_init_loop"
+    lblEnd <- genLabel "new_array_init_end"
+    count <- unboxInt (reg2val countReg)
+    elem <- load (reg2val elemReg)
+    size <- mkMul (Const I64 8) count
+    newObj <- dynamicAllocate size
+    hdr <- mkOr count (Const I64 $ header OBJECT_TYPE_ID_IOARRAY)
+    putObjectHeader newObj hdr
+    jump lblStart
+    beginLabel lblStart
+
+    jump lblLoop
+    beginLabel lblLoop
+    iPlus1name <- mkVarName "%iplus1."
+    let iPlus1 = SSA I64 iPlus1name
+    i <- phi [(Const I64 0, lblStart), (iPlus1, lblLoop)]
+
+    addr <- getObjectSlotAddrVar newObj i
+    store elem addr
+
+    appendCode $ iPlus1name ++ " = add " ++ toIR i ++ ", 1"
+    continue <- icmp "ult" iPlus1 count
+    branch continue lblLoop lblEnd
+    beginLabel lblEnd
+    store newObj (reg2val r)
+
+  compileExtPrim i (NS ns (UN "prim__arrayGet")) r [_, arrReg, indexReg, _] | ["Prims", "IOArray", "Data"] = do
+    index <- unboxInt (reg2val indexReg)
+    array <- load (reg2val arrReg)
+
+    addr <- getObjectSlotAddrVar array index
+    val <- load addr
+
+    store val (reg2val r)
+
+  compileExtPrim i (NS ns (UN "prim__arraySet")) r [_, arrReg, indexReg, valReg, _] | ["Prims", "IOArray", "Data"] = do
+    index <- unboxInt (reg2val indexReg)
+    array <- load (reg2val arrReg)
+    val <- load (reg2val valReg)
+
+    addr <- getObjectSlotAddrVar array index
+    store val addr
+
+  compileExtPrim i (NS ns (UN "prim__codegen")) r [] | ["Info", "System"] = do
+    store !(mkStr i "rapid") (reg2val r)
+  compileExtPrim i (NS ns (UN "prim__os")) r [] | ["Info", "System"] = do
+    -- no cross compiling for now:
+    store !(mkStr i System.Info.os) (reg2val r)
+  compileExtPrim i (NS ns n) r args | _ = compileExtPrimFallback (NS ns n) r args
+compileExtPrim i n r args = compileExtPrimFallback n r args
 
 getInstIRWithComment : {auto conNames : SortedMap Name Int} -> Int -> VMInst -> Codegen ()
 getInstIRWithComment i instr = do
@@ -1762,8 +1768,8 @@ mkSupport {n} name f = runCodegen (do
 
 supportPrelude : String
 supportPrelude = fastAppend [
-    mkSupport (NS ["Strings", "Data"] (UN "fastAppend")) mk_prelude_fastAppend
-  , mkSupport (NS ["Types", "Prelude"] (UN "fastPack")) mk_prelude_fastPack
+    mkSupport (NS (unsafeFoldNamespace ["Strings", "Data"]) (UN "fastAppend")) mk_prelude_fastAppend
+  , mkSupport (NS (unsafeFoldNamespace ["Types", "Prelude"]) (UN "fastPack")) mk_prelude_fastPack
   ]
 
 fromCFType : CFType -> IRType

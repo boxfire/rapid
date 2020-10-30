@@ -59,5 +59,5 @@ addMetadata i v = do
 
 export
 runCodegen : Codegen () -> String
-runCodegen r = let (MkCGBuf _ cs ls errors) = snd $ runState r emptyCG in
+runCodegen r = let (MkCGBuf _ cs ls errors) = fst $ runState emptyCG r in
                     fastAppend $ intersperse "\n" $ (map (\(n,v) => n ++ " = " ++ v) $ reverse cs) ++ reverse ls

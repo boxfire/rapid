@@ -27,10 +27,11 @@ export
 total
 ToSexp Name where
   toSexp (UN s) = SList [SAtom "UN", SAtom s]
-  toSexp (NS ns n) = SList [SAtom "NS", SList (map SAtom ns), toSexp n]
+  toSexp (NS ns n) = SList [SAtom "NS", SList (map SAtom (unsafeUnfoldNamespace ns)), toSexp n]
   toSexp (DN d n) = SList [SAtom "DN", SAtom d, toSexp n]
   toSexp (MN s i) = SList [SAtom "MN", SAtom s, SAtom $ cast i]
   toSexp (PV n i) = SList [SAtom "PV", toSexp n, SAtom $ cast i]
+  toSexp (RF s) = SList [SAtom "RF", SAtom s]
   toSexp (CaseBlock outer i) = SList [SAtom "CaseBlock", SAtom $ outer, SAtom $ cast i]
   toSexp (WithBlock outer i) = SList [SAtom "WithBlock", SAtom $ outer, SAtom $ cast i]
   toSexp (Nested (outer, idx) inner) = SList [SAtom "Nested", SAtom $ cast outer, SAtom $ cast idx, toSexp inner]
@@ -40,6 +41,7 @@ export
 total
 FromSexp Name where
   fromSexp (SList [SAtom "UN", SAtom s]) = Right $ (UN s)
+  fromSexp (SList [SAtom "RF", SAtom s]) = Right $ (RF s)
   fromSexp (SList [SAtom "DN", SAtom d, n]) = pure $ (DN d !(fromSexp n))
   fromSexp (SList [SAtom "MN", SAtom s, SAtom i]) = pure $ (MN s !(maybeToEither "invalid MN int" $ parseInteger i))
   fromSexp (SList [SAtom "PV", n, SAtom i]) = pure $ (PV !(fromSexp n) !(maybeToEither "invalid PV int" $ parseInteger i))
@@ -47,7 +49,7 @@ FromSexp Name where
   fromSexp (SList [SAtom "WithBlock", SAtom o, SAtom i]) = pure $ (WithBlock o !(maybeToEither "invalid withblock inner int" $ parseInteger i))
   fromSexp (SList [SAtom "NS", SList ns, n]) = do
     comps <- traverse (unAtom "namespace component") ns
-    pure (NS comps !(fromSexp n))
+    pure (NS (unsafeFoldNamespace comps) !(fromSexp n))
   fromSexp (SList [SAtom "Nested", SAtom o, SAtom i, inner]) = do
     outer <- maybeToEither "invalid nested outer int" $ parseInteger o
     idx <- maybeToEither "invalid nested idx int" $ parseInteger i
@@ -373,7 +375,7 @@ FromSexp CFType where
   fromSexp (SList [SAtom "IORes String"]) = pure $ CFIORes CFString
   fromSexp (SList [SAtom "IORes Unit"]) = pure $ CFIORes CFUnit
   fromSexp (SList [SAtom "IORes Ptr"]) = pure $ CFIORes CFPtr
-  fromSexp (SList [SAtom "IORes Prelude.List String"]) = pure $ CFIORes (CFUser (NS ["Prelude"] (UN "List")) [CFString])
+  fromSexp (SList [SAtom "IORes Prelude.List String"]) = pure $ CFIORes (CFUser (NS (unsafeFoldNamespace ["Prelude"]) (UN "List")) [CFString])
   fromSexp (SList [SAtom "Ptr"]) = pure CFPtr
   fromSexp (SList [SAtom "String"]) = pure CFString
   fromSexp (SList [SAtom "%World"]) = pure CFWorld

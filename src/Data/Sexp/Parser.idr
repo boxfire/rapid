@@ -8,15 +8,15 @@ import Data.Sexp.Lexer
 Parser : Type -> Type -> Type
 Parser tok a = Grammar tok True a
 
-exact : Token -> Parser Token ()
+exact : Eq a => Show a => a -> Parser a ()
 exact t = terminal (show t) f where
-  f : Token -> Maybe ()
-  f x = if x == t then Just () else Nothing
+  f : (WithBounds a) -> Maybe ()
+  f x = if (val x) == t then Just () else Nothing
 
 ignoreComment : Parser Token ()
 ignoreComment = terminal "comment" f where
-  f : Token -> Maybe ()
-  f (Comment _) = Just ()
+  f : WithBounds Token -> Maybe ()
+  f (MkBounded (Comment _) _ _ _ _ _) = Just ()
   f _ = Nothing
 
 mutual
@@ -30,16 +30,16 @@ mutual
 
   parseSAtom : Parser Token Sexp
   parseSAtom = terminal "atom" isAtom where
-    isAtom : Token -> Maybe Sexp
-    isAtom (Atom a) = Just $ SAtom a
-    isAtom (QuotedAtom a) = Just $ SAtom a
+    isAtom : WithBounds Token -> Maybe Sexp
+    isAtom (MkBounded (Atom a) _ _ _ _ _) = Just $ SAtom a
+    isAtom (MkBounded (QuotedAtom a) _ _ _ _ _) = Just $ SAtom a
     isAtom _ = Nothing
 
 sexpMain : Parser Token (List Sexp)
 sexpMain = some oneSexp
 
 export
-parseSexp : List Token -> Either (String) (List Sexp)
+parseSexp : List (WithBounds Token) -> Either (String) (List Sexp)
 parseSexp toks = case parse sexpMain toks of
                       Left (Error s remaining) => Left $ "parse error: \"" ++ s ++ "\"\nremaining tokens: " ++ (show remaining)
                       Right (e, toks) => Right e

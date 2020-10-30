@@ -26,7 +26,7 @@ record TransformSt where
   instructions : List VMInst
 
 Transform : Type -> Type
-Transform = State TransformSt
+Transform = Control.Monad.State.State TransformSt
 
 addInstructon : VMInst -> Transform ()
 addInstructon i = modify (record { instructions $= (i ::)})
@@ -90,7 +90,7 @@ parameters (info : OptInfo)
 
   transformDef : (Name, VMDef) -> (Name, VMDef)
   transformDef (n, (MkVMFun args is)) =
-    let finSt = snd $ runState (traverse_ (doTransform n args) is) (MkTransformSt (nextFreeLoc (cast $ length args) is) []) in
+    let finSt = fst $ runState (MkTransformSt (nextFreeLoc (cast $ length args) is) []) (traverse_ (doTransform n args) is) in
     (n, MkVMFun args (reverse $ finSt.instructions))
   transformDef x = x
 

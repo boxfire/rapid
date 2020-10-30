@@ -91,7 +91,7 @@ tokenMap = [
   ]
 
 export
-lexSexp : String -> Either (String) (List Token)
+lexSexp : String -> Either (String) (List (WithBounds Token))
 lexSexp s = let (toks, line, col, remainder) = lex tokenMap s in
-                if remainder == "" then Right $ map tok toks
+                if remainder == "" then Right $ toks
                                    else Left $ "remaining: " ++ remainder

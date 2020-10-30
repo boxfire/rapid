@@ -16,12 +16,14 @@ import Compiler.PrepareCode
 import Compiler.SteamCG
 
 isBlocked : (Name, a) -> Bool
-isBlocked ((NS ["PrimIO"] (UN "schemeCall")), _) = True
-isBlocked ((NS ["PrimIO"] (UN "prim__schemeCall")), _) = True
-isBlocked ((NS ["Types", "Prelude"] (UN "fastPack")), _) = True
-isBlocked ((NS ["Types", "Prelude"] (MN "fastPack" _)), _) = True
-isBlocked ((NS ["Strings", "Data"] (UN "fastAppend")), _) = True
-isBlocked ((NS ["Strings", "Data"] (MN "fastAppend" _)), _) = True
+isBlocked ((NS ns n), _) with (unsafeUnfoldNamespace ns)
+  isBlocked ((NS ns (UN "schemeCall")), _) | ["PrimIO"] = True
+  isBlocked ((NS ns (UN "prim__schemeCall")), _) | ["PrimIO"] = True
+  isBlocked ((NS ns (UN "fastPack")), _) | ["Types", "Prelude"] = True
+  isBlocked ((NS ns (MN "fastPack" _)), _) | ["Types", "Prelude"] = True
+  isBlocked ((NS ns (UN "fastAppend")), _) | ["Strings", "Data"] = True
+  isBlocked ((NS ns (MN "fastAppend" _)), _) | ["Strings", "Data"] = True
+  isBlocked ((NS _ _), _) | _ = False
 isBlocked _ = False
 
 export
