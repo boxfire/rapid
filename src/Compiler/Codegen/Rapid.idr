@@ -85,7 +85,11 @@ compile defs tmpDir outputDir term outfile = do
   pure $ Nothing
 
 execute : Ref Ctxt Defs -> (tmpDir : String) -> ClosedTerm -> Core ()
-execute defs tmpDir term = do coreLift $ putStrLn "Maybe in an hour."
+execute defs tmpDir term = do
+  let tmpExecutableFile = "idris_tmp"
+  compile defs tmpDir tmpDir term tmpExecutableFile
+  coreLift $ system (tmpDir </> tmpExecutableFile)
+  pure ()
 
 export
 rapidCodegen : Codegen
