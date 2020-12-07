@@ -27,7 +27,7 @@ shell args = showSep " " $ map shellQuote args
 runShell : List String -> IO ()
 runShell args = do
   let cmd = shell args
-  putStrLn $ "+" ++ cmd
+  fPutStrLn stderr $ "+" ++ cmd
   rc <- system cmd
   case rc of
        0 => pure ()
@@ -62,7 +62,7 @@ compile defs tmpDir outputDir term outfile = do
   rapidLLVMPlugin <- findDataFile $ "rapid" </> "librapid.so"
 
   cd <- getCompileData VMCode term
-  coreLift $ putStrLn $ "got compiledata"
+  coreLift $ fPutStrLn stderr $ "got compiledata"
   let foreigns = map (\(n,_,d) => (n,d)) $ filter isFgn $ namedDefs cd
   let allFunctions = vmcode cd
   let optFlags = [

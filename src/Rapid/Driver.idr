@@ -36,7 +36,7 @@ writeIR allFunctions foreigns support outfile = do
   let nameMap = getNameMap $ map snd functions
   let indexedFuncs = enumerate functions
   let fcount = length indexedFuncs
-  putStrLn $ "functions to compile: " ++ show (length indexedFuncs)
+  fPutStrLn stderr $ "functions to compile: " ++ show (length indexedFuncs)
   (Right outFile) <- openFile outfile WriteTruncate
   | Left err => putStrLn $ "error opening output file: " ++ show err
   fPutStr outFile support
@@ -45,7 +45,7 @@ writeIR allFunctions foreigns support outfile = do
 
   for indexedFuncs (\c => do
     let i = 1 + fst c
-    when (i `mod` 100 == 0) $ putStrLn $ "compile fun " ++ show i ++ "/" ++ (show fcount) ++ ": " ++ safeName (fst (snd c))
+    when (i `mod` 100 == 0) $ ignore $ fPutStrLn stderr ("compile fun " ++ show i ++ "/" ++ (show fcount) ++ ": " ++ safeName (fst (snd c)))
     let funcIr = getVMIR debug nameMap c
     fPutStr outFile funcIr
     )
