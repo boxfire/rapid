@@ -13,9 +13,9 @@ import Core.Name
 import Data.Sexp
 import Data.Sexp.Lexer
 import Data.Sexp.Parser
+import Compiler.GenLLVMIR
 import Compiler.Optimize
 import Compiler.PrepareCode
-import Compiler.SteamCG
 import Compiler.VMCodeSexp
 import Rapid.Driver
 

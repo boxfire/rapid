@@ -1,4 +1,4 @@
-module Compiler.SteamCG
+module Compiler.GenLLVMIR
 
 import Data.Buffer
 import Data.Either

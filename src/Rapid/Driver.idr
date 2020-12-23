@@ -12,8 +12,8 @@ import Core.CompileExpr
 import Core.Name
 import Utils.Path
 
+import Compiler.GenLLVMIR
 import Compiler.PrepareCode
-import Compiler.SteamCG
 
 isBlocked : (Name, a) -> Bool
 isBlocked ((NS ns n), _) with (unsafeUnfoldNamespace ns)
