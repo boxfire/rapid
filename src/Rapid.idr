@@ -72,4 +72,4 @@ main = do
     else do
       pure allFunctions
 
-  writeIR optimizedFunctions foreigns support (filename ++ ".output.ll")
+  writeIR optimizedFunctions foreigns support (filename ++ ".output.ll") debug

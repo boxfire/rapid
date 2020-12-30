@@ -28,9 +28,8 @@ isBlocked _ = False
 
 export
 writeIR : (allFunctions : List (Name, VMDef)) -> (foreigns : List (Name, NamedDef)) ->
-          (support : String) -> (outfile : String) -> IO ()
-writeIR allFunctions foreigns support outfile = do
-  let debug = False
+          (support : String) -> (outfile : String) -> (debug : Bool) -> IO ()
+writeIR allFunctions foreigns support outfile debug = do
   let foreignCode = map (compileForeign debug) (enumerate foreigns)
   let functions = filter (not . isBlocked) allFunctions
   let nameMap = getNameMap $ map snd functions

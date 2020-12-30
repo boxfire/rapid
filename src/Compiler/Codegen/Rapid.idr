@@ -8,6 +8,7 @@ import System.File
 import Core.Directory
 import Core.CompileExpr
 import Core.Context
+import Core.Options
 import Compiler.Common
 import Compiler.VMCode
 import Utils.Path
@@ -43,6 +44,12 @@ globalizeStackmap fname = do
   closeFile outFile
   pure True
 
+getDebug : List String -> Bool
+getDebug = any isDebug
+  where
+    isDebug : String -> Bool
+    isDebug directive = (trim directive) == "debug"
+
 compile : Ref Ctxt Defs -> (tmpDir : String) -> (outputDir : String) ->
         ClosedTerm -> (outfile : String) -> Core (Maybe String)
 compile defs tmpDir outputDir term outfile = do
@@ -54,6 +61,10 @@ compile defs tmpDir outputDir term outfile = do
   let objectFileName = appDirGen </> (outfile ++ ".o") -- object file
   let binaryFileName = outputDir </> outfile
   coreLift $ mkdirAll appDirGen
+
+  directives <- getDirectives (Other "llvm")
+  let debug = getDebug directives
+  coreLift $ fPutStrLn stderr ("debug: " ++ show debug)
 
   -- load supporting files first, so we can fail early
   support <- readDataFile $ "rapid" </> "support.ll"
@@ -69,7 +80,7 @@ compile defs tmpDir outputDir term outfile = do
     "-mem2reg", "-constprop", "-constmerge", "-sccp", "-dce", "-globaldce",
     "-rewrite-statepoints-for-gc"]
 
-  coreLift $ writeIR allFunctions foreigns support outputFileName
+  coreLift $ writeIR allFunctions foreigns support outputFileName debug
 
   let lateTransformFlags = ["-rapid-lower"]
   coreLift $ do
