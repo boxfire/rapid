@@ -24,7 +24,8 @@ add_custom_command(
   DEPENDS rapid
   )
 
-if (${RAPID_SUPPORT_BINARIES})
+# workaround for older CMake version
+if (${RAPID_SUPPORT_BINARIES} MATCHES .)
   add_custom_target(rapid_install_llvm_passes ALL
     DEPENDS "${RAPID_SUPPORT_BINARIES}/rapid/librapid.so"
     )
