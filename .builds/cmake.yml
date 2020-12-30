@@ -1,0 +1,71 @@
+image: debian/stable
+
+secrets:
+  - 847f7bd1-cee2-48a9-93d9-8ebef49c6984
+
+sources:
+  - https://github.com/cypheon/Idris2.git
+  - git@git.sr.ht:~cypheon/rapid
+
+repositories:
+  llvm-10: http://apt.llvm.org/buster/ llvm-toolchain-buster-10 main 15CF4D18AF4F7421
+
+packages:
+  - chezscheme
+  - cmake
+  - ninja-build
+  - python3-pip
+  # From LLVM-10 repository:
+  - clang-10
+  - llvm-10-dev
+
+environment:
+  PATH: /home/build/.idris2/bin:/usr/lib/llvm-10/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games
+
+tasks:
+  - install-prerequisites: |
+      sudo pip3 install lit
+
+  - load-prebuilt-idris2: |
+      cd Idris2
+      idris2_commit=$(git show-ref --hash --head refs/HEAD)
+      if curl -LsSf -o /tmp/idris2_prebuilt.tar.gz "https://sinyax.net/idris2_prebuilt/${idris2_commit}.tar.gz"; then
+        cd $HOME
+        tar xzvf /tmp/idris2_prebuilt.tar.gz
+        # dummy to prevent build from failing due to missing artifacts
+        touch /tmp/idris2_prebuilt_new.tar.gz
+      fi
+  - install-idris2: |
+      if [[ -d $HOME/.idris2 ]]; then
+        echo prebuilt Idris2 found
+        exit 0
+      else
+        echo prebuilt Idris2 not found, building from scratch
+      fi
+      cd Idris2
+      make bootstrap SCHEME=chezscheme
+      make install
+      make clean
+      make all
+      make install install-api
+      tar czvf /tmp/idris2_prebuilt_new.tar.gz -C "$HOME" .idris2
+
+  - build: |
+      cd rapid
+      git submodule update --init --recursive
+
+      make -C external/llvm-statepoint-utils dist/llvm-statepoint-tablegen.h unified
+      cmake -G Ninja .
+      ninja
+
+  - test: |
+      cd rapid
+      ninja test
+
+artifacts:
+  - /tmp/idris2_prebuilt_new.tar.gz
+
+triggers:
+  - action: email
+    condition: failure
+    to: Johann Rudloff <johann+builds.sr.ht@sinyax.net>
