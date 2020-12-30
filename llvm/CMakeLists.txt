@@ -18,6 +18,23 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 target_link_libraries(rapid
   "$<$<PLATFORM_ID:Darwin>:-undefined dynamic_lookup>")
 
-add_custom_target(test
+add_custom_command(
+  OUTPUT "${RAPID_SUPPORT_BINARIES}/rapid/librapid.so"
+  COMMAND "cmake" ARGS "-E" copy_if_different $<TARGET_FILE:rapid> "${RAPID_SUPPORT_BINARIES}/rapid"
+  DEPENDS rapid
+  )
+
+if (${RAPID_SUPPORT_BINARIES})
+  add_custom_target(rapid_install_llvm_passes ALL
+    DEPENDS "${RAPID_SUPPORT_BINARIES}/rapid/librapid.so"
+    )
+endif()
+
+add_custom_target(rapid_test_llvm_passes
                   COMMAND lit test -v
                   DEPENDS rapid)
+
+if (NOT TARGET test)
+  add_custom_target(test)
+endif()
+add_dependencies(test rapid_test_llvm_passes)
