@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 rapidc=$PWD/build/exec/rapidc
 
@@ -31,7 +31,13 @@ if [[ -n "$1" ]]; then
   fi
 fi
 
+count_total=0
+count_ok=0
+count_failed=0
+count_error=0
+
 for test in ${tests[*]}; do
+  ((count_total++))
   testdir="$PWD/tests/chez/$test"
   idr=$(echo ${testdir}/*.idr)
   pushd "$testdir" >/dev/null
@@ -39,14 +45,32 @@ for test in ${tests[*]}; do
   if $rapidc -o "$test" "$idr" >& "${testdir}/compile.log"; then
     "./build/exec/$test" > "${testdir}/output"
     #"$testdir/build/rapid/$(basename "$idr" .idr).native" > "${testdir}/output"
-    if git diff --quiet --no-index -- "${testdir}/expected" "${testdir}/output"; then
+
+    expected="${testdir}/expected"
+    expected_os="${testdir}/expected.$(uname)"
+    if [[ -f "${expected_os}" ]]; then
+      expected="${expected_os}"
+    fi
+
+    if git diff --quiet --no-index -- "${expected}" "${testdir}/output"; then
       echo "OK: $test"
+      ((count_ok++))
     else
-      git --no-pager diff --exit-code --no-index -- "${testdir}/expected" "${testdir}/output"
+      git --no-pager diff --exit-code --no-index -- "${expected}" "${testdir}/output"
+      ((count_failed++))
     fi
   else
     echo "COMPILE ERROR: $test"
     cat "${testdir}/compile.log"
+    ((count_error++))
   fi
   popd >/dev/null
 done
+
+echo "Tests run: $count_total, ok: $count_ok, failed: $count_failed, error: $count_error"
+
+if [[ "${count_total}" -eq "${count_ok}" ]]; then
+  exit 0
+else
+  exit 1
+fi
