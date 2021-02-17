@@ -1421,7 +1421,7 @@ getInstIR i (PROJECT r o pos) = do
 getInstIR i (EXTPRIM r n args) = compileExtPrim i n r args
 
 getInstIR i START = pure ()
-getInstIR i inst = addError $ ";=============\n; NOT IMPLEMENTED: " ++ show inst ++ "\n;=============\n"
+getInstIR i inst = addError $ "NOT IMPLEMENTED: " ++ show inst
 
 compileExtPrimFallback : Name -> Reg -> List Reg -> Codegen ()
 compileExtPrimFallback n r args =
@@ -1919,7 +1919,7 @@ getForeignFunctionIR debug i name cs args ret = do
   case (builtin, found) of
        (Just b, _) => do builtinForeign b name args ret
        (Nothing, Just funcName) => do genericForeign funcName name args ret
-       (_, _) => appendCode $ "; missing foreign: " ++ show name ++ " <- " ++ show cs ++ "\n"
+       (_, _) => addError $ "missing foreign: " ++ show name ++ " <- " ++ show cs
 
 export
 compileForeign : Bool -> (Int, (Name, NamedDef)) -> String
