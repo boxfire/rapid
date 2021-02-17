@@ -1,6 +1,6 @@
 module Main
 
-import Data.Strings
+import Data.String
 
 -- Test, that Scheme-dependent builtins are correctly blacklisted/overridden
 

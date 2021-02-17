@@ -2,7 +2,7 @@ module Codegen
 
 import public Control.Monad.State
 import Data.List
-import Data.Strings
+import Data.String
 
 import Debug.Trace
 

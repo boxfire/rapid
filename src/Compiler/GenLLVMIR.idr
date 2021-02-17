@@ -4,7 +4,7 @@ import Data.Buffer
 import Data.Either
 import Data.List
 import Data.Maybe
-import Data.Strings
+import Data.String
 import Data.Vect
 import System.Info
 

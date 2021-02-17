@@ -1,7 +1,7 @@
 module Rapid
 
 import Data.List
-import Data.Strings
+import Data.String
 import System
 import System.File
 

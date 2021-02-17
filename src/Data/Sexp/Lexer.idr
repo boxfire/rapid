@@ -2,7 +2,7 @@ module Data.Sexp.Lexer
 
 import Data.List
 import Data.Maybe
-import Data.Strings
+import Data.String
 import Libraries.Text.Lexer
 
 %default covering
