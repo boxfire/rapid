@@ -4,7 +4,6 @@ import Data.Buffer
 import Data.Either
 import Data.List
 import Data.Maybe
-import Data.SortedMap
 import Data.Strings
 import Data.Vect
 import System.Info
@@ -12,9 +11,10 @@ import System.Info
 import Compiler.CompileExpr
 import Compiler.VMCode
 import Core.TT
+import Libraries.Data.SortedMap
+import Libraries.Utils.Hex
 
 import Codegen
-import Utils.Hex
 
 OBJECT_TYPE_ID_CON_NO_ARGS : Int
 OBJECT_TYPE_ID_CON_NO_ARGS = 0xff
@@ -1768,7 +1768,7 @@ mkSupport {n} name f = runCodegen (do
 
 supportPrelude : String
 supportPrelude = fastAppend [
-    mkSupport (NS (unsafeFoldNamespace ["Strings", "Data"]) (UN "fastAppend")) mk_prelude_fastAppend
+    mkSupport (NS (unsafeFoldNamespace ["String", "Data"]) (UN "fastConcat")) mk_prelude_fastAppend
   , mkSupport (NS (unsafeFoldNamespace ["Types", "Prelude"]) (UN "fastPack")) mk_prelude_fastPack
   ]
 

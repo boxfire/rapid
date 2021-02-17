@@ -10,7 +10,7 @@ import Compiler.VMCode
 import Core.Directory
 import Core.CompileExpr
 import Core.Name
-import Utils.Path
+import Libraries.Utils.Path
 
 import Compiler.GenLLVMIR
 import Compiler.PrepareCode
@@ -21,8 +21,8 @@ isBlocked ((NS ns n), _) with (unsafeUnfoldNamespace ns)
   isBlocked ((NS ns (UN "prim__schemeCall")), _) | ["PrimIO"] = True
   isBlocked ((NS ns (UN "fastPack")), _) | ["Types", "Prelude"] = True
   isBlocked ((NS ns (MN "fastPack" _)), _) | ["Types", "Prelude"] = True
-  isBlocked ((NS ns (UN "fastAppend")), _) | ["Strings", "Data"] = True
-  isBlocked ((NS ns (MN "fastAppend" _)), _) | ["Strings", "Data"] = True
+  isBlocked ((NS ns (UN "fastConcat")), _) | ["Strings", "Data"] = True
+  isBlocked ((NS ns (MN "fastConcat" _)), _) | ["Strings", "Data"] = True
   isBlocked ((NS _ _), _) | _ = False
 isBlocked _ = False
 

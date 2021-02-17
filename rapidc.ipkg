@@ -1,6 +1,6 @@
 package rapidc
 
-depends = idris2, contrib, network
+depends = idris2, network
 
 sourcedir = "src"
 

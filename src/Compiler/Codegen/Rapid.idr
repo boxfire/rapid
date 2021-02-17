@@ -11,7 +11,7 @@ import Core.Context
 import Core.Options
 import Compiler.Common
 import Compiler.VMCode
-import Utils.Path
+import Libraries.Utils.Path
 
 import Rapid.Driver
 

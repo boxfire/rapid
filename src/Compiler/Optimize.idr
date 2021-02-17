@@ -6,14 +6,13 @@ import Data.Strings
 import System
 import System.File
 
-import Data.SortedMap
-
 import Compiler.Common
 import Compiler.VMCode
 import Core.Directory
 import Core.CompileExpr
 import Core.Name
-import Utils.Path
+import Libraries.Data.SortedMap
+import Libraries.Utils.Path
 
 record OptInfo where
   constructor MkOptInfo

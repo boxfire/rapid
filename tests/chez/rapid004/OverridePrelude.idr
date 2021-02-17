@@ -8,4 +8,4 @@ main : IO ()
 main = do
   putStrLn $ fastPack ['a', 'b', 'c']
   putStrLn $ fastAppend ["first part", "|", "", "|", "END of the string"]
-  putStrLn $ fastAppend ["last", "part", "empty", ""]
+  putStrLn $ fastConcat ["last", "part", "empty", ""]

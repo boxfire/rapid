@@ -1,7 +1,6 @@
 module Rapid
 
 import Data.List
-import Data.SortedMap
 import Data.Strings
 import System
 import System.File
@@ -9,6 +8,7 @@ import System.File
 import Compiler.VMCode
 import Core.CompileExpr
 import Core.Name
+import Libraries.Data.SortedMap
 
 import Data.Sexp
 import Data.Sexp.Lexer

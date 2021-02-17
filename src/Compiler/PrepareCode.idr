@@ -1,10 +1,10 @@
 module Compiler.PrepareCode
 
 import Data.Maybe
-import Data.SortedMap
 
 import Core.Name
 import Compiler.VMCode
+import Libraries.Data.SortedMap
 
 %default covering
 

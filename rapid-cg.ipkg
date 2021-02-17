@@ -1,6 +1,6 @@
 package rapidcg
 
-depends = idris2, contrib
+depends = idris2
 
 sourcedir = "src"
 

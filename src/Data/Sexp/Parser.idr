@@ -1,6 +1,6 @@
 module Data.Sexp.Parser
 
-import Text.Parser
+import Libraries.Text.Parser
 
 import Data.Sexp
 import Data.Sexp.Lexer

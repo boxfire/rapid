@@ -10,7 +10,7 @@ import Core.CompileExpr
 import Core.Context
 import Compiler.Common
 import Compiler.VMCode
-import Utils.Path
+import Libraries.Utils.Path
 
 import Data.Sexp
 import Compiler.VMCodeSexp
