@@ -26,6 +26,9 @@ OBJECT_TYPE_ID_INT = 1
 OBJECT_TYPE_ID_DOUBLE : Int
 OBJECT_TYPE_ID_DOUBLE = 1
 
+OBJECT_TYPE_ID_BITS64 : Int
+OBJECT_TYPE_ID_BITS64 = 1
+
 OBJECT_TYPE_ID_STR : Int
 OBJECT_TYPE_ID_STR = 2
 
@@ -403,6 +406,13 @@ cgMkInt : IRValue I64 -> Codegen (IRValue IRObjPtr)
 cgMkInt val = do
   boxed <- assignSSA $ "tail call fastcc noalias %ObjPtr @llvm.rapid.boxint(" ++ toIR val ++ ") \"gc-leaf-function\""
   pure (SSA IRObjPtr boxed)
+
+cgMkBits64 : IRValue I64 -> Codegen (IRValue IRObjPtr)
+cgMkBits64 val = do
+  newObj <- dynamicAllocate (ConstI64 8)
+  putObjectHeader newObj (ConstI64 $ header OBJECT_TYPE_ID_BITS64)
+  putObjectSlot newObj (ConstI64 0) val
+  pure newObj
 
 cgMkDouble : IRValue F64 -> Codegen (IRValue IRObjPtr)
 cgMkDouble val = do
@@ -801,6 +811,15 @@ intBinary op dest a b = do
   obj <- cgMkInt !(op i1 i2)
   store obj (reg2val dest)
 
+boundedIntBinary : Int -> (IRValue I64 -> IRValue I64 -> Codegen (IRValue I64)) -> Reg -> Reg -> Reg -> Codegen ()
+boundedIntBinary mask op dest a b = do
+  i1 <- unboxInt (reg2val a)
+  i2 <- unboxInt (reg2val b)
+  result <- op i1 i2
+  truncatedVal <- mkAnd (Const I64 0xff) result
+  obj <- cgMkInt truncatedVal
+  store obj (reg2val dest)
+
 getInstIR : {auto conNames : SortedMap Name Int} -> Int -> VMInst -> Codegen ()
 getInstIR i (DECLARE (Loc r)) = do
   appendCode $ "  %v" ++ show r ++ "Var = alloca %ObjPtr"
@@ -995,6 +1014,20 @@ getInstIR i (OP r (Cast IntegerType StringType) [r1]) = do
   putObjectHeader newStr newHeader
   store newStr (reg2val r)
 
+getInstIR i (OP r (Cast Bits8Type StringType) [r1]) = getInstIR i (OP r (Cast IntType StringType) [r1])
+getInstIR i (OP r (Cast Bits16Type StringType) [r1]) = getInstIR i (OP r (Cast IntType StringType) [r1])
+getInstIR i (OP r (Cast Bits32Type StringType) [r1]) = getInstIR i (OP r (Cast IntType StringType) [r1])
+getInstIR i (OP r (Cast Bits64Type StringType) [r1]) = do
+  obj <- load (reg2val r1)
+  theBits <- getObjectSlot {t=I64} obj 0
+
+  -- max size of 2^64 = 20 + NUL byte (from snprintf)
+  newStr <- dynamicAllocate (ConstI64 24)
+  strPayload <- getObjectPayloadAddr {t=I8} newStr
+  length <- (SSA I64) <$> assignSSA ("call ccc i64 @idris_rts_bits64_to_str(" ++ toIR strPayload ++ ", " ++ toIR theBits ++ ")")
+  newHeader <- mkOr (ConstI64 $ header OBJECT_TYPE_ID_STR) length
+  putObjectHeader newStr newHeader
+  store newStr (reg2val r)
 getInstIR i (OP r (Cast IntType StringType) [r1]) = do
   theIntObj <- load (reg2val r1)
   theInt <- unboxInt' theIntObj
@@ -1059,6 +1092,39 @@ getInstIR i (OP r (Cast CharType IntType) [r1]) = do
   newInt <- cgMkInt charVal
   store newInt (reg2val r)
 
+getInstIR i (OP r (Cast IntegerType Bits8Type) [r1]) = getInstIR i (OP r (Cast IntType Bits8Type) [r1])
+getInstIR i (OP r (Cast IntType Bits8Type) [r1]) = do
+  ival <- unboxInt (reg2val r1)
+  truncatedVal <- mkAnd (Const I64 0xff) ival
+  newObj <- cgMkInt truncatedVal
+  store newObj (reg2val r)
+getInstIR i (OP r (Cast IntegerType Bits16Type) [r1]) = getInstIR i (OP r (Cast IntType Bits16Type) [r1])
+getInstIR i (OP r (Cast IntType Bits16Type) [r1]) = do
+  ival <- unboxInt (reg2val r1)
+  truncatedVal <- mkAnd (Const I64 0xffff) ival
+  newObj <- cgMkInt truncatedVal
+  store newObj (reg2val r)
+getInstIR i (OP r (Cast IntegerType Bits32Type) [r1]) = getInstIR i (OP r (Cast IntType Bits32Type) [r1])
+getInstIR i (OP r (Cast IntType Bits32Type) [r1]) = do
+  ival <- unboxInt (reg2val r1)
+  truncatedVal <- mkAnd (Const I64 0xffffffff) ival
+  newObj <- cgMkInt truncatedVal
+  store newObj (reg2val r)
+getInstIR i (OP r (Cast IntegerType Bits64Type) [r1]) = getInstIR i (OP r (Cast IntType Bits64Type) [r1])
+getInstIR i (OP r (Cast IntType Bits64Type) [r1]) = do
+  ival <- unboxInt (reg2val r1)
+  truncatedVal <- mkAnd (Const I64 0xffffffffffffffff) ival
+  newObj <- cgMkBits64 truncatedVal
+  store newObj (reg2val r)
+
+
+getInstIR i (OP r (Cast Bits8Type IntType) [r1]) = do
+  store !(load (reg2val r1)) (reg2val r)
+getInstIR i (OP r (Cast Bits16Type IntType) [r1]) = do
+  store !(load (reg2val r1)) (reg2val r)
+getInstIR i (OP r (Cast Bits32Type IntType) [r1]) = do
+  store !(load (reg2val r1)) (reg2val r)
+
 getInstIR i (OP r (Cast IntType CharType) [r1]) = do
   ival <- unboxInt (reg2val r1)
   truncated <- mkAnd (Const I64 0xffffffff) ival
@@ -1093,6 +1159,36 @@ getInstIR i (OP r (Cast IntegerType IntType) [r1]) = do
   store !(load (reg2val r1)) (reg2val r)
 getInstIR i (OP r (Cast IntType IntegerType) [r1]) = do
   store !(load (reg2val r1)) (reg2val r)
+
+getInstIR i (OP r (Add Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkAddNoWrap r r1 r2
+getInstIR i (OP r (Sub Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkSub r r1 r2
+getInstIR i (OP r (Mul Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkMul r r1 r2
+getInstIR i (OP r (Div Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkSDiv r r1 r2
+getInstIR i (OP r (Mod Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkSRem r r1 r2
+getInstIR i (OP r (BAnd Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkAnd r r1 r2
+getInstIR i (OP r (BOr Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkOr r r1 r2
+getInstIR i (OP r (ShiftL Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkShiftL r r1 r2
+getInstIR i (OP r (ShiftR Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkShiftR r r1 r2
+
+getInstIR i (OP r (Add Bits16Type) [r1, r2]) = boundedIntBinary 0xffff mkAddNoWrap r r1 r2
+getInstIR i (OP r (Sub Bits16Type) [r1, r2]) = boundedIntBinary 0xffff mkSub r r1 r2
+getInstIR i (OP r (Mul Bits16Type) [r1, r2]) = boundedIntBinary 0xffff mkMul r r1 r2
+getInstIR i (OP r (Div Bits16Type) [r1, r2]) = boundedIntBinary 0xffff mkSDiv r r1 r2
+getInstIR i (OP r (Mod Bits16Type) [r1, r2]) = boundedIntBinary 0xffff mkSRem r r1 r2
+getInstIR i (OP r (BAnd Bits16Type) [r1, r2]) = boundedIntBinary 0xffff mkAnd r r1 r2
+getInstIR i (OP r (BOr Bits16Type) [r1, r2]) = boundedIntBinary 0xffff mkOr r r1 r2
+getInstIR i (OP r (ShiftL Bits16Type) [r1, r2]) = boundedIntBinary 0xffff mkShiftL r r1 r2
+getInstIR i (OP r (ShiftR Bits16Type) [r1, r2]) = boundedIntBinary 0xffff mkShiftR r r1 r2
+
+getInstIR i (OP r (Add Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkAddNoWrap r r1 r2
+getInstIR i (OP r (Sub Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkSub r r1 r2
+getInstIR i (OP r (Mul Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkMul r r1 r2
+getInstIR i (OP r (Div Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkSDiv r r1 r2
+getInstIR i (OP r (Mod Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkSRem r r1 r2
+getInstIR i (OP r (BAnd Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkAnd r r1 r2
+getInstIR i (OP r (BOr Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkOr r r1 r2
+getInstIR i (OP r (ShiftL Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkShiftL r r1 r2
+getInstIR i (OP r (ShiftR Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkShiftR r r1 r2
 
 getInstIR i (OP r (Add IntType) [r1, r2]) = intBinary mkAdd r r1 r2
 getInstIR i (OP r (Sub IntType) [r1, r2]) = intBinary mkSub r r1 r2
@@ -1196,6 +1292,14 @@ getInstIR i (OP r (EQ CharType) [r1, r2]) = do
   cmp_i1 <- icmp "eq" i1 i2
   cmp_i64 <- assignSSA $ "zext " ++ toIR cmp_i1 ++ " to i64"
   obj <- cgMkInt (SSA I64 cmp_i64)
+  store obj (reg2val r)
+
+getInstIR i (OP r (LT Bits8Type) [r1, r2]) = do
+  i1 <- unboxInt (reg2val r1)
+  i2 <- unboxInt (reg2val r2)
+  vsum_i1 <- icmp "ult" i1 i2
+  vsum_i64 <- mkZext {to=I64} vsum_i1
+  obj <- cgMkInt vsum_i64
   store obj (reg2val r)
 
 getInstIR i (OP r (LT IntType) [r1, r2]) = do
@@ -1337,6 +1441,18 @@ getInstIR i (MKCONSTANT r (Ch c)) = do
   newObj <- dynamicAllocate (ConstI64 0)
   putObjectHeader newObj (ConstI64 $ ((cast c) + header OBJECT_TYPE_ID_CHAR))
   store newObj (reg2val r)
+getInstIR i (MKCONSTANT r (B8 c)) = do
+  obj <- cgMkInt (ConstI64 $ cast c)
+  store obj (reg2val r)
+getInstIR i (MKCONSTANT r (B16 c)) = do
+  obj <- cgMkInt (ConstI64 $ cast c)
+  store obj (reg2val r)
+getInstIR i (MKCONSTANT r (B32 c)) = do
+  obj <- cgMkInt (ConstI64 $ cast c)
+  store obj (reg2val r)
+getInstIR i (MKCONSTANT r (B64 c)) = do
+  obj <- cgMkBits64 (ConstI64 c)
+  store obj (reg2val r)
 getInstIR i (MKCONSTANT r (I c)) = do
   obj <- cgMkInt (ConstI64 $ cast c)
   store obj (reg2val r)

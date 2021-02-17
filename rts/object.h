@@ -16,8 +16,10 @@
 #include "rts.h"
 
 #define OBJ_TYPE_CON_NO_ARGS 0xff
+// Object type "1" is used for all "opaque" numbers
 #define OBJ_TYPE_INT         0x01
 #define OBJ_TYPE_DOUBLE      0x01
+#define OBJ_TYPE_BITS64      0x01
 #define OBJ_TYPE_STRING      0x02
 #define OBJ_TYPE_CLOSURE     0x03
 #define OBJ_TYPE_CHAR        0x04
