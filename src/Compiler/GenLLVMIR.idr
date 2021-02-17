@@ -421,6 +421,7 @@ cgMkDouble val = do
   putObjectSlot newObj (ConstI64 0) val
   pure newObj
 
+
 -- change to List Bits8
 utf8EncodeChar : Char -> List Int
 utf8EncodeChar c = let codepoint = cast {to=Int} c
@@ -581,6 +582,15 @@ unboxFloat64 src = getObjectSlot {t=F64} !(load src) 0
 
 unboxFloat64' : IRValue IRObjPtr -> Codegen (IRValue F64)
 unboxFloat64' src = getObjectSlot {t=F64} src 0
+
+intToBits64' : IRValue IRObjPtr -> Codegen (IRValue IRObjPtr)
+intToBits64' val = do
+  ival <- unboxInt' val
+  truncatedVal <- mkAnd (Const I64 0xffffffffffffffff) ival
+  cgMkBits64 truncatedVal
+
+intToBits64 : IRValue (Pointer 0 IRObjPtr) -> Codegen (IRValue IRObjPtr)
+intToBits64 src = intToBits64' !(load src)
 
 total
 showConstant : Constant -> String
@@ -1112,18 +1122,71 @@ getInstIR i (OP r (Cast IntType Bits32Type) [r1]) = do
   store newObj (reg2val r)
 getInstIR i (OP r (Cast IntegerType Bits64Type) [r1]) = getInstIR i (OP r (Cast IntType Bits64Type) [r1])
 getInstIR i (OP r (Cast IntType Bits64Type) [r1]) = do
-  ival <- unboxInt (reg2val r1)
-  truncatedVal <- mkAnd (Const I64 0xffffffffffffffff) ival
-  newObj <- cgMkBits64 truncatedVal
+  newObj <- intToBits64 (reg2val r1)
   store newObj (reg2val r)
 
 
+getInstIR i (OP r (Cast Bits8Type Bits16Type) [r1]) = do
+  store !(load (reg2val r1)) (reg2val r)
+getInstIR i (OP r (Cast Bits8Type Bits32Type) [r1]) = do
+  store !(load (reg2val r1)) (reg2val r)
+getInstIR i (OP r (Cast Bits8Type Bits64Type) [r1]) = do
+  newObj <- intToBits64 (reg2val r1)
+  store newObj (reg2val r)
 getInstIR i (OP r (Cast Bits8Type IntType) [r1]) = do
   store !(load (reg2val r1)) (reg2val r)
+getInstIR i (OP r (Cast Bits8Type IntegerType) [r1]) = getInstIR i (OP r (Cast Bits8Type IntType) [r1])
+
+getInstIR i (OP r (Cast Bits16Type Bits8Type) [r1]) = do
+  ival <- unboxInt (reg2val r1)
+  truncatedVal <- mkAnd (Const I64 0xff) ival
+  store !(cgMkInt truncatedVal) (reg2val r)
+getInstIR i (OP r (Cast Bits16Type Bits32Type) [r1]) = do
+  store !(load (reg2val r1)) (reg2val r)
+getInstIR i (OP r (Cast Bits16Type Bits64Type) [r1]) = do
+  newObj <- intToBits64 (reg2val r1)
+  store newObj (reg2val r)
 getInstIR i (OP r (Cast Bits16Type IntType) [r1]) = do
   store !(load (reg2val r1)) (reg2val r)
+getInstIR i (OP r (Cast Bits16Type IntegerType) [r1]) = getInstIR i (OP r (Cast Bits16Type IntType) [r1])
+
+getInstIR i (OP r (Cast Bits32Type Bits8Type) [r1]) = do
+  ival <- unboxInt (reg2val r1)
+  truncatedVal <- mkAnd (Const I64 0xff) ival
+  store !(cgMkInt truncatedVal) (reg2val r)
+getInstIR i (OP r (Cast Bits32Type Bits16Type) [r1]) = do
+  ival <- unboxInt (reg2val r1)
+  truncatedVal <- mkAnd (Const I64 0xffff) ival
+  store !(cgMkInt truncatedVal) (reg2val r)
+getInstIR i (OP r (Cast Bits32Type Bits64Type) [r1]) = do
+  newObj <- intToBits64 (reg2val r1)
+  store newObj (reg2val r)
 getInstIR i (OP r (Cast Bits32Type IntType) [r1]) = do
   store !(load (reg2val r1)) (reg2val r)
+getInstIR i (OP r (Cast Bits32Type IntegerType) [r1]) = getInstIR i (OP r (Cast Bits32Type IntType) [r1])
+
+
+getInstIR i (OP r (Cast Bits64Type Bits8Type) [r1]) = do
+  obj <- load (reg2val r1)
+  ival <- getObjectSlot {t=I64} obj 0
+  truncatedVal <- mkAnd (Const I64 0xff) ival
+  store !(cgMkInt truncatedVal) (reg2val r)
+getInstIR i (OP r (Cast Bits64Type Bits16Type) [r1]) = do
+  obj <- load (reg2val r1)
+  ival <- getObjectSlot {t=I64} obj 0
+  truncatedVal <- mkAnd (Const I64 0xffff) ival
+  store !(cgMkInt truncatedVal) (reg2val r)
+getInstIR i (OP r (Cast Bits64Type Bits32Type) [r1]) = do
+  obj <- load (reg2val r1)
+  ival <- getObjectSlot {t=I64} obj 0
+  truncatedVal <- mkAnd (Const I64 0xffffffff) ival
+  store !(cgMkInt truncatedVal) (reg2val r)
+getInstIR i (OP r (Cast Bits64Type IntType) [r1]) = do
+  obj <- load (reg2val r1)
+  ival <- getObjectSlot {t=I64} obj 0
+  truncatedVal <- mkAnd (Const I64 0x7fffffffffffffff) ival
+  store !(cgMkInt truncatedVal) (reg2val r)
+getInstIR i (OP r (Cast Bits64Type IntegerType) [r1]) = getInstIR i (OP r (Cast Bits64Type IntType) [r1])
 
 getInstIR i (OP r (Cast IntType CharType) [r1]) = do
   ival <- unboxInt (reg2val r1)
