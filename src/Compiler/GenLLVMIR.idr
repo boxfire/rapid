@@ -1766,12 +1766,6 @@ mkSupport {n} name f = runCodegen (do
   args : Vect n (IRValue IRObjPtr)
   args = map (\i => SSA IRObjPtr $ "%arg" ++ show (finToNat i)) range
 
-supportPrelude : String
-supportPrelude = fastAppend [
-    mkSupport (NS (unsafeFoldNamespace ["String", "Data"]) (UN "fastConcat")) mk_prelude_fastAppend
-  , mkSupport (NS (unsafeFoldNamespace ["Types", "Prelude"]) (UN "fastPack")) mk_prelude_fastPack
-  ]
-
 fromCFType : CFType -> IRType
 fromCFType CFInt = I64
 fromCFType (CFIORes CFInt) = I64
@@ -1831,6 +1825,9 @@ builtinPrimitives = [
   , ("prim/blodwen-buffer-setstring", (4 ** mk_prim__bufferSetString))
   , ("prim/blodwen-buffer-getstring", (4 ** mk_prim__bufferGetString))
   , ("prim/blodwen-buffer-copydata", (6 ** mk_prim__bufferCopyData))
+
+  , ("prim/string-concat", (1 ** mk_prelude_fastAppend))
+  , ("prim/string-pack", (1 ** mk_prelude_fastPack))
 
   , ("prim/isNull", (1 ** mk_prim__nullAnyPtr))
   , ("prim/fileErrno", (1 ** mk_prim__fileErrno))
@@ -1904,6 +1901,9 @@ foreignRedirectMap = [
   , ("scheme:blodwen-buffer-setstring", "prim/blodwen-buffer-setstring")
   , ("scheme:blodwen-buffer-getstring", "prim/blodwen-buffer-getstring")
   , ("scheme:blodwen-buffer-copydata", "prim/blodwen-buffer-copydata")
+
+  , ("scheme:string-concat", "prim/string-concat")
+  , ("scheme:string-pack", "prim/string-pack")
   ]
 
 findForeignName : List String -> Maybe String
@@ -2043,6 +2043,5 @@ closureHelper = fastAppend [
   funcPtrTypes,
   "\ndefine fastcc %Return1 @idris_apply_closure(%RuntimePtr %HpArg, %TSOPtr %BaseArg, %RuntimePtr %HpLimArg, %ObjPtr %closureObjArg, %ObjPtr %argumentObjArg) gc \"statepoint-example\" {\n",
   runCodegen applyClosureHelperFunc,
-  "\n}\n\n",
-  supportPrelude
+  "\n}\n\n"
   ]

@@ -15,23 +15,11 @@ import Libraries.Utils.Path
 import Compiler.GenLLVMIR
 import Compiler.PrepareCode
 
-isBlocked : (Name, a) -> Bool
-isBlocked ((NS ns n), _) with (unsafeUnfoldNamespace ns)
-  isBlocked ((NS ns (UN "schemeCall")), _) | ["PrimIO"] = True
-  isBlocked ((NS ns (UN "prim__schemeCall")), _) | ["PrimIO"] = True
-  isBlocked ((NS ns (UN "fastPack")), _) | ["Types", "Prelude"] = True
-  isBlocked ((NS ns (MN "fastPack" _)), _) | ["Types", "Prelude"] = True
-  isBlocked ((NS ns (UN "fastConcat")), _) | ["Strings", "Data"] = True
-  isBlocked ((NS ns (MN "fastConcat" _)), _) | ["Strings", "Data"] = True
-  isBlocked ((NS _ _), _) | _ = False
-isBlocked _ = False
-
 export
-writeIR : (allFunctions : List (Name, VMDef)) -> (foreigns : List (Name, NamedDef)) ->
+writeIR : (functions : List (Name, VMDef)) -> (foreigns : List (Name, NamedDef)) ->
           (support : String) -> (outfile : String) -> (debug : Bool) -> IO ()
-writeIR allFunctions foreigns support outfile debug = do
+writeIR functions foreigns support outfile debug = do
   let foreignCode = map (compileForeign debug) (enumerate foreigns)
-  let functions = filter (not . isBlocked) allFunctions
   let nameMap = getNameMap $ map snd functions
   let indexedFuncs = enumerate functions
   let fcount = length indexedFuncs
