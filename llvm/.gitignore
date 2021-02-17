@@ -1,4 +1,6 @@
+.clangd
 test/Output
 /Makefile
 cmake_install.cmake
 /librapid.so
+*.plist
