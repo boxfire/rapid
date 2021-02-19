@@ -139,11 +139,12 @@ assignSSA value = do
   appendCode ("  " ++ varname ++ " = " ++ (toIR value))
   pure varname
 
-data IRType = I1 | I8 | I32 | I64 | F64 | FuncPtr | IRObjPtr | Pointer Int IRType
+data IRType = I1 | I8 | I16 | I32 | I64 | F64 | FuncPtr | IRObjPtr | Pointer Int IRType
 
 Show IRType where
   show I1 = "i1"
   show I8 = "i8"
+  show I16 = "i16"
   show I32 = "i32"
   show I64 = "i64"
   show F64 = "double"
@@ -1825,6 +1826,33 @@ mk_prim__bufferSetInt32 [buf, offsetObj, valObj, _] = do
   val <- mkTrunc {to=I32} !(unboxInt' valObj)
   store val intPtr
 
+mk_prim__bufferGetBits16 : Vect 3 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferGetBits16 [buf, offsetObj, _] = do
+  -- TODO: this assumes little-endian target architecture
+  -- TODO: size check in safe mode
+  --hdr <- getObjectHeader buf
+  --size <- mkAnd hdr (ConstI64 0xffffffff)
+  offset <- unboxInt' offsetObj
+  payloadStart <- getObjectPayloadAddr {t=I8} buf
+  bytePtr <- getElementPtr payloadStart offset
+  bitsPtr <- bitcastA {to=I16} {n=1} bytePtr
+  valRaw <- load bitsPtr
+  val <- mkZext valRaw
+  store !(cgMkInt val) (reg2val RVal)
+
+mk_prim__bufferSetBits16 : Vect 4 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__bufferSetBits16 [buf, offsetObj, valObj, _] = do
+  -- TODO: this assumes little-endian target architecture
+  -- TODO: size check in safe mode
+  --hdr <- getObjectHeader buf
+  --size <- mkAnd hdr (ConstI64 0xffffffff)
+  offset <- unboxInt' offsetObj
+  payloadStart <- getObjectPayloadAddr {t=I8} buf
+  bytePtr <- getElementPtr payloadStart offset
+  bitsPtr <- bitcastA {to=I16} {n=1} bytePtr
+  val <- mkTrunc {to=I16} !(unboxInt' valObj)
+  store val bitsPtr
+
 
 mk_prim__bufferGetString : Vect 4 (IRValue IRObjPtr) -> Codegen ()
 mk_prim__bufferGetString [buf, offsetObj, lengthObj, _] = do
@@ -1995,6 +2023,8 @@ builtinPrimitives = [
   , ("prim/blodwen-buffer-size", (1 ** mk_prim__bufferSize))
   , ("prim/blodwen-buffer-setbyte", (4 ** mk_prim__bufferSetByte))
   , ("prim/blodwen-buffer-getbyte", (3 ** mk_prim__bufferGetByte))
+  , ("prim/blodwen-buffer-setbits16", (4 ** mk_prim__bufferSetBits16))
+  , ("prim/blodwen-buffer-getbits16", (3 ** mk_prim__bufferGetBits16))
   , ("prim/blodwen-buffer-setint32", (4 ** mk_prim__bufferSetInt32))
   , ("prim/blodwen-buffer-getint32", (3 ** mk_prim__bufferGetInt32))
   , ("prim/blodwen-buffer-setint", (4 ** mk_prim__bufferSetInt))
