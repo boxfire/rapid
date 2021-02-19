@@ -451,6 +451,40 @@ void rapid_system_dir_close(Idris_TSO *base, ObjPtr dirPtrObj, ObjPtr _world) {
   closedir(d);
 }
 
+ObjPtr rapid_system_dir_next_entry(Idris_TSO *base, ObjPtr dirPtrObj, ObjPtr _world) {
+  if (OBJ_TYPE(dirPtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(dirPtrObj) != POINTER_SIZE) {
+    rapid_C_crash("invalid object passed to dir_next_entry");
+  }
+
+  DIR *d = *(DIR **)OBJ_PAYLOAD(dirPtrObj);
+  struct dirent *de = readdir(d);
+
+  if (errno != 0) {
+    base->rapid_errno = errno;
+    rapid_C_crash("readdir failed");
+  }
+
+  ObjPtr newStr = NULL;
+  if (de != NULL) {
+    ssize_t length = de->d_namlen;
+
+    if (length < 0) {
+      length = 0;
+    }
+
+    newStr = rapid_C_allocate(base, HEADER_SIZE + length);
+    newStr->hdr = MAKE_HEADER(OBJ_TYPE_STRING, length);
+    memcpy(OBJ_PAYLOAD(newStr), de->d_name, length);
+  }
+
+  ObjPtr newPtr = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
+  newPtr->hdr = MAKE_HEADER(OBJ_TYPE_PTR, 1);
+  OBJ_PUT_SLOT(newPtr, 0, newStr);
+
+  return newPtr;
+}
+
+
 const int TAG_LIST_NIL = 0;
 const int TAG_LIST_CONS = 1;
 
