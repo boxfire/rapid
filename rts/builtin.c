@@ -466,7 +466,7 @@ ObjPtr rapid_system_dir_next_entry(Idris_TSO *base, ObjPtr dirPtrObj, ObjPtr _wo
 
   ObjPtr newStr = NULL;
   if (de != NULL) {
-    ssize_t length = de->d_namlen;
+    ssize_t length = strlen(de->d_name);
 
     if (length < 0) {
       length = 0;
