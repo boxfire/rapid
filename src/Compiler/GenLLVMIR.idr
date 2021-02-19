@@ -1944,13 +1944,6 @@ mk_prim__currentDir [_] = do
   putObjectSlot newPtr (Const I64 0) dummy
   store newPtr (reg2val RVal)
 
-mk_prim__fileErrno : Vect 1 (IRValue IRObjPtr) -> Codegen ()
-mk_prim__fileErrno [_] = do
-  errnoAddr <- SSA (Pointer 0 I32) <$> assignSSA ("getelementptr inbounds %Idris_TSO.struct, %Idris_TSO.struct* %BaseArg, i32 0, i32 3")
-  errnoValue <- load errnoAddr
-  errnoObj <- cgMkInt !(mkZext errnoValue)
-  store errnoObj (reg2val RVal)
-
 mk_prelude_fastPack : Vect 1 (IRValue IRObjPtr) -> Codegen ()
 mk_prelude_fastPack [charListObj] = do
   newObj <- foreignCall {t=IRObjPtr} "@rapid_fast_pack" [toIR charListObj]
@@ -2039,7 +2032,6 @@ builtinPrimitives = [
   , ("prim/string-pack", (1 ** mk_prelude_fastPack))
 
   , ("prim/isNull", (1 ** mk_prim__nullAnyPtr))
-  , ("prim/fileErrno", (1 ** mk_prim__fileErrno))
   , ("prim/getString", (1 ** mk_prim__getString))
   ]
 
@@ -2078,6 +2070,9 @@ foreignRedirectMap = [
   , ("C:idris2_stdout, libidris2_support", "rapid_system_file_stdout")
   , ("C:idris2_stderr, libidris2_support", "rapid_system_file_stderr")
   , ("C:idris2_currentDirectory, libidris2_support", "rapid_system_current_dir")
+  , ("C:idris2_createDir, libidris2_support", "rapid_system_dir_create")
+  , ("C:idris2_changeDir, libidris2_support", "rapid_system_dir_change")
+  , ("C:idris2_removeDir, libidris2_support", "rapid_system_dir_remove")
   , ("C:idris2_openDir, libidris2_support", "rapid_system_dir_open")
   , ("C:idris2_closeDir, libidris2_support", "rapid_system_dir_close")
   , ("C:idris2_nextDirEntry, libidris2_support", "rapid_system_dir_next_entry")
@@ -2085,7 +2080,7 @@ foreignRedirectMap = [
   , ("C:idris2_readBufferData,libidris2_support", "idris_rts_read_buffer_data")
   , ("C:idris2_writeBufferData,libidris2_support", "idris_rts_write_buffer_data")
   , ("C:idris2_isNull, libidris2_support", "prim/isNull")
-  , ("C:idris2_fileErrno, libidris2_support", "prim/fileErrno")
+  , ("C:idris2_fileErrno, libidris2_support", "rapid_system_errno")
   , ("C:idris2_getString, libidris2_support", "prim/getString")
   , ("C:exit, libc 6", "rapid_system_exit")
   , ("C:system, libc 6", "rapid_system_system")

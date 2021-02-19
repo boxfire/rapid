@@ -64,6 +64,19 @@ void rapid_system_exit(Idris_TSO *base, int64_t exitCode, ObjPtr _world) {
   exit(exitCode);
 }
 
+int64_t rapid_system_errno(Idris_TSO *base, ObjPtr _world) {
+  switch(base->rapid_errno) {
+    case ENOENT:
+      return 2;
+    case EACCES:
+      return 2;
+    case EEXIST:
+      return 4;
+    default:
+      return base->rapid_errno + 5;
+  }
+}
+
 int64_t rapid_system_system(Idris_TSO *base, ObjPtr cmdObj, ObjPtr _world) {
   assert(OBJ_TYPE(cmdObj) == OBJ_TYPE_STRING);
   int length = OBJ_SIZE(cmdObj);
@@ -420,6 +433,70 @@ Word rapid_system_file_eof(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
 /*
  * Directory functions
  */
+ObjPtr rapid_system_current_dir(Idris_TSO *base, ObjPtr _world) {
+  char tmp[1024];
+  char *cwd = getcwd(tmp, 1024);
+
+  if (cwd == NULL) {
+    base->rapid_errno = errno;
+    rapid_C_crash("getcwd failed");
+    return NULL;
+  }
+
+  ObjPtr newStr = NULL;
+  ssize_t length = strlen(cwd);
+
+  newStr = rapid_C_allocate(base, HEADER_SIZE + length);
+  newStr->hdr = MAKE_HEADER(OBJ_TYPE_STRING, length);
+  memcpy(OBJ_PAYLOAD(newStr), cwd, length);
+
+  ObjPtr newPtr = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
+  newPtr->hdr = MAKE_HEADER(OBJ_TYPE_PTR, 1);
+  OBJ_PUT_SLOT(newPtr, 0, newStr);
+
+  return newPtr;
+}
+
+int64_t rapid_system_dir_create(Idris_TSO *base, ObjPtr fnameObj, ObjPtr _world) {
+  ObjPtr ptrObj = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
+  ptrObj->hdr = MAKE_HEADER(OBJ_TYPE_OPAQUE, POINTER_SIZE);
+
+  int length = OBJ_SIZE(fnameObj);
+  const char *str = (const char *)OBJ_PAYLOAD(fnameObj);
+  char *fnameCstr = (char *)alloca(length + 1);
+  memcpy(fnameCstr, str, length);
+  fnameCstr[length] = '\0';
+
+  int r = mkdir(fnameCstr, S_IRWXU | S_IRWXG | S_IRWXO);
+  if (r == 0) {
+    base->rapid_errno = 0;
+  } else {
+    base->rapid_errno = errno;
+  }
+
+  return r;
+}
+
+int64_t rapid_system_dir_change(Idris_TSO *base, ObjPtr fnameObj, ObjPtr _world) {
+  ObjPtr ptrObj = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
+  ptrObj->hdr = MAKE_HEADER(OBJ_TYPE_OPAQUE, POINTER_SIZE);
+
+  int length = OBJ_SIZE(fnameObj);
+  const char *str = (const char *)OBJ_PAYLOAD(fnameObj);
+  char *fnameCstr = (char *)alloca(length + 1);
+  memcpy(fnameCstr, str, length);
+  fnameCstr[length] = '\0';
+
+  int r = chdir(fnameCstr);
+  if (r == 0) {
+    base->rapid_errno = 0;
+  } else {
+    base->rapid_errno = errno;
+  }
+
+  return r;
+}
+
 ObjPtr rapid_system_dir_open(Idris_TSO *base, ObjPtr fnameObj, ObjPtr _world) {
   ObjPtr ptrObj = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
   ptrObj->hdr = MAKE_HEADER(OBJ_TYPE_OPAQUE, POINTER_SIZE);
