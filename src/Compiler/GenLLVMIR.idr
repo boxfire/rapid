@@ -2132,8 +2132,8 @@ getForeignFunctionIR debug i name cs args ret = do
 
 export
 compileForeign : Bool -> (Int, (Name, NamedDef)) -> String
-compileForeign debug (i, (n, MkNmForeign cs args ret)) = runCodegen $ getForeignFunctionIR debug i n cs args ret
-compileForeign debug _ = ""
+compileForeign debug (i, (n, MkNmForeign cs args ret)) = (runCodegen $ getForeignFunctionIR debug i n cs args ret) ++ "\n"
+compileForeign debug _ = "\n"
 
 export
 getVMIR : Bool -> SortedMap Name Int -> (Int, (Name, VMDef)) -> String
