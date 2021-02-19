@@ -2078,6 +2078,8 @@ foreignRedirectMap = [
   , ("C:idris2_stdout, libidris2_support", "rapid_system_file_stdout")
   , ("C:idris2_stderr, libidris2_support", "rapid_system_file_stderr")
   , ("C:idris2_currentDirectory, libidris2_support", "rapid_system_current_dir")
+  , ("C:idris2_openDir, libidris2_support", "rapid_system_dir_open")
+  , ("C:idris2_closeDir, libidris2_support", "rapid_system_dir_close")
   , ("C:idris2_putStr,libidris2_support", "rapid_putstr")
   , ("C:idris2_readBufferData,libidris2_support", "idris_rts_read_buffer_data")
   , ("C:idris2_writeBufferData,libidris2_support", "idris_rts_write_buffer_data")

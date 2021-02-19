@@ -1,5 +1,6 @@
 #include <alloca.h>
 #include <assert.h>
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -414,6 +415,40 @@ Word rapid_system_file_eof(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
 
   FILE *f = *(FILE **)OBJ_PAYLOAD(filePtrObj);
   return (0 != feof(f));
+}
+
+/*
+ * Directory functions
+ */
+ObjPtr rapid_system_dir_open(Idris_TSO *base, ObjPtr fnameObj, ObjPtr _world) {
+  ObjPtr ptrObj = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
+  ptrObj->hdr = MAKE_HEADER(OBJ_TYPE_OPAQUE, POINTER_SIZE);
+
+  int length = OBJ_SIZE(fnameObj);
+  const char *str = (const char *)OBJ_PAYLOAD(fnameObj);
+  char *fnameCstr = (char *)alloca(length + 1);
+  memcpy(fnameCstr, str, length);
+  fnameCstr[length] = '\0';
+
+  DIR *d = opendir(fnameCstr);
+  if (d) {
+    base->rapid_errno = 0;
+  } else {
+    base->rapid_errno = errno;
+  }
+
+  ptrObj->data = d;
+
+  return ptrObj;
+}
+
+void rapid_system_dir_close(Idris_TSO *base, ObjPtr dirPtrObj, ObjPtr _world) {
+  if (OBJ_TYPE(dirPtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(dirPtrObj) != POINTER_SIZE) {
+    rapid_C_crash("invalid object passed to dir_close");
+  }
+
+  DIR *d = *(DIR **)OBJ_PAYLOAD(dirPtrObj);
+  closedir(d);
 }
 
 const int TAG_LIST_NIL = 0;
