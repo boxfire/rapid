@@ -77,6 +77,11 @@ int64_t rapid_system_errno(Idris_TSO *base, ObjPtr _world) {
   }
 }
 
+ObjPtr rapid_system_fork(Idris_TSO *base, ObjPtr ioObj, ObjPtr _world) {
+  rapid_C_crash("NOT IMPLEMENTED: rapid_system_fork");
+  return NULL;
+}
+
 int64_t rapid_system_system(Idris_TSO *base, ObjPtr cmdObj, ObjPtr _world) {
   assert(OBJ_TYPE(cmdObj) == OBJ_TYPE_STRING);
   int length = OBJ_SIZE(cmdObj);
@@ -301,6 +306,14 @@ void rapid_putstr(Idris_TSO *base, ObjPtr strObj, ObjPtr _world) {
   int64_t length = OBJ_SIZE(strObj);
   fwrite(OBJ_PAYLOAD(strObj), length, 1, stdout);
   fflush(stdout);
+}
+
+int32_t rapid_system_getchar(Idris_TSO *base, ObjPtr _world) {
+  return getchar();
+}
+
+void rapid_system_putchar(Idris_TSO *base, int32_t c, ObjPtr _world) {
+  putchar(c);
 }
 
 int64_t rapid_system_file_chmod(Idris_TSO *base, ObjPtr fnameObj, uint64_t mode, ObjPtr _world) {

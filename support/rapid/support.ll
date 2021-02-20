@@ -56,6 +56,7 @@ declare ccc void @rapid_strreverse(%i8p1 noalias nocapture nofree nonnull writeo
 declare ccc void @rapid_system_exit(%TSOPtr, i64, %ObjPtr)
 declare ccc i64 @rapid_system_errno(%TSOPtr, %ObjPtr)
 declare ccc i64 @rapid_system_system(%TSOPtr, %ObjPtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_system_fork(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_system_get_env(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc i64 @idris_rts_write_buffer_data(%TSOPtr, %ObjPtr, %ObjPtr, i64, i64, %ObjPtr)
 declare ccc i64 @idris_rts_read_buffer_data(%TSOPtr, %ObjPtr, %ObjPtr, i64, i64, %ObjPtr)
@@ -88,6 +89,8 @@ declare ccc %ObjPtr @rapid_system_getargs(%TSOPtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_fast_pack(%TSOPtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_fast_append(%TSOPtr, %ObjPtr)
 declare ccc void @rapid_putstr(%TSOPtr, %ObjPtr, %ObjPtr)
+declare ccc i32 @rapid_system_getchar(%TSOPtr, %ObjPtr)
+declare ccc void @rapid_system_putchar(%TSOPtr, i32, %ObjPtr)
 
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p1i8.p0i8.i32(%i8p1 nocapture, i8* nocapture, i32, i1) nounwind
@@ -108,6 +111,8 @@ declare %ObjPtr @llvm.ptrmask.p1obj.i64(%ObjPtr, i64)
 declare fastcc noalias %ObjPtr @llvm.rapid.boxint(i64) "gc-leaf-function" readnone nounwind
 declare fastcc i64 @llvm.rapid.unboxint(%ObjPtr noalias nocapture nofree) "gc-leaf-function" readnone nounwind
 declare fastcc i1 @llvm.rapid.isdirect(%ObjPtr noalias nocapture nofree) "gc-leaf-function" readnone nounwind
+
+@error_msg_void = private unnamed_addr constant [23 x i8] c"Error: Executed 'void'\00"
 
 define private fastcc %Return1 @rapid_gc_enter(%TSOPtr %BaseArg, i64 %size.aligned) noinline gc "statepoint-example" {
   %frame = call i8* @llvm.addressofreturnaddress()

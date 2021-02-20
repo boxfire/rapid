@@ -403,6 +403,13 @@ mkTrunc {to} val = (SSA to) <$> assignSSA ("trunc " ++ toIR val ++ " to " ++ sho
 header : Int -> Integer
 header i = (cast i) `prim__shl_Integer` 32
 
+cgMkChar : IRValue I32 -> Codegen (IRValue IRObjPtr)
+cgMkChar val = do
+  newObj <- dynamicAllocate (ConstI64 0)
+  header <- mkAddNoWrap !(mkZext val) (ConstI64 $ header OBJECT_TYPE_ID_CHAR)
+  putObjectHeader newObj header
+  pure newObj
+
 cgMkInt : IRValue I64 -> Codegen (IRValue IRObjPtr)
 cgMkInt val = do
   boxed <- assignSSA $ "tail call fastcc noalias %ObjPtr @llvm.rapid.boxint(" ++ toIR val ++ ") \"gc-leaf-function\""
@@ -572,6 +579,11 @@ enumerate l = enumerate' 0 l where
   enumerate' _ [] = []
   enumerate' i (x::xs) = (i, x)::(enumerate' (i+1) xs)
 
+unboxChar' : IRValue IRObjPtr -> Codegen (IRValue I32)
+unboxChar' src = do
+  charHdr <- getObjectHeader src
+  pure !(mkTrunc charHdr)
+
 unboxInt' : IRValue IRObjPtr -> Codegen (IRValue I64)
 unboxInt' src = SSA I64 <$> assignSSA ("tail call fastcc i64 @llvm.rapid.unboxint(" ++ toIR src ++ ") \"gc-leaf-function\"")
 
@@ -733,6 +745,9 @@ mkCon tag args = do
                           )
   --when TRACE $ appendCode $ "call ccc void @idris_mkcon_ok(" ++ showSep ", " [toIR newObj] ++ ")"
   pure newObj
+
+mkUnit : Codegen (IRValue IRObjPtr)
+mkUnit = mkCon 0 []
 
 mutual
 getInstForConstCaseChar : {auto conNames : SortedMap Name Int} -> Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
@@ -1502,8 +1517,7 @@ getInstIR i (APPLY r fun arg) = do
   pure ()
 
 getInstIR i (MKCONSTANT r (Ch c)) = do
-  newObj <- dynamicAllocate (ConstI64 0)
-  putObjectHeader newObj (ConstI64 $ ((cast c) + header OBJECT_TYPE_ID_CHAR))
+  newObj <- cgMkChar (Const I32 $ cast c)
   store newObj (reg2val r)
 getInstIR i (MKCONSTANT r (B8 c)) = do
   obj <- cgMkInt (ConstI64 $ cast c)
@@ -1670,6 +1684,12 @@ compileExtPrim i (NS ns n) r args with (unsafeUnfoldNamespace ns)
   compileExtPrim i (NS ns (UN "prim__os")) r [] | ["Info", "System"] = do
     -- no cross compiling for now:
     store !(mkStr i System.Info.os) (reg2val r)
+  compileExtPrim i (NS ns (UN "void")) r _ | ["Uninhabited", "Prelude"] = do
+    appendCode $ "  call ccc void @rapid_crash(i8* bitcast ([23 x i8]* @error_msg_void to i8*)) noreturn"
+    appendCode $ "unreachable"
+  compileExtPrim i (NS ns (UN "prim__void")) r _ | ["Uninhabited", "Prelude"] = do
+    appendCode $ "  call ccc void @rapid_crash(i8* bitcast ([23 x i8]* @error_msg_void to i8*)) noreturn"
+    appendCode $ "unreachable"
   compileExtPrim i (NS ns n) r args | _ = compileExtPrimFallback (NS ns n) r args
 compileExtPrim i n r args = compileExtPrimFallback n r args
 
@@ -1967,6 +1987,8 @@ mkSupport {n} name f = runCodegen (do
   args = map (\i => SSA IRObjPtr $ "%arg" ++ show (finToNat i)) range
 
 fromCFType : CFType -> IRType
+fromCFType CFChar = I32
+fromCFType (CFIORes CFChar) = I32
 fromCFType CFInt = I64
 fromCFType (CFIORes CFInt) = I64
 fromCFType CFDouble = F64
@@ -1979,6 +2001,8 @@ cftypeIsUnit (CFIORes CFUnit) = True
 cftypeIsUnit _ = False
 
 wrapForeignResult : (cft : CFType) -> (v: IRValue (fromCFType cft)) -> Codegen (IRValue IRObjPtr)
+wrapForeignResult (CFChar) v = cgMkChar v
+wrapForeignResult (CFIORes CFChar) v = cgMkChar v
 wrapForeignResult (CFInt) v = cgMkInt v
 wrapForeignResult (CFIORes CFInt) v = cgMkInt v
 wrapForeignResult (CFDouble) v = cgMkDouble v
@@ -1989,6 +2013,9 @@ wrapForeignResult _ _ = do
   pure (SSA IRObjPtr "error")
 
 transformArg : (IRValue IRObjPtr, CFType) -> Codegen String
+transformArg (arg, CFChar) = do
+  i <- unboxChar' arg
+  pure (toIR i)
 transformArg (arg, CFInt) = do
   i <- unboxInt' arg
   pure (toIR i)
@@ -2062,6 +2089,8 @@ foreignRedirectMap = [
   , ("C:idris2_readChars, libidris2_support", "rapid_system_file_read_chars")
   , ("C:fgetc,libc 6", "rapid_system_file_read_char")
   , ("C:chmod, libc 6", "rapid_system_file_chmod")
+  , ("C:getchar,libc 6", "rapid_system_getchar")
+  , ("C:putchar,libc 6", "rapid_system_putchar")
   , ("C:idris2_getStr,libidris2_support", "rapid_system_stdin_getline")
   , ("C:idris2_writeLine, libidris2_support", "rapid_system_file_write_string")
   , ("C:idris2_eof, libidris2_support", "rapid_system_file_eof")
@@ -2109,6 +2138,8 @@ foreignRedirectMap = [
   , ("scheme:blodwen-buffer-setstring", "prim/blodwen-buffer-setstring")
   , ("scheme:blodwen-buffer-getstring", "prim/blodwen-buffer-getstring")
   , ("scheme:blodwen-buffer-copydata", "prim/blodwen-buffer-copydata")
+
+  , ("scheme:blodwen-thread", "rapid_system_fork")
 
   , ("scheme:string-concat", "prim/string-concat")
   , ("scheme:string-pack", "prim/string-pack")
