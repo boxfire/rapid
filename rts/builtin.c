@@ -341,9 +341,10 @@ Word rapid_system_file_write_string(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr s
   size_t size = OBJ_SIZE(strObj);
   size_t written = fwrite(str, 1, size, f);
   if (written != size) {
-    return 1;
+    // Attention: this builtin is supposed to return 0 on _failure_
+    return 0;
   }
-  return 0;
+  return 1;
 }
 
 // return type: Ptr String
