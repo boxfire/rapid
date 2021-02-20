@@ -2002,8 +2002,9 @@ genericForeign foreignName name argTypes ret = do
   let args = map (\(i, _) => SSA IRObjPtr ("%arg" ++ show i)) (enumerate argTypes)
   appendCode ("define private fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ map toIR args) ++ ") gc \"statepoint-example\" {")
   funcEntry
-  if cftypeIsUnit ret then
+  if cftypeIsUnit ret then do
     foreignVoidCall ("@" ++ foreignName) !(traverse transformArg (zip args argTypes))
+    store !(mkUnit) (reg2val RVal)
     else do
       fgResult <- foreignCall {t=fromCFType ret} ("@" ++ foreignName) !(traverse transformArg (zip args argTypes))
       store !(wrapForeignResult ret fgResult) (reg2val RVal)
