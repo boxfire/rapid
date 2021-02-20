@@ -33,9 +33,9 @@ void idris_rts_crash(long arg0) {
 void idris_rts_crash_msg(ObjPtr msg) {
   int length = OBJ_SIZE(msg);
   const char *str = (const char *)&(msg->data);
-  fprintf(stderr, "ERROR: ");
-  fwrite(str, length, 1, stderr);
-  fprintf(stderr, "\n");
+  fprintf(stdout, "ERROR: ");
+  fwrite(str, length, 1, stdout);
+  fprintf(stdout, "\n");
   exit(4);
 }
 
