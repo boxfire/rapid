@@ -268,6 +268,7 @@ ObjPtr rapid_system_file_open(Idris_TSO *base, ObjPtr fnameObj, ObjPtr modeObj, 
   memcpy(fnameCstr, str, length);
   fnameCstr[length] = '\0';
 
+  length = OBJ_SIZE(modeObj);
   str = (const char *)OBJ_PAYLOAD(modeObj);
   char *modeCstr = (char *)alloca(length + 1);
   memcpy(modeCstr, str, length);
