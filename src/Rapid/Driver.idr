@@ -23,14 +23,14 @@ writeIR functions foreigns support outfile debug = do
   let nameMap = getNameMap $ map snd functions
   let indexedFuncs = enumerate functions
   let fcount = length indexedFuncs
-  fPutStrLn stderr $ "functions to compile: " ++ show (length indexedFuncs)
+  ignore $ fPutStrLn stderr $ "functions to compile: " ++ show (length indexedFuncs)
   (Right outFile) <- openFile outfile WriteTruncate
   | Left err => putStrLn $ "error opening output file: " ++ show err
-  fPutStr outFile support
-  fPutStr outFile closureHelper
-  fPutStr outFile $ fastAppend foreignCode
+  ignore $ fPutStr outFile support
+  ignore $ fPutStr outFile closureHelper
+  ignore $ fPutStr outFile $ fastAppend foreignCode
 
-  for indexedFuncs (\c => do
+  for_ indexedFuncs (\c => do
     let i = 1 + fst c
     when (i `mod` 100 == 0) $ ignore $ fPutStrLn stderr ("compile fun " ++ show i ++ "/" ++ (show fcount) ++ ": " ++ safeName (fst (snd c)))
     let funcIr = getVMIR debug nameMap c

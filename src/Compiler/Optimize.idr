@@ -69,10 +69,10 @@ parameters (info : OptInfo)
            -- RVal from inlined function:
            addInstructon (DECLARE renumberedRval)
            -- function args:
-           for renumberedArgs (\arg => addInstructon (DECLARE arg))
+           for_ renumberedArgs (\arg => addInstructon (DECLARE arg))
 
-           for (zip renumberedArgs args) (\(t, f) => addInstructon (ASSIGN (t) (f)))
-           for iis (\ins => addInstructon $ renumberInst argShift ins)
+           for_ (zip renumberedArgs args) (\(t, f) => addInstructon (ASSIGN (t) (f)))
+           for_ iis (\ins => addInstructon $ renumberInst argShift ins)
            --addInstructon (CALL r False n args)
            addInstructon (ASSIGN r renumberedRval)
            pure ()

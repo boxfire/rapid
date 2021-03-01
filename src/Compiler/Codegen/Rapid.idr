@@ -28,7 +28,7 @@ shell args = showSep " " $ map shellQuote args
 runShell : List String -> IO ()
 runShell args = do
   let cmd = shell args
-  fPutStrLn stderr $ "+" ++ cmd
+  ignore $ fPutStrLn stderr $ "+" ++ cmd
   rc <- system cmd
   case rc of
        0 => pure ()
@@ -40,8 +40,8 @@ globalizeStackmap fname = do
   (Right outFile) <- openFile fname Append
   | Left err => do putStrLn $ "error opening asm file: " ++ show err
                    pure False
-  fPutStr outFile "\n.globl __LLVM_StackMaps\n"
-  closeFile outFile
+  ignore $ fPutStr outFile "\n.globl __LLVM_StackMaps\n"
+  ignore $ closeFile outFile
   pure True
 
 getDebug : List String -> Bool
@@ -60,11 +60,11 @@ compile defs tmpDir outputDir term outfile = do
   let asmFileName = appDirGen </> (outfile ++ ".s") -- compiled assembler
   let objectFileName = appDirGen </> (outfile ++ ".o") -- object file
   let binaryFileName = outputDir </> outfile
-  coreLift $ mkdirAll appDirGen
+  coreLift_ $ mkdirAll appDirGen
 
   directives <- getDirectives (Other "llvm")
   let debug = getDebug directives
-  coreLift $ fPutStrLn stderr ("debug: " ++ show debug)
+  coreLift_ $ fPutStrLn stderr ("debug: " ++ show debug)
 
   -- load supporting files first, so we can fail early
   support <- readDataFile $ "rapid" </> "support.ll"
@@ -72,15 +72,15 @@ compile defs tmpDir outputDir term outfile = do
   platformLib <- findDataFile $ "rapid" </> "platform.a"
   rapidLLVMPlugin <- findDataFile $ "rapid" </> "librapid.so"
 
-  cd <- getCompileData VMCode term
-  coreLift $ fPutStrLn stderr $ "got compiledata"
+  cd <- getCompileData False VMCode term
+  coreLift_ $ fPutStrLn stderr $ "got compiledata"
   let foreigns = map (\(n,_,d) => (n,d)) $ filter isFgn $ namedDefs cd
   let allFunctions = vmcode cd
   let optFlags = [
     "-mem2reg", "-constprop", "-constmerge", "-sccp", "-dce", "-globaldce",
     "-rewrite-statepoints-for-gc"]
 
-  coreLift $ writeIR allFunctions foreigns support outputFileName debug
+  coreLift_ $ writeIR allFunctions foreigns support outputFileName debug
 
   let lateTransformFlags = ["-rapid-lower"]
   coreLift $ do
@@ -98,8 +98,8 @@ compile defs tmpDir outputDir term outfile = do
 execute : Ref Ctxt Defs -> (tmpDir : String) -> ClosedTerm -> Core ()
 execute defs tmpDir term = do
   let tmpExecutableFile = "idris_tmp"
-  compile defs tmpDir tmpDir term tmpExecutableFile
-  coreLift $ system (tmpDir </> tmpExecutableFile)
+  ignore $ compile defs tmpDir tmpDir term tmpExecutableFile
+  coreLift_ $ system (tmpDir </> tmpExecutableFile)
   pure ()
 
 export

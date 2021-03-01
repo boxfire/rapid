@@ -28,18 +28,20 @@ compile defs tmpDir outputDir term outfile = do
   let appDirRel = outfile ++ "_rapid" -- relative to build dir
   let appDirGen = outputDir </> appDirRel -- relative to here
   let outputFileName = appDirGen </> (outfile ++ ".sexp") -- VMCode S-exp
-  coreLift $ mkdirAll appDirGen
+  Right () <- coreLift $ mkdirAll appDirGen
+    | Left err => do coreLift_ $ putStrLn $ "ERROR" ++ show err
+                     pure Nothing
 
-  cd <- getCompileData VMCode term
+  cd <- getCompileData False VMCode term
   let foreignDecls = map dumpFgn (namedDefs cd)
   let compiledFunctions = map dumpDef (vmcode cd)
 
   coreLift $ do
     (Right outFile) <- openFile outputFileName WriteTruncate
     | Left err => putStrLn $ "error opening output file: " ++ show err
-    fPutStr outFile $ fastAppend foreignDecls
-    for compiledFunctions (fPutStr outFile)
-    closeFile outFile
+    ignore $ fPutStr outFile $ fastAppend foreignDecls
+    for_ compiledFunctions (fPutStr outFile)
+    ignore $ closeFile outFile
     pure ()
 
   pure $ Nothing

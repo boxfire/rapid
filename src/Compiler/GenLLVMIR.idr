@@ -737,7 +737,7 @@ mkCon tag args = do
   hdrWithArgCount <- mkOr hdr (Const I64 ((cast $ length args) `prim__shl_Integer` 40))
   putObjectHeader newObj hdrWithArgCount
   let enumArgs = enumerate args
-  for enumArgs (\x => let (i, arg) = x in do
+  for_ enumArgs (\x => let (i, arg) = x in do
                             arg <- load (reg2val arg)
                             assertObjectTypeAny arg (cast i+1)
                             putObjectSlot newObj (ConstI64 $ cast i) arg
@@ -759,9 +759,9 @@ getInstForConstCaseChar i r alts def =
      scrutinee <- unboxChar (reg2val r)
      appendCode $ "  switch " ++ toIR scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeConstCaseLabel caseId) alts)) ++ " ]"
      appendCode $ caseId ++ "_default:"
-     traverse (getInstIRWithComment i) def'
+     traverse_ (getInstIRWithComment i) def'
      appendCode $ "br label %" ++ labelEnd
-     traverse (makeCaseAlt caseId) alts
+     traverse_ (makeCaseAlt caseId) alts
      appendCode $ labelEnd ++ ":"
      pure ()
   where
@@ -782,9 +782,9 @@ getInstForConstCaseInt i r alts def =
      scrutinee <- unboxInt (reg2val r)
      appendCode $ "  switch " ++ toIR scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " (map (makeConstCaseLabel caseId) alts)) ++ " ]"
      appendCode $ caseId ++ "_default:"
-     traverse (getInstIRWithComment i) def'
+     traverse_ (getInstIRWithComment i) def'
      appendCode $ "br label %" ++ labelEnd
-     traverse (makeCaseAlt caseId) alts
+     traverse_ (makeCaseAlt caseId) alts
      appendCode $ labelEnd ++ ":"
      pure ()
   where
@@ -805,13 +805,13 @@ getInstForConstCaseString i r alts def =
      caseId <- mkVarName "case_"
      labelEnd <- genLabel $ caseId ++ "_end"
 
-     traverse (makeCaseAlt caseId labelEnd scrutinee) numAlts
+     traverse_ (makeCaseAlt caseId labelEnd scrutinee) numAlts
 
      labelDefault <- genLabel $ caseId ++ "_default"
      appendCode $ "br " ++ toIR labelDefault
      beginLabel labelDefault
 
-     traverse (getInstIRWithComment i) def'
+     traverse_ (getInstIRWithComment i) def'
      appendCode $ "br " ++ toIR labelEnd
 
      beginLabel labelEnd
@@ -1565,9 +1565,9 @@ getInstIR {conNames} i (CASE r alts def) =
      scrutinee <- assignSSA $ "and i64 " ++ (show 0xffffffff) ++ ", " ++ showWithoutType header
      appendCode $ "  switch i64 " ++ scrutinee ++ ", label %" ++ caseId ++ "_default [ " ++ (showSep "\n      " !(traverse (makeCaseLabel caseId) alts)) ++ " ]"
      appendCode $ caseId ++ "_default:"
-     traverse (getInstIRWithComment i) def'
+     traverse_ (getInstIRWithComment i) def'
      appendCode $ "br label %" ++ labelEnd
-     traverse (makeCaseAlt caseId) alts
+     traverse_ (makeCaseAlt caseId) alts
      appendCode $ labelEnd ++ ":"
      pure ()
   where
