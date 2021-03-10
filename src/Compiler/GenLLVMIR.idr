@@ -837,12 +837,12 @@ intBinary op dest a b = do
   obj <- cgMkInt !(op i1 i2)
   store obj (reg2val dest)
 
-boundedIntBinary : Int -> (IRValue I64 -> IRValue I64 -> Codegen (IRValue I64)) -> Reg -> Reg -> Reg -> Codegen ()
+boundedIntBinary : Integer -> (IRValue I64 -> IRValue I64 -> Codegen (IRValue I64)) -> Reg -> Reg -> Reg -> Codegen ()
 boundedIntBinary mask op dest a b = do
   i1 <- unboxInt (reg2val a)
   i2 <- unboxInt (reg2val b)
   result <- op i1 i2
-  truncatedVal <- mkAnd (Const I64 0xff) result
+  truncatedVal <- mkAnd (Const I64 mask) result
   obj <- cgMkInt truncatedVal
   store obj (reg2val dest)
 
