@@ -9,16 +9,16 @@ semi-space garbage collector.
 
 ## Prerequisites
 
-LLVM 10 needs to be installed and the binaries available in your `$PATH`. To
+LLVM 11 needs to be installed and the binaries available in your `$PATH`. To
 check if that is the case, try the following command:
 
     $ opt --version
     LLVM (http://llvm.org/):
-      LLVM version 10.0.1
+      LLVM version 11.1.0
 
       Optimized build.
       Default target: x86_64-pc-linux-gnu
-      Host CPU: skylake
+      Host CPU: znver2
 
 ## Compiling
 
