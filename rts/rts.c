@@ -105,7 +105,6 @@ int main(int argc, char **argv) {
   *(int64_t *)tso->stack_top = 0x7f7d7c7b12345678;
   *((int64_t *)tso->stack_top - 1) = 0x7f7d7c7b12345678;
   *((int64_t *)tso->stack_top - 2) = 0x7f7d7c7b12345678;
-  fprintf(stderr, "stack allocated at: %p (+%ld) => %p\n", tso->stack_bottom, tso->stack_size, tso->stack_top);
 
   task_start(tso);
 
