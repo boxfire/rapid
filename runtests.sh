@@ -32,6 +32,14 @@ if [[ -n "$1" ]]; then
   fi
 fi
 
+if [[ -n "$RAPID_TEST_DEBUG" ]]; then
+  debug_directive="--directive debug"
+  echo "test will be compiled with DEBUG directive"
+else
+  debug_directive=""
+  echo "test will be compiled without DEBUG directive"
+fi
+
 count_total=0
 count_ok=0
 count_failed=0
@@ -43,7 +51,7 @@ for test in ${tests[*]}; do
   idr=$(echo ${testdir}/*.idr)
   pushd "$testdir" >/dev/null
   rm -rf ./build output
-  if $rapidc --directive debug -o "$test" "$idr" >& "${testdir}/compile.log"; then
+  if $rapidc $debug_directive -o "$test" "$idr" >& "${testdir}/compile.log"; then
     "./build/exec/$test" > "${testdir}/output"
     #"$testdir/build/rapid/$(basename "$idr" .idr).native" > "${testdir}/output"
 
