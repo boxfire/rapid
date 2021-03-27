@@ -71,10 +71,10 @@ repeatStr s (S x) = s ++ repeatStr s x
 fullShow : Name -> String
 fullShow (NS ns n) = showNSWithSep "." ns ++ "." ++ fullShow n
 fullShow (UN n) = n
-fullShow (MN n i) = "{" ++ n ++ ":" ++ show i ++ "}"
-fullShow (PV n i) = "{P:" ++ fullShow n ++ ":" ++ show i ++ "}"
+fullShow (MN n i) = "_{" ++ n ++ ":" ++ show i ++ "}"
+fullShow (PV n i) = "_{P:" ++ fullShow n ++ ":" ++ show i ++ "}"
 fullShow (DN _ n) = fullShow n
-fullShow (RF n) = ".(" ++ n ++ ")"
+fullShow (RF n) = "_.(" ++ n ++ ")"
 fullShow (Nested (outer, idx) inner) = show outer ++ "/" ++ show idx ++ "/" ++ fullShow inner
 fullShow (CaseBlock outer i) = "case/" ++ outer ++ "$" ++ show i
 fullShow (WithBlock outer i) = "with/" ++ outer ++ "$" ++ show i
