@@ -8,6 +8,7 @@ main = do
   printLn $ "1.2"
 
   printLn $ cast {to = Int} 4.8
+  printLn $ cast {to = Integer} 5.0e100
   printLn $ cast {to = Integer} 1.2
   printLn $ cast {to = String} 2.7
 

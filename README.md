@@ -20,6 +20,8 @@ check if that is the case, try the following command:
       Default target: x86_64-pc-linux-gnu
       Host CPU: znver2
 
+GMP needs to be installed (`libgmp-dev` on Debian).
+
 ## Compiling
 
     $ make

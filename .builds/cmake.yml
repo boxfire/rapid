@@ -13,6 +13,7 @@ repositories:
 packages:
   - chezscheme
   - cmake
+  - libgmp-dev
   - ninja-build
   - python3-pip
   # From LLVM-10 repository:

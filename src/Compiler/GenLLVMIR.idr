@@ -11,6 +11,7 @@ import System.Info
 import Compiler.CompileExpr
 import Compiler.VMCode
 import Core.TT
+import Data.Utils
 import Libraries.Data.SortedMap
 import Libraries.Utils.Hex
 
@@ -52,6 +53,9 @@ OBJECT_TYPE_ID_POINTER = 0x08
 
 OBJECT_TYPE_ID_IOARRAY : Int
 OBJECT_TYPE_ID_IOARRAY = 0x09
+
+OBJECT_TYPE_ID_BIGINT : Int
+OBJECT_TYPE_ID_BIGINT = 0x0a
 
 CLOSURE_MAX_ARGS : Int
 CLOSURE_MAX_ARGS = 1024
@@ -157,6 +161,19 @@ data IRLabel = MkLabel String
 RuntimePtr : IRType
 RuntimePtr = Pointer 0 I8
 
+TARGET_SIZE_T : IRType
+TARGET_SIZE_T = I64
+
+MP_LIMB_T : IRType
+MP_LIMB_T = I64
+
+IEEE_DOUBLE_MASK_EXP  : Bits64
+IEEE_DOUBLE_MASK_EXP  = 0x7ff0000000000000
+IEEE_DOUBLE_MASK_FRAC : Bits64
+IEEE_DOUBLE_MASK_FRAC = 0x000fffffffffffff
+IEEE_DOUBLE_MASK_SIGN : Bits64
+IEEE_DOUBLE_MASK_SIGN = 0x8000000000000000
+
 ToIR IRLabel where
   toIR (MkLabel l) = "label %" ++ l
   showWithoutType (MkLabel l) = "%" ++ l
@@ -256,6 +273,9 @@ mkBinOp {t} s a b = do
   result <- assignSSA $ s ++ " " ++ (show t) ++ " " ++ showWithoutType a ++ ", " ++ showWithoutType b
   pure $ SSA t result
 
+mkXOr : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
+mkXOr = mkBinOp "xor"
+
 mkOr : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
 mkOr = mkBinOp "or"
 
@@ -299,6 +319,10 @@ branch cond whenTrue whenFalse =
 jump : IRLabel -> Codegen ()
 jump to =
   appendCode $ "br " ++ toIR to
+
+mkSelect : {t : IRType} -> IRValue I1 -> IRValue t -> IRValue t -> Codegen (IRValue t)
+mkSelect {t} s a b = do
+  (SSA t) <$> assignSSA ("select " ++ toIR s ++ ", " ++ toIR a ++ ", " ++ toIR b)
 
 mkMin : {t : IRType} -> IRValue t -> IRValue t -> Codegen (IRValue t)
 mkMin {t} a b = do
@@ -400,8 +424,40 @@ dynamicAllocate payloadSize = do
 mkTrunc : {to : IRType} -> IRValue from -> Codegen (IRValue to)
 mkTrunc {to} val = (SSA to) <$> assignSSA ("trunc " ++ toIR val ++ " to " ++ show to)
 
+mkAbs : IRValue I32 -> Codegen (IRValue I32)
+mkAbs val = call "ccc" "@rapid.abs.i32" [toIR val, "i1 1"]
+
+mkAbs64 : IRValue I64 -> Codegen (IRValue I64)
+mkAbs64 val = call "ccc" "@rapid.abs.i64" [toIR val, "i1 1"]
+
 header : Int -> Integer
 header i = (cast i) `prim__shl_Integer` 32
+
+mkIf : {t : IRType} ->
+       (cond : Codegen (IRValue I1)) ->
+       (true : Codegen (IRValue t)) ->
+       (false : Codegen (IRValue t)) ->
+               Codegen (IRValue t)
+mkIf cond true false = do
+  lblTrue <- genLabel "t"
+  lblTrueEnd <- genLabel "te"
+  lblFalse <- genLabel "f"
+  lblFalseEnd <- genLabel "fe"
+  lblEnd <- genLabel "e"
+
+  branch !(cond) lblTrue lblFalse
+  beginLabel lblTrue
+  valTrue <- true
+  jump lblTrueEnd
+  beginLabel lblTrueEnd
+  jump lblEnd
+  beginLabel lblFalse
+  valFalse <- false
+  jump lblFalseEnd
+  beginLabel lblFalseEnd
+  jump lblEnd
+  beginLabel lblEnd
+  phi [(valTrue, lblTrueEnd), (valFalse, lblFalseEnd)]
 
 cgMkChar : IRValue I32 -> Codegen (IRValue IRObjPtr)
 cgMkChar val = do
@@ -420,6 +476,48 @@ cgMkBits64 val = do
   newObj <- dynamicAllocate (ConstI64 8)
   putObjectHeader newObj (ConstI64 $ header OBJECT_TYPE_ID_BITS64)
   putObjectSlot newObj (ConstI64 0) val
+  pure newObj
+
+GMP_LIMB_SIZE : Integer
+GMP_LIMB_SIZE = 8
+
+GMP_LIMB_BOUND : Integer
+GMP_LIMB_BOUND = (1 `prim__shl_Integer` (8 * GMP_LIMB_SIZE))
+
+cgMkConstInteger : Int -> Integer -> Codegen (IRValue IRObjPtr)
+cgMkConstInteger i val =
+    do
+      let absVal = abs val
+      let (limbCount ** limbs) = getLimbs absVal
+      newHeader <- mkOr (Const I64 $ (header OBJECT_TYPE_ID_BIGINT)) (Const I64 $ cast limbCount)
+      newObj <- dynamicAllocate (Const I64 $ GMP_LIMB_SIZE * (cast limbCount))
+      for_ (enumerateVect limbs) (\(i, limb) => do
+           putObjectSlot newObj (Const I64 $ cast i) (Const I64 limb)
+           )
+      putObjectHeader newObj newHeader
+      pure newObj
+  where
+      getLimbs : Integer -> (n:Nat ** Vect n Integer)
+      getLimbs 0 = (0 ** [])
+      getLimbs x = let (n ** v) = (getLimbs (x `div` GMP_LIMB_BOUND))
+                       limb = (x `mod` GMP_LIMB_BOUND) in
+                       ((S n) ** (limb::v))
+
+cgMkIntegerSigned : IRValue I64 -> Codegen (IRValue IRObjPtr)
+cgMkIntegerSigned val = do
+  isNegative <- icmp "slt" val (Const I64 0)
+  isZero <- icmp "eq" val (Const I64 0)
+  newSize1 <- mkSelect isNegative (Const I32 (-1)) (Const I32 1)
+  newSize <- mkSelect isZero (Const I32 0) newSize1
+  newHeader <- mkOr (Const I64 $ (header OBJECT_TYPE_ID_BIGINT)) !(mkZext newSize)
+  newSizeAbs <- mkAbs newSize
+  allocSize <- mkMul !(mkZext newSizeAbs) (Const I64 GMP_LIMB_SIZE)
+  newObj <- dynamicAllocate allocSize
+  ignore $ mkIf (pure isZero) (pure (Const I1 0)) (do
+       absVal <- mkAbs64 val
+       putObjectSlot newObj (Const I64 0) absVal
+       pure $ Const I1 0)
+  putObjectHeader newObj newHeader
   pure newObj
 
 cgMkDouble : IRValue F64 -> Codegen (IRValue IRObjPtr)
@@ -460,12 +558,17 @@ getStringIR : List Int -> String
 getStringIR utf8bytes = concatMap okchar utf8bytes
   where
     okchar : Int -> String
-    -- c > '"' && c <= '~' && c /= '\\'
-    okchar c = if c > 34 && c <= 126 && c /= 92
+    -- c >= ' ' && c <= '~' && c /= '\\' && c /= '"'
+    okchar c = if c >= 32 && c <= 126 && c /= 92 && c /= 34
                   then cast $ cast {to=Char} c
                   else "\\" ++ asHex2 c
 
 data CompareOp = LT | LTE | EQ | GTE | GT
+
+getObjectSize : IRValue IRObjPtr -> Codegen (IRValue I32)
+getObjectSize obj = do
+  hdr <- getObjectHeader obj
+  mkTrunc {to=I32} hdr
 
 stringCompare : CompareOp -> Reg -> Reg -> Codegen (IRValue IRObjPtr)
 stringCompare op r1 r2 = do
@@ -572,6 +675,12 @@ mkStr i s = do
   appendCode $ "  call void @llvm.memcpy.p1i8.p0i8.i32(" ++ toIR strPayload ++ ", " ++ toIR cn ++ ", i32 " ++show len ++", i1 false)"
   pure newObj
 
+mkRuntimeCrash : Int -> String -> Codegen ()
+mkRuntimeCrash i s = do
+  msg <- mkStr i s
+  appendCode $ "  call ccc void @idris_rts_crash_msg(" ++ toIR msg ++ ") noreturn"
+  appendCode $ "unreachable"
+
 export
 enumerate : List a -> List (Int, a)
 enumerate l = enumerate' 0 l where
@@ -616,8 +725,6 @@ showConstant other = "(CONST " ++ show other ++ ")"
 
 makeConstCaseLabel : String -> (Constant, a) -> String
 makeConstCaseLabel caseId (I i,_) = "i64 " ++ show i ++ ", label %" ++ caseId ++ "_is_" ++ show i
--- FIXME: how to handle this with GMP Integers?
-makeConstCaseLabel caseId (BI i,_) = "i64 " ++ show i ++ ", label %" ++ caseId ++ "_is_" ++ show i
 makeConstCaseLabel caseId (Ch c,_) = "i32 " ++ show i ++ ", label %" ++ caseId ++ "_is_" ++ show i where i:Int; i = (cast {to=Int} c)
 makeConstCaseLabel caseId (c,_) = "const case error: " ++ (showConstant c)
 
@@ -681,6 +788,24 @@ compareStr obj1 obj2 = do
   beginLabel lblEnd
   phi [(headersEqual, lblStart), (contentsEqual, lblCompareContents)]
   --(SSA I1) <$> assignSSA ("phi i1 [ " ++ showWithoutType headersEqual ++ ", " ++ showWithoutType lblStart ++ " ], [ " ++ showWithoutType contentsEqual ++ ", " ++ showWithoutType lblCompareContents ++ " ]")
+
+-- compare two BigInts `a` and `b`, return -1 if a<b, +1 if a>b, 0 otherwise
+compareInteger : IRValue IRObjPtr -> IRValue IRObjPtr -> Codegen (IRValue I64)
+compareInteger obj1 obj2 = do
+  size1 <- getObjectSize obj1
+  size2 <- getObjectSize obj2
+  cmpResult <- mkIf (icmp "slt" size1 size2) (pure (Const I64 (-1))) (
+    mkIf (icmp "sgt" size1 size2) (pure (Const I64 1)) (do
+         limbs1 <- getObjectPayloadAddr {t=I64} obj1
+         limbs2 <- getObjectPayloadAddr {t=I64} obj2
+         absSize <- mkZext {to=I64} !(mkAbs size1)
+         mpnResult <- call {t=I32} "ccc" "@__gmpn_cmp" [toIR limbs1, toIR limbs2, toIR absSize]
+         sizeIsNegative <- icmp "slt" size1 (Const I32 0)
+         mkSext !(mkSelect sizeIsNegative !(mkSub (Const I32 0) mpnResult) mpnResult)
+         )
+         )
+
+  pure cmpResult
 
 unboxChar : IRValue (Pointer 0 IRObjPtr) -> Codegen (IRValue I32)
 unboxChar objPtr = do
@@ -830,6 +955,39 @@ getInstForConstCaseString i r alts def =
       beginLabel labelAltNext
     makeCaseAlt _ _ _ (_, c, _) = appendCode $ "ERROR: constcase must be Str, got: " ++ show c
 
+getInstForConstCaseInteger : {auto conNames : SortedMap Name Int} -> Int -> Reg -> List (Constant, List VMInst) -> Maybe (List VMInst) -> Codegen ()
+getInstForConstCaseInteger i r alts def =
+  do let def' = fromMaybe [(ERROR $ "no default in const case (Integer)")] def
+     assertObjectType r OBJECT_TYPE_ID_BIGINT
+     scrutinee <- load (reg2val r)
+     let numAlts = enumerate alts
+     caseId <- mkVarName "case_"
+     labelEnd <- genLabel $ caseId ++ "_end"
+
+     traverse_ (makeCaseAlt caseId labelEnd scrutinee) numAlts
+
+     labelDefault <- genLabel $ caseId ++ "_default"
+     appendCode $ "br " ++ toIR labelDefault
+     beginLabel labelDefault
+
+     traverse_ (getInstIRWithComment i) def'
+     appendCode $ "br " ++ toIR labelEnd
+
+     beginLabel labelEnd
+  where
+    makeCaseAlt : String -> IRLabel -> IRValue IRObjPtr -> (Int, Constant, List VMInst) -> Codegen ()
+    makeCaseAlt caseId labelEnd scrutinee (idx, BI bi, is) = do
+      let labelAltStart = MkLabel (caseId ++ "_alt_" ++ show idx)
+      let labelAltNext = MkLabel (caseId ++ "_next" ++ show idx)
+      compBI <- cgMkConstInteger i bi
+      match <- icmp "eq" (Const I64 0) !(compareInteger compBI scrutinee)
+      appendCode $ "br " ++ toIR match ++ ", " ++ toIR labelAltStart ++ ", " ++ toIR labelAltNext
+      beginLabel labelAltStart
+      traverse_ (getInstIRWithComment i) is
+      appendCode $ "br " ++ toIR labelEnd
+      beginLabel labelAltNext
+    makeCaseAlt _ _ _ (_, c, _) = appendCode $ "ERROR: constcase must be BI, got: " ++ show c
+
 intBinary : (IRValue I64 -> IRValue I64 -> Codegen (IRValue I64)) -> Reg -> Reg -> Reg -> Codegen ()
 intBinary op dest a b = do
   i1 <- unboxInt (reg2val a)
@@ -846,6 +1004,210 @@ boundedIntBinary mask op dest a b = do
   obj <- cgMkInt truncatedVal
   store obj (reg2val dest)
 
+addInteger : IRValue IRObjPtr -> IRValue IRObjPtr -> Codegen (IRValue IRObjPtr)
+addInteger i1 i2 = do
+      s1 <- getObjectSize i1
+      s2 <- getObjectSize i2
+      i1Negative <- icmp "slt" s1 (Const I32 0)
+      s1a <- mkAbs s1
+      s2a <- mkAbs s2
+      i1longer <- icmp "ugt" s1a s2a
+      -- "big" and "small" refer just to the respective limb counts
+      -- it doesn't matter which number is actually bigger
+      big <- mkSelect i1longer i1 i2
+      small <- mkSelect i1longer i2 i1
+      size1 <- mkZext {to=I64} !(mkSelect {t=I32} i1longer s1a s2a)
+      size2 <- mkZext {to=I64} !(mkSelect {t=I32} i1longer s2a s1a)
+      newLength <- mkAdd size1 (Const I64 1)
+      newSize <- mkMul (Const I64 GMP_LIMB_SIZE) newLength
+      newObj <- dynamicAllocate newSize
+      carry <- call {t=I64} "ccc" "@__gmpn_add" [
+        toIR !(getObjectPayloadAddr {t=I64} newObj),
+        toIR !(getObjectPayloadAddr {t=I64} big),
+        toIR size1,
+        toIR !(getObjectPayloadAddr {t=I64} small),
+        toIR size2
+        ]
+      putObjectSlot newObj size1 carry
+      absRealNewSize <- mkAdd size1 carry
+      signedNewSize <- mkSelect i1Negative !(mkSub (Const I64 0) absRealNewSize) absRealNewSize
+      signedNewSize32 <- mkAnd (Const I64 0xffffffff) signedNewSize
+      newHeader <- mkOr (Const I64 $ (header OBJECT_TYPE_ID_BIGINT)) signedNewSize32
+      putObjectHeader newObj newHeader
+      pure newObj
+
+subInteger : IRValue IRObjPtr -> IRValue IRObjPtr -> Codegen (IRValue IRObjPtr)
+subInteger i1 i2 = do
+      -- Subtract the smaller (by abs. value) from the larger (by abs. value)
+      -- and use the sign of the larger (by abs. value) number as sign for the
+      -- returned result.
+      s1 <- getObjectSize i1
+      s2 <- getObjectSize i2
+      i1Negative <- icmp "slt" s1 (Const I32 0)
+      s1a <- mkAbs s1
+      s2a <- mkAbs s2
+      i1longer <- icmp "ugt" s1a s2a
+      i2longer <- icmp "ugt" s2a s1a
+      i1bigger <- mkIf (pure i1longer) (pure $ Const I1 1) (mkIf (pure i2longer) (pure $ Const I1 0) (icmp "sgt" !(call "ccc" "@__gmpn_cmp" [
+                                toIR !(getObjectPayloadAddr {t=I64} i1),
+                                toIR !(getObjectPayloadAddr {t=I64} i2),
+                                toIR !(mkZext {to=I64} s1a)
+                                ]) (Const I32 0))
+        )
+      big <- mkSelect i1bigger i1 i2
+      small <- mkSelect i1bigger i2 i1
+      swapped <- mkSelect i1bigger (Const I1 0) (Const I1 1)
+      bigSize <- getObjectSize big
+      bigSizeAbs <- mkAbs bigSize
+      smallSizeAbs <- mkAbs !(getObjectSize small)
+      newSize <- mkMul (Const I64 GMP_LIMB_SIZE) !(mkZext {to=I64} bigSizeAbs)
+      newObj <- dynamicAllocate newSize
+      absDiff <- call {t=I64} "ccc" "@__gmpn_sub" [
+        toIR !(getObjectPayloadAddr {t=I64} newObj),
+        toIR !(getObjectPayloadAddr {t=I64} big),
+        toIR !(mkZext {to=I64} bigSizeAbs),
+        toIR !(getObjectPayloadAddr {t=I64} small),
+        toIR !(mkZext {to=I64} smallSizeAbs)
+        ]
+      absRealNewSize <- call {t=I64} "ccc" "@rapid_bigint_real_size" [
+        toIR !(getObjectPayloadAddr {t=I64} newObj),
+        toIR !(mkZext {to=I64} bigSizeAbs)
+        ]
+      resultIsNegative <- mkXOr swapped i1Negative
+      signedNewSize <- mkSelect resultIsNegative !(mkSub (Const I64 0) absRealNewSize) absRealNewSize
+      signedNewSize32 <- mkAnd (Const I64 0xffffffff) signedNewSize
+      newHeader <- mkOr (Const I64 $ (header OBJECT_TYPE_ID_BIGINT)) signedNewSize32
+      putObjectHeader newObj newHeader
+      pure newObj
+
+mulInteger : IRValue IRObjPtr -> IRValue IRObjPtr -> Codegen (IRValue IRObjPtr)
+mulInteger i1 i2 = do
+      s1 <- getObjectSize i1
+      s2 <- getObjectSize i2
+      zero1 <- icmp "eq" s1 (Const I32 0)
+      zero2 <- icmp "eq" s2 (Const I32 0)
+      resultIsZero <- mkOr zero1 zero2
+      mkIf (pure resultIsZero) (do
+           newObj <- dynamicAllocate (Const I64 0)
+           putObjectHeader newObj (Const I64 $ (header OBJECT_TYPE_ID_BIGINT))
+           pure newObj) (do
+        sx <- mkXOr s1 s2
+        signsMatch <- icmp "sge" sx (Const I32 0)
+        s1a <- mkAbs s1
+        s2a <- mkAbs s2
+        i1longer <- icmp "ugt" s1a s2a
+        -- "big" and "small" refer just to the respective limb counts
+        -- it doesn't matter which number is actually bigger
+        big <- mkSelect i1longer i1 i2
+        small <- mkSelect i1longer i2 i1
+        size1 <- mkZext {to=I64} !(mkSelect {t=I32} i1longer s1a s2a)
+        size2 <- mkZext {to=I64} !(mkSelect {t=I32} i1longer s2a s1a)
+        newLength <- mkAdd size1 size2
+        newSize <- mkMul (Const I64 GMP_LIMB_SIZE) newLength
+        newObj <- dynamicAllocate newSize
+        ignore $ call {t=I64} "ccc" "@__gmpn_mul" [
+          toIR !(getObjectPayloadAddr {t=I64} newObj),
+          toIR !(getObjectPayloadAddr {t=I64} big),
+          toIR size1,
+          toIR !(getObjectPayloadAddr {t=I64} small),
+          toIR size2
+          ]
+        absRealNewSize <- call {t=I64} "ccc" "@rapid_bigint_real_size" [
+          toIR !(getObjectPayloadAddr {t=I64} newObj),
+          toIR newLength
+          ]
+        signedNewSize <- mkSelect signsMatch absRealNewSize !(mkSub (Const I64 0) absRealNewSize)
+        signedNewSize32 <- mkAnd (Const I64 0xffffffff) signedNewSize
+        newHeader <- mkOr (Const I64 $ (header OBJECT_TYPE_ID_BIGINT)) signedNewSize32
+        putObjectHeader newObj newHeader
+        pure newObj)
+
+||| divide i1 by i2, return (quotient, remainder)
+divInteger : Int -> IRValue IRObjPtr -> IRValue IRObjPtr -> Codegen (IRValue IRObjPtr, IRValue IRObjPtr)
+divInteger constI i1 i2 = do
+  s1 <- getObjectSize i1
+  s2 <- getObjectSize i2
+  s1a <- mkZext !(mkAbs s1)
+  s2a <- mkZext !(mkAbs s2)
+  zero1 <- icmp "eq" s1 (Const I32 0)
+  zero2 <- icmp "eq" s2 (Const I32 0)
+  ignore $ mkIf (pure zero2) (do
+                mkRuntimeCrash constI "division by 0"
+                pure (Const I1 0)
+                ) (pure (Const I1 0))
+
+  retZeroLbl <- genLabel "ret0"
+  checkDividendLbl <- genLabel "div_chk"
+  dividendLargerLbl <- genLabel "div_lg"
+  divLbl <- genLabel "div"
+  endLbl <- genLabel "div_end"
+
+  branch zero1 retZeroLbl checkDividendLbl
+
+  beginLabel retZeroLbl
+  zeroInteger <- dynamicAllocate (Const I64 0)
+  putObjectHeader zeroInteger (Const I64 $ (header OBJECT_TYPE_ID_BIGINT))
+  jump endLbl
+
+  beginLabel checkDividendLbl
+  dividendLarger <- icmp "ugt" s2a s1a
+  branch dividendLarger dividendLargerLbl divLbl
+
+  beginLabel dividendLargerLbl
+  zeroQuotient <- dynamicAllocate (Const I64 0)
+  putObjectHeader zeroQuotient (Const I64 $ (header OBJECT_TYPE_ID_BIGINT))
+  jump endLbl
+
+  beginLabel divLbl
+  -- i1, i2 /= 0
+  sx <- mkXOr s1 s2
+  signsMatch <- icmp "sge" sx (Const I32 0)
+
+  -- remainder can not be bigger than divisor
+  let maxLimbsRemainder = s2a
+  remainder <- dynamicAllocate !(mkMul (Const I64 GMP_LIMB_SIZE) maxLimbsRemainder)
+  -- object must have a valid header, because the next allocation might trigger a GC
+  tempHeader <- mkOr (Const I64 $ (header OBJECT_TYPE_ID_BIGINT)) maxLimbsRemainder
+  putObjectHeader remainder tempHeader
+
+  maxLimbsQuotient <- mkMax (Const I64 1) !(mkAdd (Const I64 1) !(mkSub s1a s2a))
+  quotient <- dynamicAllocate !(mkMul (Const I64 GMP_LIMB_SIZE) maxLimbsQuotient)
+
+  voidCall "ccc" "@__gmpn_tdiv_qr" [
+    toIR !(getObjectPayloadAddr {t=I64} quotient),
+    toIR !(getObjectPayloadAddr {t=I64} remainder),
+    toIR (Const I64 0),
+    toIR !(getObjectPayloadAddr {t=I64} i1),
+    toIR s1a,
+    toIR !(getObjectPayloadAddr {t=I64} i2),
+    toIR s2a
+    ]
+  qRealNewSize <- call {t=I64} "ccc" "@rapid_bigint_real_size" [
+    toIR !(getObjectPayloadAddr {t=I64} quotient),
+    toIR maxLimbsQuotient
+    ]
+  signedNewSize <- mkSelect signsMatch qRealNewSize !(mkSub (Const I64 0) qRealNewSize)
+  signedNewSize32 <- mkAnd (Const I64 0xffffffff) signedNewSize
+  newHeader <- mkOr (Const I64 $ (header OBJECT_TYPE_ID_BIGINT)) signedNewSize32
+  putObjectHeader quotient newHeader
+
+  i1negative <- icmp "slt" s1 (Const I32 0)
+  rRealNewSize <- call {t=I64} "ccc" "@rapid_bigint_real_size" [
+    toIR !(getObjectPayloadAddr {t=I64} remainder),
+    toIR maxLimbsRemainder
+    ]
+  signedNewSize <- mkSelect i1negative !(mkSub (Const I64 0) rRealNewSize) rRealNewSize
+  signedNewSize32 <- mkAnd (Const I64 0xffffffff) signedNewSize
+  newHeader <- mkOr (Const I64 $ (header OBJECT_TYPE_ID_BIGINT)) signedNewSize32
+  putObjectHeader remainder newHeader
+
+  jump endLbl
+
+  beginLabel endLbl
+  quotient  <- phi [(zeroInteger, retZeroLbl), (zeroQuotient, dividendLargerLbl), (quotient,  divLbl)]
+  remainder <- phi [(zeroInteger, retZeroLbl), (i1,           dividendLargerLbl), (remainder, divLbl)]
+  pure (quotient, remainder)
+
 getInstIR : {auto conNames : SortedMap Name Int} -> Int -> VMInst -> Codegen ()
 getInstIR i (DECLARE (Loc r)) = do
   appendCode $ "  %v" ++ show r ++ "Var = alloca %ObjPtr"
@@ -856,10 +1218,7 @@ getInstIR i (OP r Crash [r1, r2]) = do
   msg <- load (reg2val r2)
   appendCode $ "  call ccc void @idris_rts_crash_msg(" ++ toIR msg ++ ") noreturn"
   appendCode $ "unreachable"
-getInstIR i (ERROR s) = do
-  (_, msg) <- constStr i (s ++ "\NUL")
-  appendCode $ "  call ccc void @rapid_crash(" ++ toIR msg ++ ") noreturn"
-  appendCode $ "unreachable"
+getInstIR i (ERROR s) = mkRuntimeCrash i s
 getInstIR i (OP r BelieveMe [_, _, v]) = do
   store !(load (reg2val v)) (reg2val r)
 
@@ -1029,15 +1388,26 @@ getInstIR i (OP r (GTE StringType) [r1, r2]) = store !(stringCompare GTE r1 r2) 
 getInstIR i (OP r (GT  StringType) [r1, r2]) = store !(stringCompare GT  r1 r2) (reg2val r)
 
 getInstIR i (OP r (Cast IntegerType StringType) [r1]) = do
-  theIntObj <- load (reg2val r1)
-  theInt <- unboxInt' theIntObj
+  i1 <- load (reg2val r1)
+  s1 <- getObjectSize i1
+  u1 <- mkZext {to=I64} !(mkAbs s1)
 
-  -- max size of 2^64 = 20 + (optional "-" prefix) + NUL byte (from snprintf)
-  newStr <- dynamicAllocate (ConstI64 24)
-  strPayload <- getObjectPayloadAddr {t=I8} newStr
-  length <- (SSA I64) <$> assignSSA ("call ccc i64 @idris_rts_int_to_str(" ++ toIR strPayload ++ ", " ++ toIR theInt ++ ")")
-  newHeader <- mkOr (ConstI64 $ header OBJECT_TYPE_ID_STR) length
+  maxDigits <- call {t=TARGET_SIZE_T} "ccc" "@__gmpn_sizeinbase" [toIR !(getObjectPayloadAddr {t=MP_LIMB_T} i1), toIR u1, "i32 10"]
+  isNegative <- icmp "slt" s1 (Const I32 0)
+
+  -- we need to add one extra byte of "scratch space" for mpn_get_str
+  -- if the number is negative we need one character more for the leading minus
+  needsSign <- mkSelect isNegative (Const I64 2) (Const I64 1)
+  maxDigitsWithSign <- mkAdd maxDigits needsSign
+
+  newStr <- dynamicAllocate maxDigitsWithSign
+  newHeader <- mkOr (ConstI64 $ header OBJECT_TYPE_ID_STR) maxDigitsWithSign
   putObjectHeader newStr newHeader
+
+  actualDigits <- call {t=I64} "ccc" "@rapid_bigint_get_str" [toIR newStr, toIR i1, "i32 10"]
+  actualLengthHeader <- mkOr (ConstI64 $ header OBJECT_TYPE_ID_STR) actualDigits
+  putObjectHeader newStr actualLengthHeader
+
   store newStr (reg2val r)
 
 getInstIR i (OP r (Cast Bits8Type StringType) [r1]) = getInstIR i (OP r (Cast IntType StringType) [r1])
@@ -1086,11 +1456,63 @@ getInstIR i (OP r (Cast DoubleType IntType) [r1]) = do
   newInt <- cgMkInt intval
   store newInt (reg2val r)
 getInstIR i (OP r (Cast DoubleType IntegerType) [r1]) = do
-  fval <- unboxFloat64 (reg2val r1)
-  intval <- fptosi fval
-  newInt <- cgMkInt intval
-  store newInt (reg2val r)
+  floatObj <- load (reg2val r1)
+  floatBitsAsI64 <- getObjectSlot {t=I64} floatObj 0
+  exponent <- mkShiftR !(mkAnd (Const I64 $ cast IEEE_DOUBLE_MASK_EXP) floatBitsAsI64) (Const I64 52)
+  fraction <- mkAnd (Const I64 $ cast IEEE_DOUBLE_MASK_FRAC) floatBitsAsI64
+  initial <- mkOr fraction (Const I64 0x10000000000000)
+  toShift <- mkSub exponent (Const I64 1075)
+  shiftLeft <- icmp "sgt" toShift (Const I64 0)
+  newObj <- mkIf (pure shiftLeft) (do
+        let maxLimbCount = Const I64 17
+        payloadSize <- mkMul maxLimbCount (Const I64 GMP_LIMB_SIZE)
+        newObj <- dynamicAllocate payloadSize
+        payloadAddr <- getObjectPayloadAddr {t=I8} newObj
+        appendCode $ "  call void @llvm.memset.p1i8.i64(" ++ toIR payloadAddr ++ ", i8 0, " ++ toIR payloadSize ++ ", i1 false)"
+        putObjectSlot newObj (Const I64 0) initial
+        ignore $ call {t=I64} "ccc" "@rapid_bigint_lshift_inplace" [
+          toIR !(getObjectPayloadAddr {t=I64} newObj),
+          toIR maxLimbCount,
+          toIR !(mkTrunc {to=I32} toShift)
+        ]
+        absRealNewSize <- call {t=I64} "ccc" "@rapid_bigint_real_size" [
+          toIR !(getObjectPayloadAddr {t=I64} newObj),
+          toIR maxLimbCount
+        ]
+        --TODO: handle sign
+        size32 <- mkAnd (Const I64 0xffffffff) absRealNewSize
+        newHeader <- mkOr (Const I64 $ (header OBJECT_TYPE_ID_BIGINT)) size32
+        putObjectHeader newObj newHeader
+        pure newObj
+        ) (do
+          newObj <- dynamicAllocate (Const I64 1)
+          toShiftRight <- mkSub (Const I64 0) toShift
+          shifted <- mkShiftR initial toShiftRight
+          putObjectSlot newObj (Const I64 0) shifted
+          --TODO: handle sign
+          newHeader <- mkOr (Const I64 $ (header OBJECT_TYPE_ID_BIGINT)) (Const I64 1)
+          putObjectHeader newObj newHeader
+          pure newObj
+        )
+  --TODO: adjustSign
+  -- requiredBits <- (exponent - 1023)
+  -- requiredLimbs <- (requiredBits+63) / 64
+  -- newObj <- allocObject (requiredLimbs * 8)
+
+  -- exponent <- (mkAnd IEEE_DOUBLE_MASK_EXP dblVal) `shr` 52
+  -- fraction <- mkAnd IEEE_DOUBLE_MASK_FRAC dblVal
+  -- putObjectSlot newObj 0 initial
+  -- mpn_lshift payload[newObj] payload[newObj] requiredLimbs (exponent - 1075)
+  -- sign = mkAnd IEEE_DOUBLE_MASK_SIGN dblVal
+  -- call getRealSize
+  -- signedSize <- mkSelect isNegative !(mkSub Const0 realSize) realSize
+  -- signedSize32 <- mkAnd 0xffffffff signedSize
+  -- putHeader (mkOr BIGINT signedSize)
+  -- test: 5e100 = 49999999999999998852475663262266831422342135996207500306499798736599672609039495565163064724075577344
+  -- test: 5.000000000000001e+100 = 50000000000000006623151232165183115100189763290283126876127154945157757616289134520780205544909570048
+  store newObj (reg2val r)
 getInstIR i (OP r (Cast StringType IntegerType) [r1]) = do
+  mkRuntimeCrash i "Integer -> GMP transition not finished (cast from String)"
   strObj <- load (reg2val r1)
   parsedVal <- SSA I64 <$> assignSSA ("  call ccc i64 @idris_rts_str_to_int(" ++ toIR strObj ++ ")")
   newInt <- cgMkInt parsedVal
@@ -1108,13 +1530,13 @@ getInstIR i (OP r (Cast StringType DoubleType) [r1]) = do
 
 getInstIR i (OP r (Cast CharType IntegerType) [r1]) = do
   charHdr <- getObjectHeader !(load (reg2val r1))
-  charVal <- mkAnd charHdr (ConstI64 0xffffffff)
-  newInt <- cgMkInt charVal
+  charVal <- mkAnd charHdr (ConstI64 0x1fffff)
+  newInt <- cgMkIntegerSigned charVal
   store newInt (reg2val r)
 
 getInstIR i (OP r (Cast CharType IntType) [r1]) = do
   charHdr <- getObjectHeader !(load (reg2val r1))
-  charVal <- mkAnd charHdr (ConstI64 0xffffffff)
+  charVal <- mkAnd charHdr (ConstI64 0x1fffff)
   newInt <- cgMkInt charVal
   store newInt (reg2val r)
 
@@ -1206,12 +1628,13 @@ getInstIR i (OP r (Cast Bits64Type IntegerType) [r1]) = getInstIR i (OP r (Cast 
 
 getInstIR i (OP r (Cast IntType CharType) [r1]) = do
   ival <- unboxInt (reg2val r1)
-  truncated <- mkAnd (Const I64 0xffffffff) ival
+  truncated <- mkAnd (Const I64 0x1fffff) ival
   newCharObj <- dynamicAllocate (Const I64 0)
   hdr <- mkOr (truncated) (Const I64 $ header OBJECT_TYPE_ID_CHAR)
   putObjectHeader newCharObj hdr
   store newCharObj (reg2val r)
 getInstIR i (OP r (Cast IntegerType CharType) [r1]) = do
+  mkRuntimeCrash i "Integer -> GMP transition not finished (cast to Char)"
   ival <- unboxInt (reg2val r1)
   truncated <- mkAnd (Const I64 0xffffffff) ival
   newCharObj <- dynamicAllocate (Const I64 0)
@@ -1235,9 +1658,19 @@ getInstIR i (OP r (Cast CharType StringType) [r1]) = do
   store newStr (reg2val r)
 
 getInstIR i (OP r (Cast IntegerType IntType) [r1]) = do
-  store !(load (reg2val r1)) (reg2val r)
+  integerObj <- load (reg2val r1)
+  -- get first limb (LSB)
+  isNegative <- icmp "slt" !(getObjectSize integerObj) (Const I32 0)
+  isZero <- icmp "eq" (Const I32 0) !(getObjectSize integerObj)
+  ival <- mkIf (pure isZero) (pure $ Const I64 0) (getObjectSlot {t=I64} integerObj 0)
+  truncated <- mkAnd (Const I64 0x3fffffffffffffff) ival
+  negated <- mkSub (Const I64 0) truncated
+  theInt <- mkSelect isNegative negated truncated
+  store !(cgMkInt theInt) (reg2val r)
 getInstIR i (OP r (Cast IntType IntegerType) [r1]) = do
-  store !(load (reg2val r1)) (reg2val r)
+  ival <- unboxInt (reg2val r1)
+  integerObj <- cgMkIntegerSigned ival
+  store integerObj (reg2val r)
 
 getInstIR i (OP r (Add Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkAddNoWrap r r1 r2
 getInstIR i (OP r (Sub Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkSub r r1 r2
@@ -1269,7 +1702,7 @@ getInstIR i (OP r (BOr Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkOr 
 getInstIR i (OP r (ShiftL Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkShiftL r r1 r2
 getInstIR i (OP r (ShiftR Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkShiftR r r1 r2
 
-getInstIR i (OP r (Add IntType) [r1, r2]) = intBinary mkAdd r r1 r2
+getInstIR i (OP r (Add IntType) [r1, r2]) = boundedIntBinary 0x7fffffffffffffff mkAdd r r1 r2
 getInstIR i (OP r (Sub IntType) [r1, r2]) = intBinary mkSub r r1 r2
 getInstIR i (OP r (Mul IntType) [r1, r2]) = intBinary mkMul r r1 r2
 getInstIR i (OP r (Div IntType) [r1, r2]) = intBinary mkSDiv r r1 r2
@@ -1280,42 +1713,49 @@ getInstIR i (OP r (ShiftL IntType) [r1, r2]) = intBinary mkShiftL r r1 r2
 getInstIR i (OP r (ShiftR IntType) [r1, r2]) = intBinary mkShiftR r r1 r2
 
 getInstIR i (OP r (Add IntegerType) [r1, r2]) = do
-  -- FIXME: we treat Integers as bounded Ints -> should use GMP
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  obj <- cgMkInt !(mkAdd i1 i2)
+  i1 <- load (reg2val r1)
+  i2 <- load (reg2val r2)
+
+  s1 <- getObjectSize i1
+  s2 <- getObjectSize i2
+  sx <- mkXOr s1 s2
+  signsMatch <- icmp "sge" sx (Const I32 0)
+  obj <- mkIf (pure signsMatch) (addInteger i1 i2) (subInteger i1 i2)
   store obj (reg2val r)
 getInstIR i (OP r (Sub IntegerType) [r1, r2]) = do
-  -- FIXME: we treat Integers as bounded Ints -> should use GMP
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  obj <- cgMkInt !(mkSub i1 i2)
+  i1 <- load (reg2val r1)
+  i2 <- load (reg2val r2)
+
+  s1 <- getObjectSize i1
+  s2 <- getObjectSize i2
+  sx <- mkXOr s1 s2
+  signsMatch <- icmp "sge" sx (Const I32 0)
+  obj <- mkIf (pure signsMatch) (subInteger i1 i2) (addInteger i1 i2)
   store obj (reg2val r)
 getInstIR i (OP r (Mul IntegerType) [r1, r2]) = do
-  -- FIXME: we treat Integers as bounded Ints -> should use GMP
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  obj <- cgMkInt !(mkMul i1 i2)
+  i1 <- load (reg2val r1)
+  i2 <- load (reg2val r2)
+  obj <- mulInteger i1 i2
   store obj (reg2val r)
 getInstIR i (OP r (Div IntegerType) [r1, r2]) = do
-  -- FIXME: we treat Integers as bounded Ints -> should use GMP
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  obj <- cgMkInt !(mkSDiv i1 i2)
-  store obj (reg2val r)
+  i1 <- load (reg2val r1)
+  i2 <- load (reg2val r2)
+  (quotient, _) <- divInteger i i1 i2
+  store quotient (reg2val r)
 getInstIR i (OP r (Mod IntegerType) [r1, r2]) = do
-  -- FIXME: we treat Integers as bounded Ints -> should use GMP
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  obj <- cgMkInt !(mkSRem i1 i2)
-  store obj (reg2val r)
+  i1 <- load (reg2val r1)
+  i2 <- load (reg2val r2)
+  (_, remainder) <- divInteger i i1 i2
+  store remainder (reg2val r)
 getInstIR i (OP r (ShiftL IntegerType) [r1, r2]) = do
+  mkRuntimeCrash i "Integer -> GMP transition not finished (shl)"
   -- FIXME: we treat Integers as bounded Ints -> should use GMP
   i1 <- unboxInt (reg2val r1)
   i2 <- unboxInt (reg2val r2)
   obj <- cgMkInt !(mkShiftL i1 i2)
   store obj (reg2val r)
 getInstIR i (OP r (ShiftR IntegerType) [r1, r2]) = do
+  mkRuntimeCrash i "Integer -> GMP transition not finished (shr)"
   -- FIXME: we treat Integers as bounded Ints -> should use GMP
   i1 <- unboxInt (reg2val r1)
   i2 <- unboxInt (reg2val r2)
@@ -1418,44 +1858,54 @@ getInstIR i (OP r (GT IntType) [r1, r2]) = do
   store obj (reg2val r)
 
 getInstIR i (OP r (EQ IntegerType) [r1, r2]) = do
-  -- FIXME: we treat Integers as bounded Ints -> should use GMP
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  vsum_i1 <- icmp "eq" i1 i2
-  vsum_i64 <- mkZext {to=I64} vsum_i1
-  obj <- cgMkInt vsum_i64
+  intObj1 <- load (reg2val r1)
+  intObj2 <- load (reg2val r2)
+
+  cmpRaw <- compareInteger intObj1 intObj2
+  cmpResult <- icmp "eq" cmpRaw (Const I64 0)
+
+  obj <- cgMkInt !(mkZext {to=I64} cmpResult)
+
   store obj (reg2val r)
 getInstIR i (OP r (GT IntegerType) [r1, r2]) = do
-  -- FIXME: we treat Integers as bounded Ints -> should use GMP
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  vsum_i1 <- icmp "sgt" i1 i2
-  vsum_i64 <- mkZext {to=I64} vsum_i1
-  obj <- cgMkInt vsum_i64
+  intObj1 <- load (reg2val r1)
+  intObj2 <- load (reg2val r2)
+
+  cmpRaw <- compareInteger intObj1 intObj2
+  cmpResult <- icmp "sgt" cmpRaw (Const I64 0)
+
+  obj <- cgMkInt !(mkZext {to=I64} cmpResult)
+
   store obj (reg2val r)
 getInstIR i (OP r (GTE IntegerType) [r1, r2]) = do
-  -- FIXME: we treat Integers as bounded Ints -> should use GMP
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  vsum_i1 <- icmp "sge" i1 i2
-  vsum_i64 <- mkZext {to=I64} vsum_i1
-  obj <- cgMkInt vsum_i64
+  intObj1 <- load (reg2val r1)
+  intObj2 <- load (reg2val r2)
+
+  cmpRaw <- compareInteger intObj1 intObj2
+  cmpResult <- icmp "sge" cmpRaw (Const I64 0)
+
+  obj <- cgMkInt !(mkZext {to=I64} cmpResult)
+
   store obj (reg2val r)
 getInstIR i (OP r (LT IntegerType) [r1, r2]) = do
-  -- FIXME: we treat Integers as bounded Ints -> should use GMP
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  vsum_i1 <- icmp "slt" i1 i2
-  vsum_i64 <- mkZext {to=I64} vsum_i1
-  obj <- cgMkInt vsum_i64
+  intObj1 <- load (reg2val r1)
+  intObj2 <- load (reg2val r2)
+
+  cmpRaw <- compareInteger intObj1 intObj2
+  cmpResult <- icmp "slt" cmpRaw (Const I64 0)
+
+  obj <- cgMkInt !(mkZext {to=I64} cmpResult)
+
   store obj (reg2val r)
 getInstIR i (OP r (LTE IntegerType) [r1, r2]) = do
-  -- FIXME: we treat Integers as bounded Ints -> should use GMP
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  vsum_i1 <- icmp "sle" i1 i2
-  vsum_i64 <- mkZext {to=I64} vsum_i1
-  obj <- cgMkInt vsum_i64
+  intObj1 <- load (reg2val r1)
+  intObj2 <- load (reg2val r2)
+
+  cmpRaw <- compareInteger intObj1 intObj2
+  cmpResult <- icmp "sle" cmpRaw (Const I64 0)
+
+  obj <- cgMkInt !(mkZext {to=I64} cmpResult)
+
   store obj (reg2val r)
 
 getInstIR i (MKCON r (Left tag) args) = do
@@ -1532,11 +1982,10 @@ getInstIR i (MKCONSTANT r (B64 c)) = do
   obj <- cgMkBits64 (ConstI64 c)
   store obj (reg2val r)
 getInstIR i (MKCONSTANT r (I c)) = do
-  obj <- cgMkInt (ConstI64 $ cast c)
+  obj <- cgMkInt (ConstI64 $ (cast {to=Integer} c) `mod` 0x7fffffffffffffff)
   store obj (reg2val r)
 getInstIR i (MKCONSTANT r (BI c)) = do
-  -- FIXME: we treat Integers as bounded Ints -> should use GMP
-  obj <- cgMkInt (ConstI64 $ c)
+  obj <- cgMkConstInteger i c
   store obj (reg2val r)
 getInstIR i (MKCONSTANT r (Db d)) = do
   obj <- cgMkDouble (ConstF64 d)
@@ -1548,7 +1997,7 @@ getInstIR i (MKCONSTANT r (Str s)) = store !(mkStr i s) (reg2val r)
 
 getInstIR i (CONSTCASE r alts def) = case findConstCaseType alts of
                                           IntType => getInstForConstCaseInt i r alts def
-                                          IntegerType => getInstForConstCaseInt i r alts def
+                                          IntegerType => getInstForConstCaseInteger i r alts def
                                           StringType => getInstForConstCaseString i r alts def
                                           CharType => getInstForConstCaseChar i r alts def
                                           t => addError "unknwon constcase type"
@@ -2066,7 +2515,7 @@ builtinPrimitives = [
 builtinForeign : (n : Nat ** (Vect n (IRValue IRObjPtr) -> Codegen ())) -> Name -> (argTypes : List CFType) -> CFType -> Codegen ()
 builtinForeign builtin name argTypes ret = do
   let (n ** f) = builtin
-  appendCode ("define private fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ toList $ map toIR (args n)) ++ ") gc \"statepoint-example\" {")
+  appendCode ("define external fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ toList $ map toIR (args n)) ++ ") gc \"statepoint-example\" {")
   funcEntry
   f (args n)
   funcReturn

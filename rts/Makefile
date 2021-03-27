@@ -14,6 +14,7 @@ ifeq ($(UNAME_S),Darwin)
 endif
 
 CFLAGS += -I .
+CFLAGS += -I /usr/local/include
 CFLAGS += -I ../external/llvm-statepoint-utils/dist
 
 all: build/runtime.bc build/platform.a

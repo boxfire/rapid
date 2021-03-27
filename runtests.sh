@@ -25,6 +25,7 @@ if [[ -n "$1" ]]; then
       rapid004
       rapid005
       rapid006
+      rapid008
     )
   else
     read -r -a tests <<< "$@"
@@ -42,7 +43,7 @@ for test in ${tests[*]}; do
   idr=$(echo ${testdir}/*.idr)
   pushd "$testdir" >/dev/null
   rm -rf ./build output
-  if $rapidc -o "$test" "$idr" >& "${testdir}/compile.log"; then
+  if $rapidc --directive debug -o "$test" "$idr" >& "${testdir}/compile.log"; then
     "./build/exec/$test" > "${testdir}/output"
     #"$testdir/build/rapid/$(basename "$idr" .idr).native" > "${testdir}/output"
 

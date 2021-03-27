@@ -13,6 +13,8 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+#include <gmp.h>
+
 #include "rts.h"
 
 #define OBJ_TYPE_CON_NO_ARGS 0xff
@@ -28,6 +30,7 @@
 #define OBJ_TYPE_OPAQUE      0x07
 #define OBJ_TYPE_PTR         0x08
 #define OBJ_TYPE_IOARRAY     0x09
+#define OBJ_TYPE_BIGINT      0x0a
 
 #define OBJ_TYPE_FWD_REF     0xfd
 
@@ -90,6 +93,10 @@ static inline RapidObjectHeader MAKE_HEADER(int64_t objType, int32_t sizeOrTag) 
   return (objType << 32) | sizeOrTag;
 }
 
+/**
+ * Return the amount of memory the object requires in bytes, including the
+ * header and all payload data.
+ */
 static inline uint32_t OBJ_TOTAL_SIZE(ObjPtr p) {
   assert(!OBJ_IS_INLINE(p));
 
@@ -114,6 +121,8 @@ static inline uint32_t OBJ_TOTAL_SIZE(ObjPtr p) {
       return 16 + 8 * (h & 0xffff);
     case OBJ_TYPE_IOARRAY:
       return 8 + 8 * OBJ_SIZE(p);
+    case OBJ_TYPE_BIGINT:
+      return 8 + sizeof(mp_limb_t) * abs((int32_t)OBJ_SIZE(p));
     case OBJ_TYPE_FWD_REF:
       rapid_C_crash("invalid fwd ref in OBJ_TOTAL_SIZE");
       return 0;

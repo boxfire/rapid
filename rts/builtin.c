@@ -12,6 +12,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include <gmp.h>
+
 #include "gc.h"
 #include "getline.h"
 #include "object.h"
@@ -676,6 +678,77 @@ ObjPtr rapid_system_getargs(Idris_TSO *base, ObjPtr _world) {
   }
 
   return result;
+}
+
+/**
+ * Convert the Integer srcInteger into a string in base `base` mutating
+ * `destStr` (which must be large enough to hold the result).
+ * Returns the number of characters in `destStr`.
+ */
+int64_t rapid_bigint_get_str(ObjPtr destStr, const ObjPtr srcInteger, int base) {
+  int32_t iSize = (int32_t)OBJ_SIZE(srcInteger);
+  int32_t nLimbs = abs(iSize);
+  if (nLimbs > 1024) {
+    // TODO: use temporary heap allocation instead of stack space
+    rapid_C_crash("bigint too big");
+  }
+  if (base != 10) {
+    // TODO: allow other bases
+    rapid_C_crash("Integer->String base must be 10");
+  }
+
+  mp_limb_t limbsCopy[nLimbs];
+  memcpy(limbsCopy, OBJ_PAYLOAD(srcInteger), sizeof(mp_limb_t) * nLimbs);
+
+  int needsSign = (iSize < 0) ? 1 : 0;
+  unsigned char *s = OBJ_PAYLOAD(destStr);
+  s += needsSign;
+  mp_size_t numDigits = mpn_get_str(s, base, limbsCopy, nLimbs);
+
+  // GMP docs say, there might be leading zeroes in the resulting string
+  // TODO: remove leading zeroes
+
+  // We need to add the ASCII value for '0' = 0x30 to each digit. Since we know
+  // that the input buffer size is aligned to 8 byte blocks, we can update 8
+  // characters at once.
+  s = OBJ_PAYLOAD(destStr);
+  for (int i = 0; i < (numDigits + 7); i += 8) {
+    *(uint64_t *)(s + i) = 0x3030303030303030 + *(uint64_t *)(s + i);
+  }
+  if (needsSign) {
+    ((char *)OBJ_PAYLOAD(destStr))[0] = '-';
+  }
+
+  return numDigits + needsSign;
+}
+
+/**
+ * Count the number of non-zero limbs in a GMP integer
+ * p : pointer to first limb (LSB)
+ * n : number of limbs in p
+ */
+int64_t rapid_bigint_real_size(const mp_limb_t *p, int64_t n) {
+  for (;n > 0; --n) {
+    if (p[n - 1] != 0) {
+      return n;
+    }
+  }
+  return 0;
+}
+
+/**
+ * Left-Shift a big Integer in-place
+ */
+int64_t rapid_bigint_lshift_inplace(mp_limb_t *p, int64_t n, unsigned int count) {
+  // GMP's mpn_lshift only supports shifting by an amount < GMP_LIMB_BITS
+  // so first, we "left-shift" complete limbs using memmove and then shift the
+  // remaining bits using mpn_lshift
+  unsigned int full_limbs = count / GMP_LIMB_BITS;
+  memmove(p + full_limbs, p, n - full_limbs);
+  memset(p, 0, full_limbs * sizeof(mp_limb_t));
+  unsigned int rest = count % GMP_LIMB_BITS;
+  mpn_lshift(p, p, n, rest);
+  return 0;
 }
 
 void rapid_builtin_init(int argc, char **argv) {

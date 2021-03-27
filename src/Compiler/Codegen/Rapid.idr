@@ -89,7 +89,7 @@ compile defs tmpDir outputDir term outfile = do
     True <- globalizeStackmap asmFileName
     | False => putStrLn "error"
     runShell ["clang", "-c", "-o", objectFileName, asmFileName]
-    runShell ["clang", "-o", binaryFileName, objectFileName, runtime, platformLib, "-lm"]
+    runShell ["clang", "-o", binaryFileName, objectFileName, runtime, platformLib, "-lm", "-L/usr/local/lib", "-lgmp"]
 
     pure ()
 

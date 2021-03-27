@@ -92,18 +92,59 @@ declare ccc void @rapid_putstr(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc i32 @rapid_system_getchar(%TSOPtr, %ObjPtr)
 declare ccc void @rapid_system_putchar(%TSOPtr, i32, %ObjPtr)
 
+; GMP interface (partial)
+%LimbPtr = type i64 addrspace(1)*
+%LimbT = type i64
+%mp_size_t = type i64
+declare ccc %LimbT @__gmpn_add(%LimbPtr nocapture writeonly, %LimbPtr nocapture readonly, i64, %LimbPtr nocapture readonly, i64) "gc-leaf-function"
+declare ccc %LimbT @__gmpn_sub(%LimbPtr nocapture writeonly, %LimbPtr nocapture readonly, i64, %LimbPtr nocapture readonly, i64) "gc-leaf-function"
+declare ccc %LimbT @__gmpn_mul(%LimbPtr nocapture writeonly, %LimbPtr nocapture readonly, i64, %LimbPtr nocapture readonly, i64) "gc-leaf-function"
+declare ccc %LimbT @__gmpn_lshift(%LimbPtr nocapture, %LimbPtr nocapture, i64, i32) "gc-leaf-function"
+declare ccc void @__gmpn_tdiv_qr(%LimbPtr nocapture writeonly, %LimbPtr nocapture writeonly, %mp_size_t, %LimbPtr nocapture readonly, %mp_size_t, %LimbPtr nocapture readonly, %mp_size_t) "gc-leaf-function"
+declare ccc i32 @__gmpn_cmp(%LimbPtr nocapture readonly, %LimbPtr nocapture readonly, i64) "gc-leaf-function"
+declare ccc i64 @__gmpn_sizeinbase(%LimbPtr nocapture readonly, i64, i32) "gc-leaf-function"
+declare ccc i64 @rapid_bigint_get_str(%ObjPtr nocapture, %ObjPtr nocapture readonly, i32) "gc-leaf-function"
+declare ccc i64 @rapid_bigint_lshift_inplace(%LimbPtr nocapture, i64, i32) "gc-leaf-function"
+declare ccc i64 @rapid_bigint_real_size(%LimbPtr nocapture readonly %p, i64 %n) "gc-leaf-function"
+
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p1i8.p0i8.i32(%i8p1 nocapture, i8* nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) nounwind
 declare void @llvm.memcpy.p1i8.p1i8.i32(%i8p1 nocapture, %i8p1 nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p1i8.p1i8.i64(%i8p1 nocapture, %i8p1 nocapture, i64, i1) nounwind
 declare void @llvm.memmove.p1i8.p1i8.i64(%i8p1 nocapture, %i8p1 nocapture, i64, i1) nounwind
+declare void @llvm.memset.p1i8.i64(%i8p1 nocapture writeonly, i8, i64, i1) nounwind "gc-leaf-function"
 declare void @llvm.dbg.addr(metadata, metadata, metadata)
 
 declare i8* @llvm.frameaddress(i32)
 declare i8* @llvm.addressofreturnaddress()
 
-declare ccc i1 @llvm.expect.i1(i1, i1)
+declare ccc i1 @llvm.expect.i1(i1, i1) "gc-leaf-function"
+
+; "abs" intrinsics not yet available
+declare ccc i32 @llvm.abs.i32(i32, i1) "gc-leaf-function"
+declare ccc i64 @llvm.abs.i64(i64, i1) "gc-leaf-function"
+
+;can be removed when the intrinsic is available with LLVM 12+
+define ccc i32 @rapid.abs.i32(i32 %arg0, i1 %arg1) "gc-leaf-function" {
+  %1 = icmp slt i32 %arg0, 0
+  br i1 %1, label %neg, label %pos
+neg:
+  %2 = sub i32 0, %arg0
+  ret i32 %2
+pos:
+  ret i32 %arg0
+}
+define ccc i64 @rapid.abs.i64(i64 %arg0, i1 %arg1) "gc-leaf-function" {
+  %1 = icmp slt i64 %arg0, 0
+  br i1 %1, label %neg, label %pos
+neg:
+  %2 = sub i64 0, %arg0
+  ret i64 %2
+pos:
+  ret i64 %arg0
+}
+
 
 declare %ObjPtr @llvm.ptrmask.p1obj.i64(%ObjPtr, i64)
 
