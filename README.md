@@ -1,3 +1,5 @@
+[![builds.sr.ht status](https://builds.sr.ht/~cypheon/rapid/commits.svg)](https://builds.sr.ht/~cypheon/rapid/commits?)
+
 # LLVM codegen and native runtime for Idris 2
 
 This is a (work in progress) backend to generate native executables from Idris code,
