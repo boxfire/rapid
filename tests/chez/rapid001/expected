@@ -111,3 +111,4 @@ neg4:
 rev1: 
 rev2: x
 rev3: ZYXWVUTSRQPONMLKJIHGFEDCBA
+['a', 'b', 'c', '4', '5', '6', '@', '/', '/', '$']

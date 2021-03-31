@@ -1,5 +1,7 @@
 module Main
 
+import Data.String
+
 Show Ordering where
   show EQ = "EQ"
   show LT = "LT"
@@ -61,3 +63,4 @@ main = do
   putStrLn $ "rev1: " ++ (prim__strReverse "")
   putStrLn $ "rev2: " ++ (prim__strReverse "x")
   putStrLn $ "rev3: " ++ (prim__strReverse alphabet)
+  printLn $ fastUnpack "abc456@//$"

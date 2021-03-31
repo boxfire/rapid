@@ -1,5 +1,6 @@
 module Compiler.GenLLVMIR
 
+import Data.Bits
 import Data.Buffer
 import Data.Either
 import Data.List
@@ -385,6 +386,10 @@ putObjectHeader : IRValue IRObjPtr -> IRValue I64 -> Codegen ()
 putObjectHeader obj hdr = do
   headerPtr <- SSA (Pointer 1 I64) <$> assignSSA ("getelementptr inbounds %Object, " ++ (toIR obj) ++ ", i32 0, i32 0")
   store hdr headerPtr
+
+mkHeader : Int -> IRValue I32 -> Codegen (IRValue I64)
+mkHeader objType sizeOrTag =
+  mkOr (Const I64 $ (cast objType) `prim__shl_Integer` 32) !(mkZext sizeOrTag)
 
 funcEntry : Codegen ()
 funcEntry = do
@@ -1501,7 +1506,7 @@ getInstIR i (OP r (Cast DoubleType IntegerType) [r1]) = do
       putObjectHeader newObj newHeader
       pure newObj
       ) (do
-        newObj <- dynamicAllocate (Const I64 1)
+        newObj <- dynamicAllocate (Const I64 8)
         toShiftRight <- mkSub (Const I64 0) toShift
         shifted <- mkShiftR initial toShiftRight
         putObjectSlot newObj (Const I64 0) shifted
@@ -2431,6 +2436,52 @@ mk_prelude_fastAppend [stringListObj] = do
   newObj <- foreignCall {t=IRObjPtr} "@rapid_fast_append" [toIR stringListObj]
   store newObj (reg2val RVal)
 
+TAG_LIST_NIL : IRValue I32
+TAG_LIST_NIL = Const I32 0
+TAG_LIST_CONS : IRValue I32
+TAG_LIST_CONS = Const I32 1
+
+mk_prelude_fastUnpack : Vect 1 (IRValue IRObjPtr) -> Codegen ()
+mk_prelude_fastUnpack [strObj] = do
+  nilHdr <- mkHeader OBJECT_TYPE_ID_CON_NO_ARGS TAG_LIST_NIL
+  nilObj <- dynamicAllocate (Const I64 0)
+  putObjectHeader nilObj nilHdr
+  store nilObj (reg2val RVal)
+
+  loopInitLbl <- genLabel "li"
+  loopStartLbl <- genLabel "ls"
+  loopBodyLbl <- genLabel "ls"
+  loopEndLbl <- genLabel "le"
+
+  jump loopInitLbl
+  beginLabel loopInitLbl
+  strLength <- mkSub !(getObjectSize strObj) (Const I32 1)
+  jump loopStartLbl
+  beginLabel loopStartLbl
+  nextIndexName <- mkVarName "%nI."
+  let nextIndex = SSA I32 nextIndexName
+  index <- phi [(strLength, loopInitLbl), (nextIndex, loopBodyLbl)]
+  finished <- icmp "slt" index (Const I32 0)
+  branch finished loopEndLbl loopBodyLbl
+
+  beginLabel loopBodyLbl
+
+  payload0 <- getObjectPayloadAddr {t=I8} strObj
+  payload <- getElementPtr payload0 index
+  charVal <- mkZext {to=I32} !(load payload)
+  ch <- cgMkChar charVal
+  appendCode $ nextIndexName ++ " = sub " ++ toIR index ++ ", 1"
+
+  consHdr <- mkHeader (OBJECT_TYPE_ID_CON_NO_ARGS + 0x200) TAG_LIST_CONS
+  consObj <- dynamicAllocate (Const I64 16)
+  putObjectHeader consObj consHdr
+  putObjectSlot consObj (Const I64 0) ch
+  putObjectSlot consObj (Const I64 1) !(load (reg2val RVal))
+  store consObj (reg2val RVal)
+
+  jump loopStartLbl
+  beginLabel loopEndLbl
+
 mkSupport : {n : Nat} -> Name -> (Vect n (IRValue IRObjPtr) -> Codegen ()) -> String
 mkSupport {n} name f = runCodegen (do
           appendCode ("define external fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ toList $ map toIR args) ++ ") gc \"statepoint-example\" {")
@@ -2515,6 +2566,7 @@ builtinPrimitives = [
 
   , ("prim/string-concat", (1 ** mk_prelude_fastAppend))
   , ("prim/string-pack", (1 ** mk_prelude_fastPack))
+  , ("prim/string-unpack", (1 ** mk_prelude_fastUnpack))
 
   , ("prim/isNull", (1 ** mk_prim__nullAnyPtr))
   , ("prim/getString", (1 ** mk_prim__getString))
@@ -2601,6 +2653,7 @@ foreignRedirectMap = [
 
   , ("scheme:string-concat", "prim/string-concat")
   , ("scheme:string-pack", "prim/string-pack")
+  , ("scheme:string-unpack", "prim/string-unpack")
   ]
 
 findForeignName : List String -> Maybe String
