@@ -2544,6 +2544,7 @@ foreignRedirectMap = [
   , ("C:idris2_fileModifiedTime, libidris2_support", "rapid_system_file_mtime")
   , ("C:idris2_readLine, libidris2_support", "rapid_system_file_read_line")
   , ("C:idris2_readChars, libidris2_support", "rapid_system_file_read_chars")
+  , ("C:idris2_seekLine, libidris2_support", "rapid_system_file_seek_line")
   , ("C:fgetc,libc 6", "rapid_system_file_read_char")
   , ("C:chmod, libc 6", "rapid_system_file_chmod")
   , ("C:getchar,libc 6", "rapid_system_getchar")

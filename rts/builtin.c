@@ -413,6 +413,29 @@ ObjPtr rapid_system_file_read_line(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _w
   return newPtr;
 }
 
+int64_t rapid_system_file_seek_line(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _world) {
+  if (OBJ_TYPE(filePtrObj) != OBJ_TYPE_OPAQUE || OBJ_SIZE(filePtrObj) != POINTER_SIZE) {
+    rapid_C_crash("invalid object passed to file_seek_line");
+  }
+
+  FILE *f = *(FILE **)OBJ_PAYLOAD(filePtrObj);
+
+  while (1) {
+    int c = fgetc(f);
+    if (c == -1) {
+      if (feof(f)) {
+        return 0;
+      } else {
+        base->rapid_errno = errno;
+        return -1;
+      }
+    }
+    if (c == '\n') {
+      return 0;
+    }
+  }
+}
+
 ObjPtr rapid_system_stdin_getline(Idris_TSO *base, ObjPtr _world) {
   size_t bufsize = 0;
   char *buffer = NULL;
