@@ -1459,57 +1459,59 @@ getInstIR i (OP r (Cast DoubleType IntegerType) [r1]) = do
   floatObj <- load (reg2val r1)
   floatBitsAsI64 <- getObjectSlot {t=I64} floatObj 0
   exponent <- mkShiftR !(mkAnd (Const I64 $ cast IEEE_DOUBLE_MASK_EXP) floatBitsAsI64) (Const I64 52)
-  fraction <- mkAnd (Const I64 $ cast IEEE_DOUBLE_MASK_FRAC) floatBitsAsI64
-  initial <- mkOr fraction (Const I64 0x10000000000000)
-  toShift <- mkSub exponent (Const I64 1075)
-  shiftLeft <- icmp "sgt" toShift (Const I64 0)
-  newObj <- mkIf (pure shiftLeft) (do
-        let maxLimbCount = Const I64 17
-        payloadSize <- mkMul maxLimbCount (Const I64 GMP_LIMB_SIZE)
-        newObj <- dynamicAllocate payloadSize
-        payloadAddr <- getObjectPayloadAddr {t=I8} newObj
-        appendCode $ "  call void @llvm.memset.p1i8.i64(" ++ toIR payloadAddr ++ ", i8 0, " ++ toIR payloadSize ++ ", i1 false)"
-        putObjectSlot newObj (Const I64 0) initial
-        ignore $ call {t=I64} "ccc" "@rapid_bigint_lshift_inplace" [
-          toIR !(getObjectPayloadAddr {t=I64} newObj),
-          toIR maxLimbCount,
-          toIR !(mkTrunc {to=I32} toShift)
-        ]
-        absRealNewSize <- call {t=I64} "ccc" "@rapid_bigint_real_size" [
-          toIR !(getObjectPayloadAddr {t=I64} newObj),
-          toIR maxLimbCount
-        ]
-        --TODO: handle sign
-        size32 <- mkAnd (Const I64 0xffffffff) absRealNewSize
-        newHeader <- mkOr (Const I64 $ (header OBJECT_TYPE_ID_BIGINT)) size32
+  -- NaN and infinity will be returned as "0"
+  isInfOrNaN <- icmp "eq" exponent (Const I64 0x7ff)
+  -- absolute values < 1.0 will be returned as "0"
+  isSmallerThanOne <- icmp "ult" exponent (Const I64 1023)
+  returnZero <- mkOr isInfOrNaN isSmallerThanOne
+
+  newObj <- mkIf (pure returnZero) (do
+    newObj <- dynamicAllocate (Const I64 0)
+    putObjectHeader newObj (Const I64 $ (header OBJECT_TYPE_ID_BIGINT))
+    pure newObj
+    ) {- else -} (do
+    fraction <- mkAnd (Const I64 $ cast IEEE_DOUBLE_MASK_FRAC) floatBitsAsI64
+    -- highest bit is sign bit in both, Double and I64, so we can just use that one
+    isNegative <- icmp "slt" floatBitsAsI64 (Const I64 0)
+    initial <- mkOr fraction (Const I64 0x10000000000000)
+    toShift <- mkSub exponent (Const I64 1075)
+    shiftLeft <- icmp "sgt" toShift (Const I64 0)
+    mkIf (pure shiftLeft) (do
+      let maxLimbCount = Const I64 17
+      payloadSize <- mkMul maxLimbCount (Const I64 GMP_LIMB_SIZE)
+      -- requiredBits <- (exponent - 1022)
+      -- requiredLimbs <- (requiredBits+63) / 64
+      -- newObj <- allocObject (requiredLimbs * 8)
+      newObj <- dynamicAllocate payloadSize
+      payloadAddr <- getObjectPayloadAddr {t=I8} newObj
+      appendCode $ "  call void @llvm.memset.p1i8.i64(" ++ toIR payloadAddr ++ ", i8 0, " ++ toIR payloadSize ++ ", i1 false)"
+      putObjectSlot newObj (Const I64 0) initial
+      ignore $ call {t=I64} "ccc" "@rapid_bigint_lshift_inplace" [
+        toIR !(getObjectPayloadAddr {t=I64} newObj),
+        toIR maxLimbCount,
+        toIR !(mkTrunc {to=I32} toShift)
+      ]
+      absRealNewSize <- call {t=I64} "ccc" "@rapid_bigint_real_size" [
+        toIR !(getObjectPayloadAddr {t=I64} newObj),
+        toIR maxLimbCount
+      ]
+      signedNewSize <- mkSelect isNegative !(mkSub (Const I64 0) absRealNewSize) absRealNewSize
+      size32 <- mkAnd (Const I64 0xffffffff) signedNewSize
+      newHeader <- mkOr (Const I64 $ (header OBJECT_TYPE_ID_BIGINT)) size32
+      putObjectHeader newObj newHeader
+      pure newObj
+      ) (do
+        newObj <- dynamicAllocate (Const I64 1)
+        toShiftRight <- mkSub (Const I64 0) toShift
+        shifted <- mkShiftR initial toShiftRight
+        putObjectSlot newObj (Const I64 0) shifted
+        signedNewSize <- mkSelect isNegative (Const I32 (-1)) (Const I32 1)
+        size64 <- mkZext signedNewSize
+        newHeader <- mkOr (Const I64 $ (header OBJECT_TYPE_ID_BIGINT)) size64
         putObjectHeader newObj newHeader
         pure newObj
-        ) (do
-          newObj <- dynamicAllocate (Const I64 1)
-          toShiftRight <- mkSub (Const I64 0) toShift
-          shifted <- mkShiftR initial toShiftRight
-          putObjectSlot newObj (Const I64 0) shifted
-          --TODO: handle sign
-          newHeader <- mkOr (Const I64 $ (header OBJECT_TYPE_ID_BIGINT)) (Const I64 1)
-          putObjectHeader newObj newHeader
-          pure newObj
-        )
-  --TODO: adjustSign
-  -- requiredBits <- (exponent - 1023)
-  -- requiredLimbs <- (requiredBits+63) / 64
-  -- newObj <- allocObject (requiredLimbs * 8)
-
-  -- exponent <- (mkAnd IEEE_DOUBLE_MASK_EXP dblVal) `shr` 52
-  -- fraction <- mkAnd IEEE_DOUBLE_MASK_FRAC dblVal
-  -- putObjectSlot newObj 0 initial
-  -- mpn_lshift payload[newObj] payload[newObj] requiredLimbs (exponent - 1075)
-  -- sign = mkAnd IEEE_DOUBLE_MASK_SIGN dblVal
-  -- call getRealSize
-  -- signedSize <- mkSelect isNegative !(mkSub Const0 realSize) realSize
-  -- signedSize32 <- mkAnd 0xffffffff signedSize
-  -- putHeader (mkOr BIGINT signedSize)
-  -- test: 5e100 = 49999999999999998852475663262266831422342135996207500306499798736599672609039495565163064724075577344
-  -- test: 5.000000000000001e+100 = 50000000000000006623151232165183115100189763290283126876127154945157757616289134520780205544909570048
+      )
+    )
   store newObj (reg2val r)
 getInstIR i (OP r (Cast StringType IntegerType) [r1]) = do
   mkRuntimeCrash i "Integer -> GMP transition not finished (cast from String)"
