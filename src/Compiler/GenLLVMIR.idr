@@ -1762,6 +1762,12 @@ getInstIR i (OP r (ShiftR IntegerType) [r1, r2]) = do
   obj <- cgMkInt !(mkShiftR i1 i2)
   store obj (reg2val r)
 
+getInstIR i (OP r (Neg DoubleType) [r1]) = do
+  fv <- unboxFloat64 (reg2val r1)
+  neg <- (SSA F64) <$> assignSSA ("fneg " ++ toIR fv)
+  obj <- cgMkDouble neg
+  store obj (reg2val r)
+
 getInstIR i (OP r (LT CharType) [r1, r2]) = do
   -- compare Chars by comparing their headers
   o1 <- load (reg2val r1)
