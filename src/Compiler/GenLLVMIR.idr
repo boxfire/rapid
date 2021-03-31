@@ -1,6 +1,5 @@
 module Compiler.GenLLVMIR
 
-import Data.Bits
 import Data.Buffer
 import Data.Either
 import Data.List
