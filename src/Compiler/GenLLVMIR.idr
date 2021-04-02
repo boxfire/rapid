@@ -1035,6 +1035,13 @@ intBinary op dest a b = do
   obj <- cgMkInt !(op i1 i2)
   store obj (reg2val dest)
 
+bits64Binary : (IRValue I64 -> IRValue I64 -> Codegen (IRValue I64)) -> Reg -> Reg -> Reg -> Codegen ()
+bits64Binary op dest a b = do
+  i1 <- unboxBits64 !(load (reg2val a))
+  i2 <- unboxBits64 !(load (reg2val b))
+  obj <- cgMkBits64 !(op i1 i2)
+  store obj (reg2val dest)
+
 boundedIntBinary : Integer -> (IRValue I64 -> IRValue I64 -> Codegen (IRValue I64)) -> Reg -> Reg -> Reg -> Codegen ()
 boundedIntBinary mask op dest a b = do
   i1 <- unboxInt (reg2val a)
@@ -1787,6 +1794,17 @@ getInstIR i (OP r (BOr Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkOr 
 getInstIR i (OP r (BXOr Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkXOr r r1 r2
 getInstIR i (OP r (ShiftL Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkShiftL r r1 r2
 getInstIR i (OP r (ShiftR Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkShiftR r r1 r2
+
+getInstIR i (OP r (Add Bits64Type) [r1, r2]) = bits64Binary mkAddNoWrap r r1 r2
+getInstIR i (OP r (Sub Bits64Type) [r1, r2]) = bits64Binary mkSub r r1 r2
+getInstIR i (OP r (Mul Bits64Type) [r1, r2]) = bits64Binary mkMul r r1 r2
+getInstIR i (OP r (Div Bits64Type) [r1, r2]) = bits64Binary mkSDiv r r1 r2
+getInstIR i (OP r (Mod Bits64Type) [r1, r2]) = bits64Binary mkSRem r r1 r2
+getInstIR i (OP r (BAnd Bits64Type) [r1, r2]) = bits64Binary mkAnd r r1 r2
+getInstIR i (OP r (BOr Bits64Type) [r1, r2]) = bits64Binary mkOr r r1 r2
+getInstIR i (OP r (BXOr Bits64Type) [r1, r2]) = bits64Binary mkXOr r r1 r2
+getInstIR i (OP r (ShiftL Bits64Type) [r1, r2]) = bits64Binary mkShiftL r r1 r2
+getInstIR i (OP r (ShiftR Bits64Type) [r1, r2]) = bits64Binary mkShiftR r r1 r2
 
 getInstIR i (OP r (Add IntType) [r1, r2]) = boundedIntBinary 0x7fffffffffffffff mkAdd r r1 r2
 getInstIR i (OP r (Sub IntType) [r1, r2]) = intBinary mkSub r r1 r2
