@@ -29,7 +29,8 @@ int rapid_clock_read(Idris_TSO *base, ObjPtr dstClockObj, int clockType) {
       clock_id = CLOCK_MONOTONIC;
       break;
     case CLOCK_TYPE_DURATION:
-      clock_id = CLOCK_UPTIME_RAW;
+      // this is actually never used
+      clock_id = CLOCK_MONOTONIC;
       break;
     case CLOCK_TYPE_PROCESS:
       clock_id = CLOCK_PROCESS_CPUTIME_ID;
