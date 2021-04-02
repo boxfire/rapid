@@ -1762,6 +1762,7 @@ getInstIR i (OP r (Div Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkSDiv r r1 
 getInstIR i (OP r (Mod Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkSRem r r1 r2
 getInstIR i (OP r (BAnd Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkAnd r r1 r2
 getInstIR i (OP r (BOr Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkOr r r1 r2
+getInstIR i (OP r (BXOr Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkXOr r r1 r2
 getInstIR i (OP r (ShiftL Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkShiftL r r1 r2
 getInstIR i (OP r (ShiftR Bits8Type) [r1, r2]) = boundedIntBinary 0xff mkShiftR r r1 r2
 
@@ -1772,6 +1773,7 @@ getInstIR i (OP r (Div Bits16Type) [r1, r2]) = boundedIntBinary 0xffff mkSDiv r 
 getInstIR i (OP r (Mod Bits16Type) [r1, r2]) = boundedIntBinary 0xffff mkSRem r r1 r2
 getInstIR i (OP r (BAnd Bits16Type) [r1, r2]) = boundedIntBinary 0xffff mkAnd r r1 r2
 getInstIR i (OP r (BOr Bits16Type) [r1, r2]) = boundedIntBinary 0xffff mkOr r r1 r2
+getInstIR i (OP r (BXOr Bits16Type) [r1, r2]) = boundedIntBinary 0xffff mkXOr r r1 r2
 getInstIR i (OP r (ShiftL Bits16Type) [r1, r2]) = boundedIntBinary 0xffff mkShiftL r r1 r2
 getInstIR i (OP r (ShiftR Bits16Type) [r1, r2]) = boundedIntBinary 0xffff mkShiftR r r1 r2
 
@@ -1782,6 +1784,7 @@ getInstIR i (OP r (Div Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkSDi
 getInstIR i (OP r (Mod Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkSRem r r1 r2
 getInstIR i (OP r (BAnd Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkAnd r r1 r2
 getInstIR i (OP r (BOr Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkOr r r1 r2
+getInstIR i (OP r (BXOr Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkXOr r r1 r2
 getInstIR i (OP r (ShiftL Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkShiftL r r1 r2
 getInstIR i (OP r (ShiftR Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkShiftR r r1 r2
 
@@ -1792,6 +1795,7 @@ getInstIR i (OP r (Div IntType) [r1, r2]) = intBinary mkSDiv r r1 r2
 getInstIR i (OP r (Mod IntType) [r1, r2]) = intBinary mkSRem r r1 r2
 getInstIR i (OP r (BAnd IntType) [r1, r2]) = intBinary mkAnd r r1 r2
 getInstIR i (OP r (BOr IntType) [r1, r2]) = intBinary mkOr r r1 r2
+getInstIR i (OP r (BXOr IntType) [r1, r2]) = intBinary mkXOr r r1 r2
 getInstIR i (OP r (ShiftL IntType) [r1, r2]) = intBinary mkShiftL r r1 r2
 getInstIR i (OP r (ShiftR IntType) [r1, r2]) = intBinary mkShiftR r r1 r2
 
