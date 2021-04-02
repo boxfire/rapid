@@ -93,6 +93,7 @@ declare ccc %ObjPtr @rapid_fast_append(%TSOPtr, %ObjPtr)
 declare ccc void @rapid_putstr(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc i32 @rapid_system_getchar(%TSOPtr, %ObjPtr)
 declare ccc void @rapid_system_putchar(%TSOPtr, i32, %ObjPtr)
+declare ccc i32 @rapid_clock_read(%TSOPtr, %ObjPtr, i32) "gc-leaf-function"
 
 ; GMP interface (partial)
 %LimbPtr = type i64 addrspace(1)*

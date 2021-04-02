@@ -4,6 +4,7 @@ set(RTS_SOURCES
   getline.c
   object.c
   rts.c
+  time.c
   ../external/llvm-statepoint-utils/build/statepoint.c
   )
 

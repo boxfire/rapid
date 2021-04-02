@@ -31,6 +31,8 @@
 #define OBJ_TYPE_PTR         0x08
 #define OBJ_TYPE_IOARRAY     0x09
 #define OBJ_TYPE_BIGINT      0x0a
+// Clock object size -> 0: invalid, 1: valid
+#define OBJ_TYPE_CLOCK       0x0b
 
 #define OBJ_TYPE_FWD_REF     0xfd
 
@@ -123,6 +125,9 @@ static inline uint32_t OBJ_TOTAL_SIZE(ObjPtr p) {
       return 8 + 8 * OBJ_SIZE(p);
     case OBJ_TYPE_BIGINT:
       return 8 + sizeof(mp_limb_t) * abs((int32_t)OBJ_SIZE(p));
+    case OBJ_TYPE_CLOCK:
+      // 8 byte header + 2 * 64 bits for seconds & nanoseconds)
+      return 8 + 16;
     case OBJ_TYPE_FWD_REF:
       rapid_C_crash("invalid fwd ref in OBJ_TOTAL_SIZE");
       return 0;

@@ -57,6 +57,9 @@ OBJECT_TYPE_ID_IOARRAY = 0x09
 OBJECT_TYPE_ID_BIGINT : Int
 OBJECT_TYPE_ID_BIGINT = 0x0a
 
+OBJECT_TYPE_ID_CLOCK : Int
+OBJECT_TYPE_ID_CLOCK = 0x0b
+
 CLOSURE_MAX_ARGS : Int
 CLOSURE_MAX_ARGS = 1024
 
@@ -342,7 +345,7 @@ call : {t : IRType} -> String -> String -> Vect n String -> Codegen (IRValue t)
 call {t} cconv name args =
   SSA t <$> (assignSSA $ "  call " ++ cconv ++ " " ++ show t ++ " " ++ name ++ "(" ++ (showSep ", " (toList args)) ++ ")")
 
--- Call a "runtime-aware" foreign function, i.e. one, that can allocate memory
+-- Call a "runtime-aware" foreign function, i.e. one, that can interact with the RTS
 foreignCall : {t : IRType} -> String -> List String -> Codegen (IRValue t)
 foreignCall {t} name args = do
   hp <- load globalHpVar
@@ -505,6 +508,9 @@ cgMkBits64 val = do
   putObjectHeader newObj (ConstI64 $ header OBJECT_TYPE_ID_BITS64)
   putObjectSlot newObj (ConstI64 0) val
   pure newObj
+
+unboxBits64 : IRValue IRObjPtr -> Codegen (IRValue I64)
+unboxBits64 bits64Obj = getObjectSlot bits64Obj 0
 
 GMP_LIMB_SIZE : Integer
 GMP_LIMB_SIZE = 8
@@ -1420,30 +1426,37 @@ getInstIR i (OP r (Cast IntegerType StringType) [r1]) = do
   s1 <- getObjectSize i1
   u1 <- mkZext {to=I64} !(mkAbs s1)
 
-  maxDigits <- call {t=TARGET_SIZE_T} "ccc" "@__gmpn_sizeinbase" [toIR !(getObjectPayloadAddr {t=MP_LIMB_T} i1), toIR u1, "i32 10"]
-  isNegative <- icmp "slt" s1 (Const I32 0)
+  isZero <- icmp "eq" s1 (Const I32 0)
 
-  -- we need to add one extra byte of "scratch space" for mpn_get_str
-  -- if the number is negative we need one character more for the leading minus
-  needsSign <- mkSelect isNegative (Const I64 2) (Const I64 1)
-  maxDigitsWithSign <- mkAdd maxDigits needsSign
+  mkIf_ (pure isZero) (do
+      newStr <- mkStr i "0"
+      store newStr (reg2val r)
+    ) (do
+      maxDigits <- call {t=TARGET_SIZE_T} "ccc" "@__gmpn_sizeinbase" [toIR !(getObjectPayloadAddr {t=MP_LIMB_T} i1), toIR u1, "i32 10"]
+      isNegative <- icmp "slt" s1 (Const I32 0)
 
-  newStr <- dynamicAllocate maxDigitsWithSign
-  newHeader <- mkOr (ConstI64 $ header OBJECT_TYPE_ID_STR) maxDigitsWithSign
-  putObjectHeader newStr newHeader
+      -- we need to add one extra byte of "scratch space" for mpn_get_str
+      -- if the number is negative we need one character more for the leading minus
+      needsSign <- mkSelect isNegative (Const I64 2) (Const I64 1)
+      maxDigitsWithSign <- mkAdd maxDigits needsSign
 
-  actualDigits <- call {t=I64} "ccc" "@rapid_bigint_get_str" [toIR newStr, toIR i1, "i32 10"]
-  actualLengthHeader <- mkOr (ConstI64 $ header OBJECT_TYPE_ID_STR) actualDigits
-  putObjectHeader newStr actualLengthHeader
+      newStr <- dynamicAllocate maxDigitsWithSign
+      newHeader <- mkOr (ConstI64 $ header OBJECT_TYPE_ID_STR) maxDigitsWithSign
+      putObjectHeader newStr newHeader
 
-  store newStr (reg2val r)
+      actualDigits <- call {t=I64} "ccc" "@rapid_bigint_get_str" [toIR newStr, toIR i1, "i32 10"]
+      actualLengthHeader <- mkOr (ConstI64 $ header OBJECT_TYPE_ID_STR) actualDigits
+      putObjectHeader newStr actualLengthHeader
+
+      store newStr (reg2val r)
+    )
 
 getInstIR i (OP r (Cast Bits8Type StringType) [r1]) = getInstIR i (OP r (Cast IntType StringType) [r1])
 getInstIR i (OP r (Cast Bits16Type StringType) [r1]) = getInstIR i (OP r (Cast IntType StringType) [r1])
 getInstIR i (OP r (Cast Bits32Type StringType) [r1]) = getInstIR i (OP r (Cast IntType StringType) [r1])
 getInstIR i (OP r (Cast Bits64Type StringType) [r1]) = do
   obj <- load (reg2val r1)
-  theBits <- getObjectSlot {t=I64} obj 0
+  theBits <- unboxBits64 obj
 
   -- max size of 2^64 = 20 + NUL byte (from snprintf)
   newStr <- dynamicAllocate (ConstI64 24)
@@ -1636,25 +1649,38 @@ getInstIR i (OP r (Cast Bits32Type IntegerType) [r1]) = getInstIR i (OP r (Cast 
 
 getInstIR i (OP r (Cast Bits64Type Bits8Type) [r1]) = do
   obj <- load (reg2val r1)
-  ival <- getObjectSlot {t=I64} obj 0
+  ival <- unboxBits64 obj
   truncatedVal <- mkAnd (Const I64 0xff) ival
   store !(cgMkInt truncatedVal) (reg2val r)
 getInstIR i (OP r (Cast Bits64Type Bits16Type) [r1]) = do
   obj <- load (reg2val r1)
-  ival <- getObjectSlot {t=I64} obj 0
+  ival <- unboxBits64 obj
   truncatedVal <- mkAnd (Const I64 0xffff) ival
   store !(cgMkInt truncatedVal) (reg2val r)
 getInstIR i (OP r (Cast Bits64Type Bits32Type) [r1]) = do
   obj <- load (reg2val r1)
-  ival <- getObjectSlot {t=I64} obj 0
+  ival <- unboxBits64 obj
   truncatedVal <- mkAnd (Const I64 0xffffffff) ival
   store !(cgMkInt truncatedVal) (reg2val r)
 getInstIR i (OP r (Cast Bits64Type IntType) [r1]) = do
   obj <- load (reg2val r1)
-  ival <- getObjectSlot {t=I64} obj 0
+  ival <- unboxBits64 obj
   truncatedVal <- mkAnd (Const I64 0x7fffffffffffffff) ival
   store !(cgMkInt truncatedVal) (reg2val r)
-getInstIR i (OP r (Cast Bits64Type IntegerType) [r1]) = getInstIR i (OP r (Cast Bits64Type IntType) [r1])
+getInstIR i (OP r (Cast Bits64Type IntegerType) [r1]) = do
+  ival <- unboxBits64 !(load (reg2val r1))
+  isZero <- icmp "eq" (Const I64 0) ival
+  newObj <- mkIf (pure isZero) (do
+      newInteger <- dynamicAllocate (Const I64 0)
+      putObjectHeader newInteger !(mkHeader OBJECT_TYPE_ID_BIGINT (Const I32 0))
+      pure newInteger
+    ) (do
+      newInteger <- dynamicAllocate (Const I64 GMP_LIMB_SIZE)
+      putObjectHeader newInteger !(mkHeader OBJECT_TYPE_ID_BIGINT (Const I32 1))
+      putObjectSlot newInteger (Const I64 0) ival
+      pure newInteger
+    )
+  store newObj (reg2val r)
 
 getInstIR i (OP r (Cast IntType CharType) [r1]) = do
   ival <- unboxInt (reg2val r1)
@@ -2540,6 +2566,50 @@ mk_prim__stringIteratorNext [strObj, iteratorObj] = do
        store resultObj (reg2val RVal)
     )
 
+-- Needs to be kept in sync with time.c:
+CLOCK_TYPE_UTC : Int
+CLOCK_TYPE_UTC = 1
+CLOCK_TYPE_MONOTONIC : Int
+CLOCK_TYPE_MONOTONIC = 2
+CLOCK_TYPE_DURATION : Int
+CLOCK_TYPE_DURATION = 3
+CLOCK_TYPE_PROCESS : Int
+CLOCK_TYPE_PROCESS = 4
+CLOCK_TYPE_THREAD : Int
+CLOCK_TYPE_THREAD = 5
+CLOCK_TYPE_GCCPU : Int
+CLOCK_TYPE_GCCPU = 6
+CLOCK_TYPE_GCREAL : Int
+CLOCK_TYPE_GCREAL = 7
+
+mk_prim__readTime : Int -> Vect 1 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__readTime clockType [_] = do
+  clock <- dynamicAllocate (Const I64 16)
+  hdr <- mkHeader OBJECT_TYPE_ID_CLOCK (Const I32 0)
+  putObjectHeader clock hdr
+
+  r <- foreignCall {t=I32} "@rapid_clock_read" [toIR clock, "i32 " ++ show clockType]
+
+  store clock (reg2val RVal)
+
+mk_prim__clockSecond : Vect 2 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__clockSecond [clockObj, _] = do
+  secondsAddr <- getObjectSlotAddrVar {t=I64} clockObj (Const I64 0)
+  seconds <- cgMkBits64 !(load secondsAddr)
+  store seconds (reg2val RVal)
+
+mk_prim__clockNanoSecond : Vect 2 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__clockNanoSecond [clockObj, _] = do
+  nanoSecondsAddr <- getObjectSlotAddrVar {t=I64} clockObj (Const I64 1)
+  nanoSeconds <- cgMkBits64 !(load nanoSecondsAddr)
+  store nanoSeconds (reg2val RVal)
+
+mk_prim__clockIsValid : Vect 2 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__clockIsValid [clockObj, _] = do
+  -- clock objects store either "1" or "0" in the size field as validity flag
+  valid <- cgMkInt !(mkZext !(getObjectSize clockObj))
+  store valid (reg2val RVal)
+
 mkSupport : {n : Nat} -> Name -> (Vect n (IRValue IRObjPtr) -> Codegen ()) -> String
 mkSupport {n} name f = runCodegen (do
           appendCode ("define external fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ toList $ map toIR args) ++ ") gc \"statepoint-example\" {")
@@ -2630,6 +2700,18 @@ builtinPrimitives = [
   , ("prim/blodwen-string-iterator-next", (2 ** mk_prim__stringIteratorNext))
   --, ("prim/blodwen-string-iterator-to-string", (4 ** mk_prim__stringIteratorToString))
 
+  , ("prim/blodwen-clock-time-utc", (1 ** mk_prim__readTime CLOCK_TYPE_UTC))
+  , ("prim/blodwen-clock-time-monotonic", (1 ** mk_prim__readTime CLOCK_TYPE_MONOTONIC))
+  , ("prim/blodwen-clock-time-duration", (1 ** mk_prim__readTime CLOCK_TYPE_DURATION))
+  , ("prim/blodwen-clock-time-process", (1 ** mk_prim__readTime CLOCK_TYPE_PROCESS))
+  , ("prim/blodwen-clock-time-thread", (1 ** mk_prim__readTime CLOCK_TYPE_THREAD))
+  , ("prim/blodwen-clock-time-gccpu", (1 ** mk_prim__readTime CLOCK_TYPE_GCCPU))
+  , ("prim/blodwen-clock-time-gcreal", (1 ** mk_prim__readTime CLOCK_TYPE_GCREAL))
+
+  , ("prim/blodwen-clock-second", (2 ** mk_prim__clockSecond))
+  , ("prim/blodwen-clock-nanosecond", (2 ** mk_prim__clockNanoSecond))
+  , ("prim/blodwen-is-time", (2 ** mk_prim__clockIsValid))
+
   , ("prim/isNull", (1 ** mk_prim__nullAnyPtr))
   , ("prim/getString", (1 ** mk_prim__getString))
   ]
@@ -2717,6 +2799,18 @@ foreignRedirectMap = [
   , ("scheme:blodwen-buffer-copydata", "prim/blodwen-buffer-copydata")
 
   , ("scheme:blodwen-thread", "rapid_system_fork")
+
+  , ("scheme:blodwen-clock-time-utc", "prim/blodwen-clock-time-utc")
+  , ("scheme:blodwen-clock-time-monotonic", "prim/blodwen-clock-time-monotonic")
+  , ("scheme:blodwen-clock-time-duration", "prim/blodwen-clock-time-duration")
+  , ("scheme:blodwen-clock-time-process", "prim/blodwen-clock-time-process")
+  , ("scheme:blodwen-clock-time-thread", "prim/blodwen-clock-time-thread")
+  , ("scheme:blodwen-clock-time-gccpu", "prim/blodwen-clock-time-gccpu")
+  , ("scheme:blodwen-clock-time-gcreal", "prim/blodwen-clock-time-gcreal")
+
+  , ("scheme:blodwen-is-time?", "prim/blodwen-is-time")
+  , ("scheme:blodwen-clock-second", "prim/blodwen-clock-second")
+  , ("scheme:blodwen-clock-nanosecond", "prim/blodwen-clock-nanosecond")
 
   , ("scheme:string-concat", "prim/string-concat")
   , ("scheme:string-pack", "prim/string-pack")
