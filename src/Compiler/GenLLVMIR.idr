@@ -1616,7 +1616,10 @@ getInstIR i (OP r (Cast Bits8Type Bits64Type) [r1]) = do
   store newObj (reg2val r)
 getInstIR i (OP r (Cast Bits8Type IntType) [r1]) = do
   store !(load (reg2val r1)) (reg2val r)
-getInstIR i (OP r (Cast Bits8Type IntegerType) [r1]) = getInstIR i (OP r (Cast Bits8Type IntType) [r1])
+getInstIR i (OP r (Cast Bits8Type IntegerType) [r1]) = do
+  ival <- unboxInt (reg2val r1)
+  newInt <- cgMkIntegerSigned ival
+  store newInt (reg2val r)
 
 getInstIR i (OP r (Cast Bits16Type Bits8Type) [r1]) = do
   ival <- unboxInt (reg2val r1)
@@ -1629,7 +1632,10 @@ getInstIR i (OP r (Cast Bits16Type Bits64Type) [r1]) = do
   store newObj (reg2val r)
 getInstIR i (OP r (Cast Bits16Type IntType) [r1]) = do
   store !(load (reg2val r1)) (reg2val r)
-getInstIR i (OP r (Cast Bits16Type IntegerType) [r1]) = getInstIR i (OP r (Cast Bits16Type IntType) [r1])
+getInstIR i (OP r (Cast Bits16Type IntegerType) [r1]) = do
+  ival <- unboxInt (reg2val r1)
+  newInt <- cgMkIntegerSigned ival
+  store newInt (reg2val r)
 
 getInstIR i (OP r (Cast Bits32Type Bits8Type) [r1]) = do
   ival <- unboxInt (reg2val r1)
@@ -1644,7 +1650,10 @@ getInstIR i (OP r (Cast Bits32Type Bits64Type) [r1]) = do
   store newObj (reg2val r)
 getInstIR i (OP r (Cast Bits32Type IntType) [r1]) = do
   store !(load (reg2val r1)) (reg2val r)
-getInstIR i (OP r (Cast Bits32Type IntegerType) [r1]) = getInstIR i (OP r (Cast Bits32Type IntType) [r1])
+getInstIR i (OP r (Cast Bits32Type IntegerType) [r1]) = do
+  ival <- unboxInt (reg2val r1)
+  newInt <- cgMkIntegerSigned ival
+  store newInt (reg2val r)
 
 
 getInstIR i (OP r (Cast Bits64Type Bits8Type) [r1]) = do
