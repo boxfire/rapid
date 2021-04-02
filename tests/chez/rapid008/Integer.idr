@@ -43,6 +43,12 @@ division = do
   printLn (huge `mod` big)
   printLn (big `mod` huge)
 
+altbits : Integer
+altbits = 0x55555555555555555555555555555555555555555555555555555555555555
+
+thirdbits : Integer
+thirdbits = 0x249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249249
+
 main : IO ()
 main = do
   mult
@@ -64,6 +70,9 @@ main = do
   printLn $ (zero + five)
   printLn $ (zero - five)
   printLn $ (five - zero)
+  putStrLn "bitwise"
+  printLn (altbits `prim__or_Integer` thirdbits)
+  printLn (thirdbits `prim__or_Integer` altbits)
   putStrLn "ok"
   putStrLn (show small)
   putStrLn (show $ cast {to=Int} integer)
