@@ -37,6 +37,6 @@ typedef uint64_t Word;
 
 #define POINTER_SIZE (sizeof(void*))
 
-void rapid_C_crash(const char *msg);
+void _Noreturn rapid_C_crash(const char *msg);
 
 void *rapid_C_allocate(Idris_TSO *base, int32_t size) __attribute__((__malloc__)) __attribute__((alloc_size(2)));
