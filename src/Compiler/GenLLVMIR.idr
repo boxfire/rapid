@@ -1801,7 +1801,7 @@ getInstIR i (OP r (BXOr Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkXO
 getInstIR i (OP r (ShiftL Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkShiftL r r1 r2
 getInstIR i (OP r (ShiftR Bits32Type) [r1, r2]) = boundedIntBinary 0xffffffff mkShiftR r r1 r2
 
-getInstIR i (OP r (Add Bits64Type) [r1, r2]) = bits64Binary mkAddNoWrap r r1 r2
+getInstIR i (OP r (Add Bits64Type) [r1, r2]) = bits64Binary mkAdd r r1 r2
 getInstIR i (OP r (Sub Bits64Type) [r1, r2]) = bits64Binary mkSub r r1 r2
 getInstIR i (OP r (Mul Bits64Type) [r1, r2]) = bits64Binary mkMul r r1 r2
 getInstIR i (OP r (Div Bits64Type) [r1, r2]) = bits64Binary mkUDiv r r1 r2
