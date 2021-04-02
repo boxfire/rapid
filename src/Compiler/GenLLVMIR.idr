@@ -748,6 +748,12 @@ intToBits64' val = do
 intToBits64 : IRValue (Pointer 0 IRObjPtr) -> Codegen (IRValue IRObjPtr)
 intToBits64 src = intToBits64' !(load src)
 
+unboxIntegerUnsigned : IRValue IRObjPtr -> Codegen (IRValue I64)
+unboxIntegerUnsigned integerObj = do
+  isZero <- icmp "eq" (Const I32 0) !(getObjectSize integerObj)
+  -- get first limb (LSB)
+  mkIf (pure isZero) (pure $ Const I64 0) (getObjectSlot {t=I64} integerObj 0)
+
 total
 showConstant : Constant -> String
 showConstant (I i) = "(I " ++ show i ++ ")"
@@ -1583,25 +1589,40 @@ getInstIR i (OP r (Cast CharType IntType) [r1]) = do
   newInt <- cgMkInt charVal
   store newInt (reg2val r)
 
-getInstIR i (OP r (Cast IntegerType Bits8Type) [r1]) = getInstIR i (OP r (Cast IntType Bits8Type) [r1])
+getInstIR i (OP r (Cast IntegerType Bits8Type) [r1]) = do
+  ival <- unboxIntegerUnsigned !(load (reg2val r1))
+  truncatedVal <- mkAnd (Const I64 0xff) ival
+  newObj <- cgMkInt truncatedVal
+  store newObj (reg2val r)
 getInstIR i (OP r (Cast IntType Bits8Type) [r1]) = do
   ival <- unboxInt (reg2val r1)
   truncatedVal <- mkAnd (Const I64 0xff) ival
   newObj <- cgMkInt truncatedVal
   store newObj (reg2val r)
-getInstIR i (OP r (Cast IntegerType Bits16Type) [r1]) = getInstIR i (OP r (Cast IntType Bits16Type) [r1])
+getInstIR i (OP r (Cast IntegerType Bits16Type) [r1]) = do
+  ival <- unboxIntegerUnsigned !(load (reg2val r1))
+  truncatedVal <- mkAnd (Const I64 0xffff) ival
+  newObj <- cgMkInt truncatedVal
+  store newObj (reg2val r)
 getInstIR i (OP r (Cast IntType Bits16Type) [r1]) = do
   ival <- unboxInt (reg2val r1)
   truncatedVal <- mkAnd (Const I64 0xffff) ival
   newObj <- cgMkInt truncatedVal
   store newObj (reg2val r)
-getInstIR i (OP r (Cast IntegerType Bits32Type) [r1]) = getInstIR i (OP r (Cast IntType Bits32Type) [r1])
+getInstIR i (OP r (Cast IntegerType Bits32Type) [r1]) = do
+  ival <- unboxIntegerUnsigned !(load (reg2val r1))
+  truncatedVal <- mkAnd (Const I64 0xffffffff) ival
+  newObj <- cgMkInt truncatedVal
+  store newObj (reg2val r)
 getInstIR i (OP r (Cast IntType Bits32Type) [r1]) = do
   ival <- unboxInt (reg2val r1)
   truncatedVal <- mkAnd (Const I64 0xffffffff) ival
   newObj <- cgMkInt truncatedVal
   store newObj (reg2val r)
-getInstIR i (OP r (Cast IntegerType Bits64Type) [r1]) = getInstIR i (OP r (Cast IntType Bits64Type) [r1])
+getInstIR i (OP r (Cast IntegerType Bits64Type) [r1]) = do
+  ival <- unboxIntegerUnsigned !(load (reg2val r1))
+  newObj <- cgMkInt ival
+  store newObj (reg2val r)
 getInstIR i (OP r (Cast IntType Bits64Type) [r1]) = do
   newObj <- intToBits64 (reg2val r1)
   store newObj (reg2val r)
@@ -1699,13 +1720,10 @@ getInstIR i (OP r (Cast IntType CharType) [r1]) = do
   putObjectHeader newCharObj hdr
   store newCharObj (reg2val r)
 getInstIR i (OP r (Cast IntegerType CharType) [r1]) = do
-  mkRuntimeCrash i "Integer -> GMP transition not finished (cast to Char)"
-  ival <- unboxInt (reg2val r1)
-  truncated <- mkAnd (Const I64 0xffffffff) ival
-  newCharObj <- dynamicAllocate (Const I64 0)
-  hdr <- mkOr (truncated) (Const I64 $ header OBJECT_TYPE_ID_CHAR)
-  putObjectHeader newCharObj hdr
-  store newCharObj (reg2val r)
+  ival <- mkTrunc !(unboxInt (reg2val r1))
+  truncatedVal <- mkAnd (Const I32 0x1fffff) ival
+  newObj <- cgMkChar truncatedVal
+  store newObj (reg2val r)
 
 getInstIR i (OP r (Cast CharType StringType) [r1]) = do
   o1 <- load (reg2val r1)
