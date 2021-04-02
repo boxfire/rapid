@@ -23,6 +23,7 @@ main = do
   printLn $ (the Int 6 `div` the Int 3)
   printLn $ (the Integer 6 `div` the Integer 3)
   printLn $ (cast {to = Int} "6.6" `div` cast "3.9")
+  printLn $ (cast {to = Double} (the Int 13374242))
   printLn (3.14159265 + 7.0)
   printLn (3.14159265 - 7.0)
   printLn (3.14159265 * 7.0)

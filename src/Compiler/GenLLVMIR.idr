@@ -264,6 +264,9 @@ mkSext {to} val = (SSA to) <$> assignSSA ("sext " ++ toIR val ++ " to " ++ show 
 fptosi : {to : IRType} -> IRValue from -> Codegen (IRValue to)
 fptosi {to} val = (SSA to) <$> assignSSA ("fptosi " ++ toIR val ++ " to " ++ show to)
 
+sitofp : {to : IRType} -> IRValue from -> Codegen (IRValue to)
+sitofp {to} val = (SSA to) <$> assignSSA ("sitofp " ++ toIR val ++ " to " ++ show to)
+
 phi : {t : IRType} -> List (IRValue t, IRLabel) -> Codegen (IRValue t)
 phi xs = (SSA t) <$> assignSSA ("phi " ++ show t ++ " " ++ showSep ", " (map getEdge xs)) where
   getEdge : (IRValue t, IRLabel) -> String
@@ -1895,12 +1898,6 @@ getInstIR i (OP r (ShiftR IntegerType) [r1, r2]) = do
   obj <- cgMkInt !(mkShiftR i1 i2)
   store obj (reg2val r)
 
-getInstIR i (OP r (Neg DoubleType) [r1]) = do
-  fv <- unboxFloat64 (reg2val r1)
-  neg <- (SSA F64) <$> assignSSA ("fneg " ++ toIR fv)
-  obj <- cgMkDouble neg
-  store obj (reg2val r)
-
 getInstIR i (OP r (LT CharType) [r1, r2]) = do
   -- compare Chars by comparing their headers
   o1 <- load (reg2val r1)
@@ -2047,6 +2044,11 @@ getInstIR i (OP r (LTE IntegerType) [r1, r2]) = do
 
   store obj (reg2val r)
 
+getInstIR i (OP r (Cast IntType DoubleType) [r1]) = do
+  ival <- unboxInt (reg2val r1)
+  newObj <- cgMkDouble !(sitofp ival)
+  store newObj (reg2val r)
+
 getInstIR i (OP r (LT  DoubleType) [r1, r2]) = doubleCmp "olt" r r1 r2
 getInstIR i (OP r (LTE DoubleType) [r1, r2]) = doubleCmp "ole" r r1 r2
 getInstIR i (OP r (EQ  DoubleType) [r1, r2]) = doubleCmp "oeq" r r1 r2
@@ -2058,6 +2060,11 @@ getInstIR i (OP r (Sub DoubleType) [r1, r2]) = doubleBinOp "fsub" r r1 r2
 getInstIR i (OP r (Mul DoubleType) [r1, r2]) = doubleBinOp "fmul" r r1 r2
 getInstIR i (OP r (Div DoubleType) [r1, r2]) = doubleBinOp "fdiv" r r1 r2
 getInstIR i (OP r (Mod DoubleType) [r1, r2]) = doubleBinOp "frem" r r1 r2
+getInstIR i (OP r (Neg DoubleType) [r1]) = do
+  fv <- unboxFloat64 (reg2val r1)
+  neg <- (SSA F64) <$> assignSSA ("fneg " ++ toIR fv)
+  obj <- cgMkDouble neg
+  store obj (reg2val r)
 
 getInstIR i (MKCON r (Left tag) args) = do
   obj <- mkCon tag args
