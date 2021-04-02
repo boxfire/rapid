@@ -51,7 +51,7 @@ for test in ${tests[*]}; do
   idr=$(echo ${testdir}/*.idr)
   pushd "$testdir" >/dev/null
   rm -rf ./build output
-  if $rapidc $debug_directive -o "$test" "$idr" >& "${testdir}/compile.log"; then
+  if $rapidc $debug_directive -p contrib -o "$test" "$idr" >& "${testdir}/compile.log"; then
     "./build/exec/$test" > "${testdir}/output"
     #"$testdir/build/rapid/$(basename "$idr" .idr).native" > "${testdir}/output"
 

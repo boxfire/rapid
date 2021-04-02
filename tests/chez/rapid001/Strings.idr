@@ -1,6 +1,8 @@
 module Main
 
+import Data.List
 import Data.String
+import Data.String.Iterator
 
 Show Ordering where
   show EQ = "EQ"
@@ -64,3 +66,4 @@ main = do
   putStrLn $ "rev2: " ++ (prim__strReverse "x")
   putStrLn $ "rev3: " ++ (prim__strReverse alphabet)
   printLn $ fastUnpack "abc456@//$"
+  printLn $ toList $ Iterator.unpack "abc987@//$"

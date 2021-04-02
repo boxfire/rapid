@@ -463,6 +463,30 @@ mkIf cond true false = do
   beginLabel lblEnd
   phi [(valTrue, lblTrueEnd), (valFalse, lblFalseEnd)]
 
+mkIf_ : (cond : Codegen (IRValue I1)) ->
+        (true : Codegen ()) ->
+        (false : Codegen ()) ->
+        Codegen ()
+mkIf_ cond true false = do
+  lblTrue <- genLabel "t"
+  lblTrueEnd <- genLabel "te"
+  lblFalse <- genLabel "f"
+  lblFalseEnd <- genLabel "fe"
+  lblEnd <- genLabel "e"
+
+  branch !(cond) lblTrue lblFalse
+  beginLabel lblTrue
+  true
+  jump lblTrueEnd
+  beginLabel lblTrueEnd
+  jump lblEnd
+  beginLabel lblFalse
+  false
+  jump lblFalseEnd
+  beginLabel lblFalseEnd
+  jump lblEnd
+  beginLabel lblEnd
+
 cgMkChar : IRValue I32 -> Codegen (IRValue IRObjPtr)
 cgMkChar val = do
   newObj <- dynamicAllocate (ConstI64 0)
@@ -2481,6 +2505,41 @@ mk_prelude_fastUnpack [strObj] = do
   jump loopStartLbl
   beginLabel loopEndLbl
 
+TAG_UNCONS_RESULT_EOF : IRValue I32
+TAG_UNCONS_RESULT_EOF = Const I32 0
+TAG_UNCONS_RESULT_CHARACTER : IRValue I32
+TAG_UNCONS_RESULT_CHARACTER = Const I32 1
+
+mk_prim__stringIteratorNew : Vect 1 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__stringIteratorNew [strObj] = do
+  iterObj <- cgMkInt (Const I64 0)
+  store iterObj (reg2val RVal)
+
+mk_prim__stringIteratorNext : Vect 2 (IRValue IRObjPtr) -> Codegen ()
+mk_prim__stringIteratorNext [strObj, iteratorObj] = do
+  offset <- unboxInt' iteratorObj
+  strLength <- mkZext !(getObjectSize strObj)
+  mkIf_ (icmp "uge" offset strLength) (do
+       eofObj <- dynamicAllocate (Const I64 0)
+       hdr <- mkHeader OBJECT_TYPE_ID_CON_NO_ARGS TAG_UNCONS_RESULT_EOF
+       putObjectHeader eofObj hdr
+       store eofObj (reg2val RVal)
+    ) (do
+       resultObj <- dynamicAllocate (Const I64 16)
+       hdr <- mkHeader OBJECT_TYPE_ID_CON_NO_ARGS TAG_UNCONS_RESULT_CHARACTER
+       putObjectHeader resultObj hdr
+
+       payload0 <- getObjectPayloadAddr {t=I8} strObj
+       payload <- getElementPtr payload0 offset
+       charObj <- cgMkChar !(mkZext !(load payload))
+       putObjectSlot resultObj (Const I64 0) charObj
+
+       newOffset <- mkAdd (Const I64 1) offset
+       newIter <- cgMkInt newOffset
+       putObjectSlot resultObj (Const I64 1) newIter
+       store resultObj (reg2val RVal)
+    )
+
 mkSupport : {n : Nat} -> Name -> (Vect n (IRValue IRObjPtr) -> Codegen ()) -> String
 mkSupport {n} name f = runCodegen (do
           appendCode ("define external fastcc %Return1 @" ++ safeName name ++ "(" ++ (showSep ", " $ prepareArgCallConv $ toList $ map toIR args) ++ ") gc \"statepoint-example\" {")
@@ -2567,6 +2626,10 @@ builtinPrimitives = [
   , ("prim/string-pack", (1 ** mk_prelude_fastPack))
   , ("prim/string-unpack", (1 ** mk_prelude_fastUnpack))
 
+  , ("prim/blodwen-string-iterator-new", (1 ** mk_prim__stringIteratorNew))
+  , ("prim/blodwen-string-iterator-next", (2 ** mk_prim__stringIteratorNext))
+  --, ("prim/blodwen-string-iterator-to-string", (4 ** mk_prim__stringIteratorToString))
+
   , ("prim/isNull", (1 ** mk_prim__nullAnyPtr))
   , ("prim/getString", (1 ** mk_prim__getString))
   ]
@@ -2623,6 +2686,9 @@ foreignRedirectMap = [
   , ("C:idris2_getString, libidris2_support", "prim/getString")
   , ("C:strlen,libc 6", "rapid_string_bytelength") -- <= remove, when Idris2 PR #1261 is merged
   , ("scheme:blodwen-stringbytelen", "rapid_string_bytelength")
+  , ("scheme:blodwen-string-iterator-new", "prim/blodwen-string-iterator-new")
+  , ("scheme:blodwen-string-iterator-next", "prim/blodwen-string-iterator-next")
+  , ("scheme:blodwen-string-iterator-to-string", "prim/blodwen-string-iterator-to-string")
   , ("C:exit, libc 6", "rapid_system_exit")
   , ("C:system, libc 6", "rapid_system_system")
   , ("C:getenv, libc 6", "rapid_system_get_env")
