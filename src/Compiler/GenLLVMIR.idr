@@ -1173,7 +1173,7 @@ orInteger i1 i2 = do
   zero2 <- icmp "eq" s2 (Const I32 0)
   resultIsZero <- mkAnd zero1 zero2
 
-  mkIf (pure resultIsZero) i1 (do
+  mkIf (pure resultIsZero) (pure i1) (do
     s1a <- mkAbs s1
     s2a <- mkAbs s2
     i1longer <- icmp "ugt" s1a s2a
