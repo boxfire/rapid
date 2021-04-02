@@ -23,4 +23,29 @@ main = do
   printLn $ (the Int 6 `div` the Int 3)
   printLn $ (the Integer 6 `div` the Integer 3)
   printLn $ (cast {to = Int} "6.6" `div` cast "3.9")
+  printLn (3.14159265 + 7.0)
+  printLn (3.14159265 - 7.0)
+  printLn (3.14159265 * 7.0)
+  printLn (3.14159265 / 7.0)
+
+  putStrLn "left is smaller"
+  printLn (3.14159265 < 7.0)
+  printLn (3.14159265 <= 7.0)
+  printLn (3.14159265 == 7.0)
+  printLn (3.14159265 >= 7.0)
+  printLn (3.14159265 > 7.0)
+
+  putStrLn "left is bigger"
+  printLn (9.14159265 < 7.0)
+  printLn (9.14159265 <= 7.0)
+  printLn (9.14159265 == 7.0)
+  printLn (9.14159265 >= 7.0)
+  printLn (9.14159265 > 7.0)
+
+  putStrLn "equal"
+  printLn (9.14159265 <  9.14159265)
+  printLn (9.14159265 <= 9.14159265)
+  printLn (9.14159265 == 9.14159265)
+  printLn (9.14159265 >= 9.14159265)
+  printLn (9.14159265 >  9.14159265)
   -- printLn $ (cast {to = Integer} "6.6" `div` cast "3.9")

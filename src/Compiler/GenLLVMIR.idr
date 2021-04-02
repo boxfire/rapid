@@ -250,6 +250,11 @@ icmp {t} cond a b = do
   compare <- assignSSA $ "icmp " ++ cond ++ " " ++ (show t) ++ " " ++ showWithoutType a ++ ", " ++ showWithoutType b
   pure $ SSA I1 compare
 
+fcmp : String -> IRValue F64 -> IRValue F64 -> Codegen (IRValue I1)
+fcmp cond a b = do
+  compare <- assignSSA $ "fcmp " ++ cond ++ " double " ++ showWithoutType a ++ ", " ++ showWithoutType b
+  pure $ SSA I1 compare
+
 mkZext : {to : IRType} -> IRValue from -> Codegen (IRValue to)
 mkZext {to} val = (SSA to) <$> assignSSA ("zext " ++ toIR val ++ " to " ++ show to)
 
@@ -517,6 +522,9 @@ cgMkBits64 val = do
 
 unboxBits64 : IRValue IRObjPtr -> Codegen (IRValue I64)
 unboxBits64 bits64Obj = getObjectSlot bits64Obj 0
+
+unboxDouble : IRValue IRObjPtr -> Codegen (IRValue F64)
+unboxDouble doubleObj = getObjectSlot doubleObj 0
 
 GMP_LIMB_SIZE : Integer
 GMP_LIMB_SIZE = 8
@@ -1056,6 +1064,20 @@ boundedIntBinary mask op dest a b = do
   truncatedVal <- mkAnd (Const I64 mask) result
   obj <- cgMkInt truncatedVal
   store obj (reg2val dest)
+
+doubleCmp : String -> Reg -> Reg -> Reg -> Codegen ()
+doubleCmp op dest a b = do
+  f1 <- unboxDouble !(load $ reg2val a)
+  f2 <- unboxDouble !(load $ reg2val b)
+  compared <- fcmp op f1 f2
+  store !(cgMkInt !(mkZext compared)) (reg2val dest)
+
+doubleBinOp : String -> Reg -> Reg -> Reg -> Codegen ()
+doubleBinOp op dest a b = do
+  f1 <- unboxDouble !(load $ reg2val a)
+  f2 <- unboxDouble !(load $ reg2val b)
+  result <- SSA F64 <$> (assignSSA $ op ++ " double " ++ showWithoutType f1 ++ ", " ++ showWithoutType f2)
+  store !(cgMkDouble result) (reg2val dest)
 
 addInteger : IRValue IRObjPtr -> IRValue IRObjPtr -> Codegen (IRValue IRObjPtr)
 addInteger i1 i2 = do
@@ -2024,6 +2046,18 @@ getInstIR i (OP r (LTE IntegerType) [r1, r2]) = do
   obj <- cgMkInt !(mkZext {to=I64} cmpResult)
 
   store obj (reg2val r)
+
+getInstIR i (OP r (LT  DoubleType) [r1, r2]) = doubleCmp "olt" r r1 r2
+getInstIR i (OP r (LTE DoubleType) [r1, r2]) = doubleCmp "ole" r r1 r2
+getInstIR i (OP r (EQ  DoubleType) [r1, r2]) = doubleCmp "oeq" r r1 r2
+getInstIR i (OP r (GTE DoubleType) [r1, r2]) = doubleCmp "oge" r r1 r2
+getInstIR i (OP r (GT  DoubleType) [r1, r2]) = doubleCmp "ogt" r r1 r2
+
+getInstIR i (OP r (Add DoubleType) [r1, r2]) = doubleBinOp "fadd" r r1 r2
+getInstIR i (OP r (Sub DoubleType) [r1, r2]) = doubleBinOp "fsub" r r1 r2
+getInstIR i (OP r (Mul DoubleType) [r1, r2]) = doubleBinOp "fmul" r r1 r2
+getInstIR i (OP r (Div DoubleType) [r1, r2]) = doubleBinOp "fdiv" r r1 r2
+getInstIR i (OP r (Mod DoubleType) [r1, r2]) = doubleBinOp "frem" r r1 r2
 
 getInstIR i (MKCON r (Left tag) args) = do
   obj <- mkCon tag args
