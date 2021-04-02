@@ -87,6 +87,7 @@ declare ccc %ObjPtr @rapid_system_dir_next_entry(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc i64 @rapid_system_file_read_char(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_system_stdin_getline(%TSOPtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_system_getargs(%TSOPtr, %ObjPtr)
+declare ccc i64 @rapid_string_bytelength(%TSOPtr, %ObjPtr nocapture readonly) "gc-leaf-function"
 declare ccc %ObjPtr @rapid_fast_pack(%TSOPtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_fast_append(%TSOPtr, %ObjPtr)
 declare ccc void @rapid_putstr(%TSOPtr, %ObjPtr, %ObjPtr)

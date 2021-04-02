@@ -17,6 +17,7 @@ main
          val <- getDouble buf 10
          printLn val
 
+         putStrLn $ "bytes: " ++ show (stringByteLength "Hello there!")
          setString buf 20 "Hello there!"
          val <- getString buf 20 5
          printLn val

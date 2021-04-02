@@ -2621,6 +2621,8 @@ foreignRedirectMap = [
   , ("C:idris2_isNull, libidris2_support", "prim/isNull")
   , ("C:idris2_fileErrno, libidris2_support", "rapid_system_errno")
   , ("C:idris2_getString, libidris2_support", "prim/getString")
+  , ("C:strlen,libc 6", "rapid_string_bytelength") -- <= remove, when Idris2 PR #1261 is merged
+  , ("scheme:blodwen-stringbytelen", "rapid_string_bytelength")
   , ("C:exit, libc 6", "rapid_system_exit")
   , ("C:system, libc 6", "rapid_system_system")
   , ("C:getenv, libc 6", "rapid_system_get_env")

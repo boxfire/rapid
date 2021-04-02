@@ -774,6 +774,17 @@ int64_t rapid_bigint_lshift_inplace(mp_limb_t *p, int64_t n, unsigned int count)
   return 0;
 }
 
+/**
+ * Return length in bytes of the string's UTF-8 encoding.
+ */
+int64_t rapid_string_bytelength(Idris_TSO *base, ObjPtr strObj) {
+  assert(OBJ_TYPE(strObj) == OBJ_TYPE_STRING);
+  // FIXME: this assumes ASCII, and returns just the string's length for now
+  // TODO: iterate over all codepoints and sum the required bytes for each one
+  int length = OBJ_SIZE(strObj);
+  return length;
+}
+
 void rapid_builtin_init(int argc, char **argv) {
   rapid_global_argc = argc;
   rapid_global_argv = argv;
