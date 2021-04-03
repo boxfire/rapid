@@ -1082,6 +1082,19 @@ doubleBinOp op dest a b = do
   result <- SSA F64 <$> (assignSSA $ op ++ " double " ++ showWithoutType f1 ++ ", " ++ showWithoutType f2)
   store !(cgMkDouble result) (reg2val dest)
 
+normaliseIntegerSize : IRValue IRObjPtr -> IRValue I32 -> IRValue I1 -> Codegen ()
+normaliseIntegerSize integerObj maxSizeSigned invert = do
+  maxSizeAbs <- mkAbs maxSizeSigned
+  absRealNewSize <- mkTrunc {to=I32} !(call {t=I64} "ccc" "@rapid_bigint_real_size" [
+    toIR !(getObjectPayloadAddr {t=I64} integerObj),
+    toIR !(mkZext {to=I64} maxSizeAbs)
+    ])
+  isNegative <- icmp "slt" maxSizeSigned (Const I32 0)
+  invertResult <- mkXOr isNegative invert
+  signedNewSize <- mkSelect invertResult !(mkSub (Const I32 0) absRealNewSize) absRealNewSize
+  newHeader <- mkHeader OBJECT_TYPE_ID_BIGINT signedNewSize
+  putObjectHeader integerObj newHeader
+
 addInteger : IRValue IRObjPtr -> IRValue IRObjPtr -> Codegen (IRValue IRObjPtr)
 addInteger i1 i2 = do
       s1 <- getObjectSize i1
@@ -1163,6 +1176,44 @@ integer0 = do
   newObj <- dynamicAllocate (Const I64 0)
   putObjectHeader newObj (Const I64 $ (header OBJECT_TYPE_ID_BIGINT))
   pure newObj
+
+andInteger : IRValue IRObjPtr -> IRValue IRObjPtr -> Codegen (IRValue IRObjPtr)
+andInteger i1 i2 = do
+  -- TODO: what to do with negative numbers?
+  s1 <- getObjectSize i1
+  s2 <- getObjectSize i2
+  zero1 <- icmp "eq" s1 (Const I32 0)
+  zero2 <- icmp "eq" s2 (Const I32 0)
+  resultIsZero <- mkOr zero1 zero2
+
+  mkIf (pure resultIsZero) (mkSelect zero1 i1 i2) (do
+    s1a <- mkAbs s1
+    s2a <- mkAbs s2
+    i1longer <- icmp "ugt" s1a s2a
+    -- "long" and "short" refer just to the respective limb counts
+    -- it doesn't matter which number is actually bigger
+    long <- mkSelect i1longer i1 i2
+    short <- mkSelect i1longer i2 i1
+    size1 <- mkZext {to=I64} !(mkSelect {t=I32} i1longer s1a s2a)
+    size2 <- mkZext {to=I64} !(mkSelect {t=I32} i1longer s2a s1a)
+    -- result can not be longer than shortest number
+    let newLength = size2
+    newSize <- mkMul (Const I64 GMP_LIMB_SIZE) newLength
+    newObj <- dynamicAllocate newSize
+    putObjectHeader newObj !(mkHeader OBJECT_TYPE_ID_BIGINT !(mkTrunc newLength))
+
+    newPayload <- getObjectPayloadAddr {t=I8} newObj
+    shortPayload <- getObjectPayloadAddr {t=I8} short
+    appendCode $ "  call void @llvm.memcpy.p1i8.p1i8.i64(" ++ toIR newPayload ++ ", " ++ toIR shortPayload ++ ", " ++ toIR newSize++ ", i1 false)"
+
+    newLimbs <- getObjectPayloadAddr {t=I64} newObj
+    longLimbs <- getObjectPayloadAddr {t=I64} long
+    voidCall "ccc" "@__gmpn_and_n" [toIR newLimbs, toIR newLimbs, toIR longLimbs, toIR newSize]
+
+    normaliseIntegerSize newObj !(mkTrunc newSize) (Const I1 0)
+
+    pure newObj
+    )
 
 orInteger : IRValue IRObjPtr -> IRValue IRObjPtr -> Codegen (IRValue IRObjPtr)
 orInteger i1 i2 = do
@@ -1940,6 +1991,11 @@ getInstIR i (OP r (ShiftR IntegerType) [r1, r2]) = do
   obj <- cgMkInt !(mkShiftR i1 i2)
   store obj (reg2val r)
 
+getInstIR i (OP r (BAnd IntegerType) [r1, r2]) = do
+  i1 <- load (reg2val r1)
+  i2 <- load (reg2val r2)
+  obj <- andInteger i1 i2
+  store obj (reg2val r)
 getInstIR i (OP r (BOr IntegerType) [r1, r2]) = do
   i1 <- load (reg2val r1)
   i2 <- load (reg2val r2)

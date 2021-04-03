@@ -73,6 +73,8 @@ main = do
   putStrLn "bitwise"
   printLn (altbits `prim__or_Integer` thirdbits)
   printLn (thirdbits `prim__or_Integer` altbits)
+  printLn (altbits `prim__and_Integer` thirdbits)
+  printLn (thirdbits `prim__and_Integer` altbits)
   putStrLn "ok"
   putStrLn (show small)
   putStrLn (show $ cast {to=Int} integer)
