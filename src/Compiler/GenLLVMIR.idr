@@ -2270,7 +2270,9 @@ getInstIR i (PROJECT r o pos) = do
 getInstIR i (EXTPRIM r n args) = compileExtPrim i n r args
 
 getInstIR i START = pure ()
-getInstIR i inst = addError $ "NOT IMPLEMENTED: " ++ show inst
+getInstIR i inst = do
+  addError $ "NOT IMPLEMENTED: " ++ show inst
+  mkRuntimeCrash i ("NOT IMPLEMENTED: " ++ show inst)
 
 compileExtPrimFallback : Name -> Reg -> List Reg -> Codegen ()
 compileExtPrimFallback n r args =
