@@ -68,15 +68,20 @@ void rapid_system_exit(Idris_TSO *base, int64_t exitCode, ObjPtr _world) {
 }
 
 int64_t rapid_system_errno(Idris_TSO *base, ObjPtr _world) {
-  switch(base->rapid_errno) {
+  return base->rapid_errno;
+}
+
+int64_t rapid_system_file_errno(Idris_TSO *base, ObjPtr _world) {
+  int64_t errno_raw = rapid_system_errno(base, _world);
+  switch(errno_raw) {
     case ENOENT:
       return 2;
     case EACCES:
-      return 2;
+      return 3;
     case EEXIST:
       return 4;
     default:
-      return base->rapid_errno + 5;
+      return errno_raw + 5;
   }
 }
 
@@ -263,6 +268,29 @@ ObjPtr rapid_system_file_stderr(Idris_TSO *base) {
   ObjPtr ptrObj = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
   ptrObj->hdr = MAKE_HEADER(OBJ_TYPE_OPAQUE, POINTER_SIZE);
   ptrObj->data = stderr;
+  return ptrObj;
+}
+
+ObjPtr rapid_system_fdopen(Idris_TSO *base, int64_t fd, ObjPtr modeObj, ObjPtr _world) {
+  assert(OBJ_TYPE(modeObj) == OBJ_TYPE_STRING);
+
+  int length = OBJ_SIZE(modeObj);
+  const char *str = (const char *)OBJ_PAYLOAD(modeObj);
+  char *modeCstr = (char *)alloca(length + 1);
+  memcpy(modeCstr, str, length);
+  modeCstr[length] = '\0';
+
+  FILE *f = fdopen(fd, modeCstr);
+  if (f) {
+    base->rapid_errno = 0;
+  } else {
+    base->rapid_errno = errno;
+  }
+
+  ObjPtr ptrObj = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
+  ptrObj->hdr = MAKE_HEADER(OBJ_TYPE_OPAQUE, POINTER_SIZE);
+  ptrObj->data = f;
+
   return ptrObj;
 }
 

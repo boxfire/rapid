@@ -2876,6 +2876,7 @@ builtinForeign builtin name argTypes ret = do
 foreignRedirectMap : List (String, String)
 foreignRedirectMap = [
     ("C:idris2_openFile, libidris2_support", "rapid_system_file_open")
+  , ("C:fdopen,libc 6", "rapid_system_fdopen")
   , ("C:idris2_closeFile, libidris2_support", "rapid_system_file_close")
   , ("C:fflush,libc 6", "rapid_system_file_flush")
   , ("C:idris2_fileSize, libidris2_support", "rapid_system_file_size")
@@ -2908,7 +2909,8 @@ foreignRedirectMap = [
   , ("C:idris2_readBufferData,libidris2_support", "idris_rts_read_buffer_data")
   , ("C:idris2_writeBufferData,libidris2_support", "idris_rts_write_buffer_data")
   , ("C:idris2_isNull, libidris2_support", "prim/isNull")
-  , ("C:idris2_fileErrno, libidris2_support", "rapid_system_errno")
+  , ("C:idris2_fileErrno, libidris2_support", "rapid_system_file_errno")
+  , ("C:idrnet_errno,libidris2_support", "rapid_system_errno")
   , ("C:idris2_getString, libidris2_support", "prim/getString")
   , ("C:strlen,libc 6", "rapid_string_bytelength") -- <= remove, when Idris2 PR #1261 is merged
 
