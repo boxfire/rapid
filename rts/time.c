@@ -1,4 +1,3 @@
-#include <alloca.h>
 #include <assert.h>
 #include <time.h>
 #include <unistd.h>

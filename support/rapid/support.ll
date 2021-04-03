@@ -97,6 +97,21 @@ declare ccc i32 @rapid_system_getchar(%TSOPtr, %ObjPtr)
 declare ccc void @rapid_system_putchar(%TSOPtr, i32, %ObjPtr)
 declare ccc i32 @rapid_clock_read(%TSOPtr, %ObjPtr, i32) "gc-leaf-function"
 
+declare ccc i64 @idrnet_af_inet(%TSOPtr, %ObjPtr) "gc-leaf-function"
+declare ccc i64 @idrnet_af_inet6(%TSOPtr, %ObjPtr) "gc-leaf-function"
+declare ccc i64 @idrnet_af_unix(%TSOPtr, %ObjPtr) "gc-leaf-function"
+declare ccc i64 @idrnet_af_unspec(%TSOPtr, %ObjPtr) "gc-leaf-function"
+declare ccc i64 @idrnet_socket(%TSOPtr, i64, i64, i64, %ObjPtr) "gc-leaf-function"
+declare ccc %ObjPtr @idrnet_create_sockaddr(%TSOPtr, %ObjPtr)
+declare ccc void @idrnet_free(%TSOPtr, %ObjPtr, %ObjPtr) "gc-leaf-function"
+declare ccc i64 @idrnet_bind(%TSOPtr, i64, i64, i64, %ObjPtr, i64, %ObjPtr) "gc-leaf-function"
+declare ccc i64 @idrnet_listen(%TSOPtr, i64, i64, %ObjPtr) "gc-leaf-function"
+declare ccc i64 @idrnet_accept(%TSOPtr, i64, %ObjPtr, %ObjPtr) "gc-leaf-function"
+
+declare ccc i64 @idrnet_sockaddr_family(%TSOPtr, %ObjPtr, %ObjPtr) "gc-leaf-function"
+declare ccc %ObjPtr @idrnet_sockaddr_ipv4(%TSOPtr, %ObjPtr, %ObjPtr)
+declare ccc i64 @idrnet_sockaddr_ipv4_port(%TSOPtr, %ObjPtr, %ObjPtr) "gc-leaf-function"
+
 ; Terminal utility functions
 declare ccc void @idris2_setupTerm(%TSOPtr, %ObjPtr) "gc-leaf-function"
 declare ccc i64 @idris2_getTermCols(%TSOPtr, %ObjPtr) "gc-leaf-function"
