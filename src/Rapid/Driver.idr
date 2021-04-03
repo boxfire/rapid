@@ -31,6 +31,9 @@ writeIR functions foreigns support outfile debug = do
   ignore $ fPutStr outFile $ fastAppend foreignCode
 
   for_ indexedFuncs (\c => do
+    -- This dummy IO forces the `getVMIR` calls to wait until it's "their turn",
+    -- otherwise we get huge memory spikes.
+    ignore $ fPutStr stderr ""
     let i = 1 + fst c
     when (i `mod` 100 == 0) $ ignore $ fPutStrLn stderr ("compile fun " ++ show i ++ "/" ++ (show fcount) ++ ": " ++ safeName (fst (snd c)))
     let funcIr = getVMIR debug nameMap c
