@@ -610,7 +610,7 @@ ObjPtr rapid_system_dir_next_entry(Idris_TSO *base, ObjPtr dirPtrObj, ObjPtr _wo
 
   if (errno != 0) {
     base->rapid_errno = errno;
-    rapid_C_crash("readdir failed");
+    return NULL;
   }
 
   ObjPtr newStr = NULL;
