@@ -112,6 +112,9 @@ ObjPtr rapid_system_get_env(Idris_TSO *base, ObjPtr varObj, ObjPtr _world) {
   varCstr[length] = '\0';
 
   char *value = getenv(varCstr);
+  if (value == NULL) {
+    return NULL;
+  }
   size_t value_len = strlen(value);
 
   ObjPtr newStr = rapid_C_allocate(base, HEADER_SIZE + value_len);
