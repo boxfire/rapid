@@ -14,8 +14,8 @@ main = do
       closeFile fh
     Left err => putStrLn $ "file error: " ++ show err
 
-  writeFile "temporarytestfile" "#!/usr/bin/env true\n"
-  chmodRaw "temporarytestfile" 0o755
+  ignore $ writeFile "temporarytestfile" "#!/usr/bin/env true\n"
+  ignore $ chmodRaw "temporarytestfile" 0o755
   rc1 <- system "/usr/bin/true"
   rc2 <- system "ls -la ./temporarytestfile"
   printLn $ the (List Int) [rc1, rc2]
@@ -23,10 +23,13 @@ main = do
   path <- getEnv "PATH"
   putStrLn $ "$PATH = " ++ show path
 
+  path <- getEnv "NOTEXISTINGENVVAR"
+  putStrLn $ "$NOTEXISTINGENVVAR = " ++ show path
+
   the (IO ()) exitSuccess
 
-  fPutStr stdout "to:stdout\n"
-  fPutStr stderr "to:stderr\n"
+  ignore $ fPutStr stdout "to:stdout\n"
+  ignore $ fPutStr stderr "to:stderr\n"
   line <- getLine
   putStrLn $ "input was: " ++ show line
   putStrLn $ "please press any key to continue..."
