@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include <sys/errno.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -685,6 +686,25 @@ ObjPtr rapid_fast_append(Idris_TSO *base, ObjPtr strListObj) {
     cursor = OBJ_PROJECT(cursor, 1);
   }
   return newStr;
+}
+
+/**
+ * Terminal utility functions, copied from Idris2 soruce dir support/c/
+ */
+void idris2_setupTerm(Idris_TSO *base, ObjPtr _world) {
+    // NOTE: Currently not needed for non windows systems
+}
+
+int64_t idris2_getTermCols(Idris_TSO *base, ObjPtr _world) {
+    struct winsize ts;
+    ioctl(0, TIOCGWINSZ, &ts);
+    return (int64_t) ts.ws_col;
+}
+
+int64_t idris2_getTermLines(Idris_TSO *base, ObjPtr _world) {
+    struct winsize ts;
+    ioctl(0, TIOCGWINSZ, &ts);
+    return (int64_t) ts.ws_row;
 }
 
 ObjPtr rapid_system_getargs(Idris_TSO *base, ObjPtr _world) {
