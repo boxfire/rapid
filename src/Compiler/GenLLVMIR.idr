@@ -2929,8 +2929,6 @@ foreignRedirectMap = [
   , ("C:getenv, libc 6", "rapid_system_get_env")
   , ("scheme:blodwen-args", "rapid_system_getargs")
 
-  , ("scheme:blodwen-new-buffer", "prim/blodwen-new-buffer")
-
   , ("scheme:blodwen-buffer-size", "prim/blodwen-buffer-size")
   , ("scheme:blodwen-new-buffer", "prim/blodwen-new-buffer")
   , ("scheme:blodwen-buffer-setbyte", "prim/blodwen-buffer-setbyte")
