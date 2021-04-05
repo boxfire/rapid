@@ -441,7 +441,7 @@ ObjPtr rapid_system_file_read_line(Idris_TSO *base, ObjPtr filePtrObj, ObjPtr _w
   size_t bufsize = 0;
   char *buffer = NULL;
   ssize_t length = getline(&buffer, &bufsize, f);
-  if (errno != 0) {
+  if (length == -1 && errno != 0) {
     base->rapid_errno = errno;
     rapid_C_crash("getline failed");
   }
@@ -488,7 +488,7 @@ ObjPtr rapid_system_stdin_getline(Idris_TSO *base, ObjPtr _world) {
   size_t bufsize = 0;
   char *buffer = NULL;
   ssize_t length = getline(&buffer, &bufsize, stdin);
-  if (errno != 0) {
+  if (length == -1 && errno != 0) {
     base->rapid_errno = errno;
     rapid_C_crash("getline failed");
   }
@@ -624,23 +624,21 @@ ObjPtr rapid_system_dir_next_entry(Idris_TSO *base, ObjPtr dirPtrObj, ObjPtr _wo
   DIR *d = *(DIR **)OBJ_PAYLOAD(dirPtrObj);
   struct dirent *de = readdir(d);
 
-  if (errno != 0) {
+  if (de == NULL) {
     base->rapid_errno = errno;
     return NULL;
   }
+  base->rapid_errno = 0;
 
-  ObjPtr newStr = NULL;
-  if (de != NULL) {
-    ssize_t length = strlen(de->d_name);
+  ssize_t length = strlen(de->d_name);
 
-    if (length < 0) {
-      length = 0;
-    }
-
-    newStr = rapid_C_allocate(base, HEADER_SIZE + length);
-    newStr->hdr = MAKE_HEADER(OBJ_TYPE_STRING, length);
-    memcpy(OBJ_PAYLOAD(newStr), de->d_name, length);
+  if (length < 0) {
+    length = 0;
   }
+
+  ObjPtr newStr = rapid_C_allocate(base, HEADER_SIZE + length);
+  newStr->hdr = MAKE_HEADER(OBJ_TYPE_STRING, length);
+  memcpy(OBJ_PAYLOAD(newStr), de->d_name, length);
 
   ObjPtr newPtr = rapid_C_allocate(base, HEADER_SIZE + POINTER_SIZE);
   newPtr->hdr = MAKE_HEADER(OBJ_TYPE_PTR, 1);
