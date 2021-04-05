@@ -38,6 +38,13 @@ strOps = [
   , ("> ", (>))
   ]
 
+strMatch : String -> String
+strMatch "" = "(empty)"
+strMatch "abc" = "(def)"
+strMatch "def" = "(ghi)"
+strMatch "ghi" = "(xyz)"
+strMatch _ = "(other)"
+
 alphabet : String
 alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
@@ -67,3 +74,8 @@ main = do
   putStrLn $ "rev3: " ++ (prim__strReverse alphabet)
   printLn $ fastUnpack "abc456@//$"
   printLn $ toList $ Iterator.unpack "abc987@//$"
+  putStrLn $ strMatch $ fastPack $ unpack ""
+  putStrLn $ strMatch $ fastPack $ unpack "abc"
+  putStrLn $ strMatch $ fastPack $ unpack "def"
+  putStrLn $ strMatch $ fastPack $ unpack "ghi"
+  putStrLn $ strMatch $ fastPack $ unpack "zyx"

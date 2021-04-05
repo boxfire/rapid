@@ -113,3 +113,8 @@ rev2: x
 rev3: ZYXWVUTSRQPONMLKJIHGFEDCBA
 ['a', 'b', 'c', '4', '5', '6', '@', '/', '/', '$']
 ['a', 'b', 'c', '9', '8', '7', '@', '/', '/', '$']
+(empty)
+(def)
+(ghi)
+(xyz)
+(other)

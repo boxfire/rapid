@@ -226,7 +226,9 @@ define private fastcc %Return1 @rapid_gc_enter(%TSOPtr %BaseArg, i64 %size.align
 
 define private fastcc i1 @mem_eq(%i8p1 noalias nocapture nofree nonnull %v1, %i8p1 noalias nocapture nofree nonnull %v2, i64 %size) argmemonly readonly nounwind {
 entry:
-  br label %loop
+  %lengthZero = icmp eq i64 %size, 0
+  br i1 %lengthZero, label %finished_eq, label %loop
+
 loop:
   %i = phi i64 [%iPlus, %loopend], [0, %entry]
 
@@ -244,12 +246,17 @@ loopend:
   br i1 %continue, label %loop, label %finished
 finished:
   ret i1 %beq
+
+finished_eq:
+  ret i1 1
 }
 
 define private fastcc i32 @rapid.memcmp(%i8p1 noalias nocapture nofree nonnull %v1, %i8p1 noalias nocapture nofree nonnull %v2, i64 %size) argmemonly readonly nounwind {
 ;define external fastcc i32 @rapid.memcmp(%i8p1 %v1, %i8p1 %v2, i64 %size) noinline optsize nounwind {
 entry:
-  br label %loop
+  %lengthZero = icmp eq i64 %size, 0
+  br i1 %lengthZero, label %finished_eq, label %loop
+
 loop:
   %i = phi i64 [%iPlus, %loopend], [0, %entry]
 
