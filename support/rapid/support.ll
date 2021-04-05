@@ -132,6 +132,7 @@ declare ccc void @__gmpn_tdiv_qr(%LimbPtr nocapture writeonly, %LimbPtr nocaptur
 declare ccc i32 @__gmpn_cmp(%LimbPtr nocapture readonly, %LimbPtr nocapture readonly, i64) "gc-leaf-function"
 declare ccc i64 @__gmpn_sizeinbase(%LimbPtr nocapture readonly, i64, i32) "gc-leaf-function"
 declare ccc i64 @rapid_bigint_get_str(%ObjPtr nocapture, %ObjPtr nocapture readonly, i32) "gc-leaf-function"
+declare ccc i32 @rapid_bigint_set_str(%ObjPtr writeonly noalias nocapture nofree, %ObjPtr readonly noalias nocapture nofree nonnull) nounwind argmemonly "gc-leaf-function"
 declare ccc i64 @rapid_bigint_lshift_inplace(%LimbPtr nocapture, i64, i32) "gc-leaf-function"
 declare ccc i64 @rapid_bigint_rshift_inplace(%LimbPtr nocapture, i64, i32) "gc-leaf-function"
 declare ccc i64 @rapid_bigint_real_size(%LimbPtr nocapture readonly %p, i64 %n) "gc-leaf-function"

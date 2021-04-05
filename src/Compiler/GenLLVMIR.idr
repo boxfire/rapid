@@ -542,6 +542,15 @@ GMP_LIMB_BITS = 8 * GMP_LIMB_SIZE
 GMP_LIMB_BOUND : Integer
 GMP_LIMB_BOUND = (1 `prim__shl_Integer` (GMP_LIMB_BITS))
 
+-- To estimate required count of limbs (upper bound):
+-- x = the number (result)
+--   length of string == number of digits <= log10(x) + 1
+--   required limbs: log10(x) / log10(2^LIMB_BITS)
+--     LIMB_BITS=32 -> required limbs <= number of digits / 9
+--     LIMB_BITS=64 -> required limbs <= number of digits / 19
+GMP_ESTIMATE_DIGITS_PER_LIMB : Integer
+GMP_ESTIMATE_DIGITS_PER_LIMB = 19
+
 cgMkConstInteger : Int -> Integer -> Codegen (IRValue IRObjPtr)
 cgMkConstInteger i val =
     do
@@ -1758,11 +1767,21 @@ getInstIR i (OP r (Cast IntegerType DoubleType) [r1]) = do
     )
 
 getInstIR i (OP r (Cast StringType IntegerType) [r1]) = do
-  mkRuntimeCrash i "Integer -> GMP transition not finished (cast from String)"
   strObj <- load (reg2val r1)
-  parsedVal <- SSA I64 <$> assignSSA ("  call ccc i64 @idris_rts_str_to_int(" ++ toIR strObj ++ ")")
-  newInt <- cgMkInt parsedVal
-  store newInt (reg2val r)
+  strLength <- getObjectSize strObj
+  maxLimbsCount <- mkUDiv strLength (Const I32 GMP_ESTIMATE_DIGITS_PER_LIMB)
+  -- GMP requires 1 limb scratch space
+  maxLimbsCountPlus1 <- mkAdd maxLimbsCount (Const I32 1)
+
+  newObj <- dynamicAllocate !(mkZext !(mkMul maxLimbsCountPlus1 (Const I32 GMP_LIMB_SIZE)))
+  putObjectHeader newObj !(mkHeader OBJECT_TYPE_ID_BIGINT maxLimbsCountPlus1)
+  ignore $ call {t=I32} "ccc" "@rapid_bigint_set_str" [
+    toIR newObj,
+    toIR strObj
+    ]
+  store newObj (reg2val r)
+
+
 getInstIR i (OP r (Cast StringType IntType) [r1]) = do
   strObj <- load (reg2val r1)
   parsedVal <- SSA I64 <$> assignSSA ("  call ccc i64 @idris_rts_str_to_int(" ++ toIR strObj ++ ")")

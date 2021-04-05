@@ -16,6 +16,7 @@
 
 #include <gmp.h>
 
+#include "builtin.h"
 #include "gc.h"
 #include "getline.h"
 #include "object.h"
@@ -808,6 +809,55 @@ int64_t rapid_bigint_get_str(ObjPtr destStr, const ObjPtr srcInteger, int base) 
   }
 
   return numDigits + needsSign;
+}
+
+/**
+ * Convert the string `srcStr` into a big Integer object (using base 10)
+ * `destIntegerObj` must be big enough and have its allocated size set
+ *
+ * return 0 on success, != 0 on error
+ */
+int32_t rapid_bigint_set_str(ObjPtr destIntegerObj, const ObjPtr srcStr) {
+  assert(OBJ_TYPE(srcStr) == OBJ_TYPE_STRING);
+  assert(OBJ_TYPE(destIntegerObj) == OBJ_TYPE_BIGINT);
+
+  int strLength = OBJ_SIZE(srcStr);
+  if (strLength > 1024) {
+    // TODO: use temporary heap allocation instead of stack space
+    rapid_C_crash("bigint source string too long");
+  }
+
+  int maxSize = OBJ_SIZE(destIntegerObj);
+  assert(maxSize >= (1 + strLength / 19));
+
+  unsigned char scratch[strLength];
+  const unsigned char *src = OBJ_PAYLOAD(srcStr);
+  bool negate = false;
+  if (*src == '-') {
+    negate = true;
+    ++src;
+    --strLength;
+  } else if (*src == '+') {
+    ++src;
+    --strLength;
+  }
+
+  for (int i = 0; i < strLength; ++i) {
+    if (!isdigit(*src)) {
+      // set dest Integer to "0" on error
+      destIntegerObj->hdr = MAKE_HEADER(OBJ_TYPE_BIGINT, 0);
+      return -1;
+    }
+    scratch[i] = (*src) - '0';
+    ++src;
+  }
+
+  mpn_set_str(OBJ_PAYLOAD(destIntegerObj), scratch, strLength, 10);
+  int real_size = rapid_bigint_real_size(OBJ_PAYLOAD(destIntegerObj), maxSize);
+
+  destIntegerObj->hdr = MAKE_HEADER(OBJ_TYPE_BIGINT, negate ? (-real_size) : real_size);
+
+  return 0;
 }
 
 /**

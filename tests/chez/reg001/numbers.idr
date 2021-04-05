@@ -17,7 +17,13 @@ main = do
   printLn $ cast {to = String} 2.7
 
   -- printLn $ cast {to = Int} "1.2"
-  -- printLn $ cast {to = Integer} "2.7"
+  printLn $ cast {to = Integer} "2"
+  printLn $ cast {to = Integer} "133742420000000006660000000000000000000013000000000000700000000000002"
+  printLn $ cast {to = Integer} "000000000000000000000000000000000000000000000000000000000000"
+  printLn $ cast {to = Integer} "0"
+  printLn $ cast {to = Integer} "-0"
+  printLn $ cast {to = Integer} "-1024"
+  printLn $ cast {to = Integer} "-0001938712097836128076319208763102"
   printLn $ cast {to = Double} "5.9"
 
   printLn $ (the Int 6 `div` the Int 3)
