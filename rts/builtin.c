@@ -1,5 +1,6 @@
 #include <alloca.h>
 #include <assert.h>
+#include <ctype.h>
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,7 +42,22 @@ int64_t idris_rts_int_to_str(char *dst, int64_t val) {
 }
 
 int64_t idris_rts_double_to_str(char *dst, int64_t size, double val) {
-  int64_t needed_size = snprintf(dst, size, "%g", val);
+  int64_t needed_size = snprintf(dst, size, "%#.15g", val);
+  // manually strip trailing zeros:
+  if (needed_size <= size) {
+    int64_t stripped_size = needed_size;
+    while (dst[stripped_size-1] == '0') {
+      assert(stripped_size >= 3);
+      --stripped_size;
+    }
+    if (stripped_size < needed_size && !isdigit(dst[stripped_size-1])) {
+      // leave exactly one trailing zero
+      ++stripped_size;
+    }
+    assert(stripped_size >= 3);
+    assert(stripped_size <= needed_size);
+    needed_size = stripped_size;
+  }
   return needed_size;
 }
 

@@ -151,6 +151,7 @@ declare ccc i1 @llvm.expect.i1(i1, i1) "gc-leaf-function"
 ; "abs" intrinsics not yet available
 declare ccc i32 @llvm.abs.i32(i32, i1) "gc-leaf-function"
 declare ccc i64 @llvm.abs.i64(i64, i1) "gc-leaf-function"
+declare ccc i64 @llvm.ctlz.i64(i64, i1) "gc-leaf-function"
 
 ;can be removed when the intrinsic is available with LLVM 12+
 define ccc i32 @rapid.abs.i32(i32 %arg0, i1 %arg1) "gc-leaf-function" {

@@ -176,6 +176,10 @@ IEEE_DOUBLE_MASK_FRAC : Bits64
 IEEE_DOUBLE_MASK_FRAC = 0x000fffffffffffff
 IEEE_DOUBLE_MASK_SIGN : Bits64
 IEEE_DOUBLE_MASK_SIGN = 0x8000000000000000
+IEEE_DOUBLE_INF_POS   : Bits64
+IEEE_DOUBLE_INF_POS   = 0x7ff0000000000000
+IEEE_DOUBLE_INF_NEG   : Bits64
+IEEE_DOUBLE_INF_NEG   = 0xfff0000000000000
 
 ToIR IRLabel where
   toIR (MkLabel l) = "label %" ++ l
@@ -578,6 +582,12 @@ cgMkDouble val = do
   putObjectSlot newObj (ConstI64 0) val
   pure newObj
 
+cgMkDoubleFromBits : IRValue I64 -> Codegen (IRValue IRObjPtr)
+cgMkDoubleFromBits val = do
+  newObj <- dynamicAllocate (ConstI64 8)
+  putObjectHeader newObj (Const I64 $ header OBJECT_TYPE_ID_DOUBLE)
+  putObjectSlot newObj (Const I64 0) val
+  pure newObj
 
 -- change to List Bits8
 utf8EncodeChar : Char -> List Int
@@ -1691,6 +1701,57 @@ getInstIR i (OP r (Cast DoubleType IntegerType) [r1]) = do
       )
     )
   store newObj (reg2val r)
+
+getInstIR i (OP r (Cast IntegerType DoubleType) [r1]) = do
+  intObj <- load (reg2val r1)
+  size <- getObjectSize intObj
+  isZero <- icmp "eq" (Const I32 0) size
+
+  mkIf_ (pure isZero) (do
+      newObj <- cgMkDouble (ConstF64 0.0)
+      store newObj (reg2val r)
+    ) (do
+    sizeAbs <- mkAbs size
+    highestLimbIndex <- mkZext {to=I64} !(mkSub sizeAbs (Const I32 1))
+    msbLimbAddr <- getObjectSlotAddrVar {t=I64} intObj highestLimbIndex
+    msbLimb <- load msbLimbAddr
+    countLeadingZeros <- SSA I64 <$> assignSSA ("  call ccc i64 @llvm.ctlz.i64(" ++ toIR msbLimb ++ ", i1 1)")
+    exponentOffset <- mkAdd (Const I64 (1023 + 63)) !(mkMul highestLimbIndex (Const I64 64))
+    exponent <- mkSub exponentOffset countLeadingZeros
+
+    isInfinity <- icmp "ugt" exponent (Const I64 2046)
+    doubleAsBits <- mkIf (pure isInfinity) (do
+        pure (Const I64 $ cast IEEE_DOUBLE_INF_POS)
+      ) (do
+        fracShiftLeft <- icmp "uge" countLeadingZeros (Const I64 12)
+        shiftedFraction <- mkIf (pure fracShiftLeft) (do
+            mkShiftL msbLimb !(mkSub countLeadingZeros (Const I64 11))
+          ) (do
+            mkShiftR msbLimb !(mkSub (Const I64 11) countLeadingZeros)
+          )
+        fraction <- mkIf (icmp "eq" sizeAbs (Const I32 1)) (do
+            pure shiftedFraction
+          ) (do
+            mkIf (pure fracShiftLeft) (do
+                secondMsbLimbAddr <- getObjectSlotAddrVar {t=I64} intObj !(mkSub highestLimbIndex (Const I64 1))
+                secondMsbLimb <- load secondMsbLimbAddr
+                fractionLowerPart <- mkShiftR secondMsbLimb !(mkSub (Const I64 (64 + 11)) countLeadingZeros)
+                mkOr shiftedFraction fractionLowerPart
+              ) (do
+                pure shiftedFraction
+              )
+          )
+        shiftedExponent <- mkShiftL exponent (Const I64 52)
+        maskedFraction <- mkAnd (Const I64 $ cast IEEE_DOUBLE_MASK_FRAC) fraction
+        mkOr shiftedExponent maskedFraction
+      )
+    isNegative <- icmp "slt" size (Const I32 0)
+    sign <- mkSelect isNegative (Const I64 $ cast IEEE_DOUBLE_MASK_SIGN) (Const I64 0)
+    signedDoubleAsBits <- mkOr sign doubleAsBits
+    newObj <- cgMkDoubleFromBits signedDoubleAsBits
+    store newObj (reg2val r)
+    )
+
 getInstIR i (OP r (Cast StringType IntegerType) [r1]) = do
   mkRuntimeCrash i "Integer -> GMP transition not finished (cast from String)"
   strObj <- load (reg2val r1)
