@@ -43,6 +43,35 @@ division = do
   printLn (huge `mod` big)
   printLn (big `mod` huge)
 
+testShiftLeft : IO ()
+testShiftLeft = do
+  putStrLn "shiftLeft"
+  printLn (1 `prim__shl_Integer` 63)
+  printLn (1 `prim__shl_Integer` 64)
+  printLn (0x1000000000000001 `prim__shl_Integer` 0)
+  printLn (0x1000000000000001 `prim__shl_Integer` 1)
+  printLn (0x1000000000000001 `prim__shl_Integer` 2)
+  printLn (0x1000000000000001 `prim__shl_Integer` 63)
+  printLn (0x1000000000000001 `prim__shl_Integer` 64)
+  printLn (0x1000000000000001 `prim__shl_Integer` 65)
+  printLn (0x1000000000000001 `prim__shl_Integer` 139)
+  printLn (0x1000000000000001 `prim__shl_Integer` 140)
+  printLn (0x1000000000000001 `prim__shl_Integer` 141)
+
+testShiftRight : IO ()
+testShiftRight = do
+  putStrLn "shiftRight"
+  printLn (1 `prim__shr_Integer` 0)
+  printLn (1 `prim__shr_Integer` 1)
+  printLn (0x8000000000000001 `prim__shr_Integer` 1)
+  printLn (0x8000000000000001 `prim__shr_Integer` 63)
+  printLn (0x8000000000000001 `prim__shr_Integer` 64)
+  printLn (0x100000000000000100000000000000000000000000000000000000000000000000000000000000000 `prim__shr_Integer` 139)
+  printLn (0x0 `prim__shr_Integer` 0)
+  printLn (0x0 `prim__shr_Integer` 1)
+  printLn (0xffffffffffffffffffffffffffffffffffffffffffffffffffffff `prim__shr_Integer` 99)
+  printLn (0xffffffffffffffffffffffffffffffffffffffffffffffffffffff `prim__shr_Integer` 999999)
+
 altbits : Integer
 altbits = 0x55555555555555555555555555555555555555555555555555555555555555
 
@@ -75,18 +104,8 @@ main = do
   printLn (thirdbits `prim__or_Integer` altbits)
   printLn (altbits `prim__and_Integer` thirdbits)
   printLn (thirdbits `prim__and_Integer` altbits)
-  putStrLn "shift"
-  printLn (1 `prim__shl_Integer` 63)
-  printLn (1 `prim__shl_Integer` 64)
-  printLn (0x1000000000000001 `prim__shl_Integer` 0)
-  printLn (0x1000000000000001 `prim__shl_Integer` 1)
-  printLn (0x1000000000000001 `prim__shl_Integer` 2)
-  printLn (0x1000000000000001 `prim__shl_Integer` 63)
-  printLn (0x1000000000000001 `prim__shl_Integer` 64)
-  printLn (0x1000000000000001 `prim__shl_Integer` 65)
-  printLn (0x1000000000000001 `prim__shl_Integer` 139)
-  printLn (0x1000000000000001 `prim__shl_Integer` 140)
-  printLn (0x1000000000000001 `prim__shl_Integer` 141)
+  testShiftLeft
+  testShiftRight
   putStrLn "ok"
   putStrLn (show small)
   putStrLn (show $ cast {to=Int} integer)

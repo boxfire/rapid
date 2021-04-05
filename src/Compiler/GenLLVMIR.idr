@@ -2087,12 +2087,50 @@ getInstIR i (OP r (ShiftL IntegerType) [r1, r2]) = do
     store newObj (reg2val r)
     )
 getInstIR i (OP r (ShiftR IntegerType) [r1, r2]) = do
-  mkRuntimeCrash i "Integer -> GMP transition not finished (shr)"
-  -- FIXME: we treat Integers as bounded Ints -> should use GMP
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  obj <- cgMkInt !(mkShiftR i1 i2)
-  store obj (reg2val r)
+  integerObj <- load (reg2val r1)
+  bitCount <- mkTrunc {to=I32} !(unboxIntegerUnsigned !(load (reg2val r2)))
+
+  size <- getObjectSize integerObj
+  unchanged <- mkOr !(icmp "eq" size (Const I32 0)) !(icmp "eq" bitCount (Const I32 0))
+  mkIf_ (pure unchanged) (do
+    store integerObj (reg2val r)
+    ) (do
+    sizeAbs <- mkAbs size
+    fullLimbs <- mkUDiv bitCount (Const I32 GMP_LIMB_BITS)
+    maxLimbsCount <- mkSub sizeAbs fullLimbs
+
+    mkIf_ (icmp "sle" maxLimbsCount (Const I32 0)) (do
+      store !(integer0) (reg2val r)
+      ) (do
+      newObj <- dynamicAllocate !(mkZext !(mkMul maxLimbsCount (Const I32 GMP_LIMB_SIZE)))
+
+      restBits <- mkURem bitCount (Const I32 GMP_LIMB_BITS)
+      mkIf_ (icmp "ne" (Const I32 0) restBits) (do
+        srcHigherLimbs <- getObjectSlotAddrVar {t=I64} integerObj !(mkZext {to=I64} fullLimbs)
+        dstLimbsAddr <- getObjectPayloadAddr {t=I64} newObj
+        ignore $ call {t=I64} "ccc" "@__gmpn_rshift" [
+          toIR dstLimbsAddr,
+          toIR srcHigherLimbs,
+          toIR !(mkZext {to=I64} maxLimbsCount),
+          toIR restBits
+          ]
+        ) (do
+        srcHigherLimbs <- getObjectSlotAddrVar {t=I8} integerObj !(mkZext {to=I64} fullLimbs)
+        dstLimbsAddr <- getObjectPayloadAddr {t=I8} newObj
+        voidCall "ccc" "@llvm.memcpy.p1i8.p1i8.i32" [
+          toIR dstLimbsAddr,
+          toIR srcHigherLimbs,
+          toIR !(mkMul maxLimbsCount (Const I32 GMP_LIMB_SIZE)),
+          "i1 false"
+          ]
+        )
+
+      isNegative <- icmp "slt" size (Const I32 0)
+      normaliseIntegerSize newObj maxLimbsCount isNegative
+      store newObj (reg2val r)
+      )
+
+    )
 
 getInstIR i (OP r (BAnd IntegerType) [r1, r2]) = do
   i1 <- load (reg2val r1)
