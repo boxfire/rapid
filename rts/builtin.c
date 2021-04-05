@@ -835,8 +835,27 @@ int64_t rapid_bigint_lshift_inplace(mp_limb_t *p, int64_t n, unsigned int count)
   memmove(p + full_limbs, p, n - full_limbs);
   memset(p, 0, full_limbs * sizeof(mp_limb_t));
   unsigned int rest = count % GMP_LIMB_BITS;
-  mpn_lshift(p, p, n, rest);
-  return 0;
+  if (rest > 0) {
+    mpn_lshift(p, p, n, rest);
+  }
+  return rapid_bigint_real_size(p, n);
+}
+
+/**
+ * Right-Shift a big Integer in-place
+ */
+int64_t rapid_bigint_rshift_inplace(mp_limb_t *p, int64_t n, unsigned int count) {
+  // GMP's mpn_rshift only supports shifting by an amount < GMP_LIMB_BITS
+  // so first, we "right-shift" complete limbs using memmove and then shift the
+  // remaining bits using mpn_rshift
+  unsigned int full_limbs = count / GMP_LIMB_BITS;
+  unsigned int max_size = n - full_limbs;
+  memmove(p, p + full_limbs, max_size);
+  unsigned int rest = count % GMP_LIMB_BITS;
+  if (rest > 0) {
+    mpn_rshift(p, p, max_size, rest);
+  }
+  return rapid_bigint_real_size(p, max_size);
 }
 
 /**

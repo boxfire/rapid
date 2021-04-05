@@ -127,11 +127,13 @@ declare ccc %LimbT @__gmpn_mul(%LimbPtr nocapture writeonly, %LimbPtr nocapture 
 declare ccc void @__gmpn_and_n(%LimbPtr nocapture writeonly, %LimbPtr nocapture readonly, %LimbPtr nocapture readonly, i64) "gc-leaf-function"
 declare ccc void @__gmpn_ior_n(%LimbPtr nocapture writeonly, %LimbPtr nocapture readonly, %LimbPtr nocapture readonly, i64) "gc-leaf-function"
 declare ccc %LimbT @__gmpn_lshift(%LimbPtr nocapture, %LimbPtr nocapture, i64, i32) "gc-leaf-function"
+declare ccc %LimbT @__gmpn_rshift(%LimbPtr nocapture, %LimbPtr nocapture, i64, i32) "gc-leaf-function"
 declare ccc void @__gmpn_tdiv_qr(%LimbPtr nocapture writeonly, %LimbPtr nocapture writeonly, %mp_size_t, %LimbPtr nocapture readonly, %mp_size_t, %LimbPtr nocapture readonly, %mp_size_t) "gc-leaf-function"
 declare ccc i32 @__gmpn_cmp(%LimbPtr nocapture readonly, %LimbPtr nocapture readonly, i64) "gc-leaf-function"
 declare ccc i64 @__gmpn_sizeinbase(%LimbPtr nocapture readonly, i64, i32) "gc-leaf-function"
 declare ccc i64 @rapid_bigint_get_str(%ObjPtr nocapture, %ObjPtr nocapture readonly, i32) "gc-leaf-function"
 declare ccc i64 @rapid_bigint_lshift_inplace(%LimbPtr nocapture, i64, i32) "gc-leaf-function"
+declare ccc i64 @rapid_bigint_rshift_inplace(%LimbPtr nocapture, i64, i32) "gc-leaf-function"
 declare ccc i64 @rapid_bigint_real_size(%LimbPtr nocapture readonly %p, i64 %n) "gc-leaf-function"
 
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8* nocapture, i8* nocapture, i32, i1) nounwind
@@ -140,6 +142,7 @@ declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture, i8* nocapture, i64, i1) n
 declare void @llvm.memcpy.p1i8.p1i8.i32(%i8p1 nocapture, %i8p1 nocapture, i32, i1) nounwind
 declare void @llvm.memcpy.p1i8.p1i8.i64(%i8p1 nocapture, %i8p1 nocapture, i64, i1) nounwind
 declare void @llvm.memmove.p1i8.p1i8.i64(%i8p1 nocapture, %i8p1 nocapture, i64, i1) nounwind
+declare void @llvm.memset.p1i8.i32(%i8p1 nocapture writeonly, i8, i32, i1) nounwind "gc-leaf-function"
 declare void @llvm.memset.p1i8.i64(%i8p1 nocapture writeonly, i8, i64, i1) nounwind "gc-leaf-function"
 declare void @llvm.dbg.addr(metadata, metadata, metadata)
 

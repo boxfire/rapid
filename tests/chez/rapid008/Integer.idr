@@ -75,6 +75,18 @@ main = do
   printLn (thirdbits `prim__or_Integer` altbits)
   printLn (altbits `prim__and_Integer` thirdbits)
   printLn (thirdbits `prim__and_Integer` altbits)
+  putStrLn "shift"
+  printLn (1 `prim__shl_Integer` 63)
+  printLn (1 `prim__shl_Integer` 64)
+  printLn (0x1000000000000001 `prim__shl_Integer` 0)
+  printLn (0x1000000000000001 `prim__shl_Integer` 1)
+  printLn (0x1000000000000001 `prim__shl_Integer` 2)
+  printLn (0x1000000000000001 `prim__shl_Integer` 63)
+  printLn (0x1000000000000001 `prim__shl_Integer` 64)
+  printLn (0x1000000000000001 `prim__shl_Integer` 65)
+  printLn (0x1000000000000001 `prim__shl_Integer` 139)
+  printLn (0x1000000000000001 `prim__shl_Integer` 140)
+  printLn (0x1000000000000001 `prim__shl_Integer` 141)
   putStrLn "ok"
   putStrLn (show small)
   putStrLn (show $ cast {to=Int} integer)

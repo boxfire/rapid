@@ -536,8 +536,11 @@ unboxDouble doubleObj = getObjectSlot doubleObj 0
 GMP_LIMB_SIZE : Integer
 GMP_LIMB_SIZE = 8
 
+GMP_LIMB_BITS : Integer
+GMP_LIMB_BITS = 8 * GMP_LIMB_SIZE
+
 GMP_LIMB_BOUND : Integer
-GMP_LIMB_BOUND = (1 `prim__shl_Integer` (8 * GMP_LIMB_SIZE))
+GMP_LIMB_BOUND = (1 `prim__shl_Integer` (GMP_LIMB_BITS))
 
 cgMkConstInteger : Int -> Integer -> Codegen (IRValue IRObjPtr)
 cgMkConstInteger i val =
@@ -1680,14 +1683,10 @@ getInstIR i (OP r (Cast DoubleType IntegerType) [r1]) = do
       payloadAddr <- getObjectPayloadAddr {t=I8} newObj
       appendCode $ "  call void @llvm.memset.p1i8.i64(" ++ toIR payloadAddr ++ ", i8 0, " ++ toIR payloadSize ++ ", i1 false)"
       putObjectSlot newObj (Const I64 0) initial
-      ignore $ call {t=I64} "ccc" "@rapid_bigint_lshift_inplace" [
+      absRealNewSize <- call {t=I64} "ccc" "@rapid_bigint_lshift_inplace" [
         toIR !(getObjectPayloadAddr {t=I64} newObj),
         toIR maxLimbCount,
         toIR !(mkTrunc {to=I32} toShift)
-      ]
-      absRealNewSize <- call {t=I64} "ccc" "@rapid_bigint_real_size" [
-        toIR !(getObjectPayloadAddr {t=I64} newObj),
-        toIR maxLimbCount
       ]
       signedNewSize <- mkSelect isNegative !(mkSub (Const I64 0) absRealNewSize) absRealNewSize
       size32 <- mkAnd (Const I64 0xffffffff) signedNewSize
@@ -2044,12 +2043,49 @@ getInstIR i (OP r (Mod IntegerType) [r1, r2]) = do
   (_, remainder) <- divInteger i i1 i2
   store remainder (reg2val r)
 getInstIR i (OP r (ShiftL IntegerType) [r1, r2]) = do
-  mkRuntimeCrash i "Integer -> GMP transition not finished (shl)"
-  -- FIXME: we treat Integers as bounded Ints -> should use GMP
-  i1 <- unboxInt (reg2val r1)
-  i2 <- unboxInt (reg2val r2)
-  obj <- cgMkInt !(mkShiftL i1 i2)
-  store obj (reg2val r)
+  integerObj <- load (reg2val r1)
+  bitCount <- mkTrunc {to=I32} !(unboxIntegerUnsigned !(load (reg2val r2)))
+
+  size <- getObjectSize integerObj
+  unchanged <- mkOr !(icmp "eq" size (Const I32 0)) !(icmp "eq" bitCount (Const I32 0))
+  mkIf_ (pure unchanged) (do
+    store integerObj (reg2val r)
+    ) (do
+    sizeAbs <- mkAbs size
+    fullLimbs <- mkUDiv bitCount (Const I32 GMP_LIMB_BITS)
+    maxLimbsCount <- mkAdd !(mkAdd fullLimbs sizeAbs) (Const I32 1)
+
+    newObj <- dynamicAllocate !(mkZext !(mkMul maxLimbsCount (Const I32 GMP_LIMB_SIZE)))
+    lowerLimbsAddr <- getObjectPayloadAddr {t=I8} newObj
+    appendCode $ "  call void @llvm.memset.p1i8.i32(" ++ toIR lowerLimbsAddr ++ ", i8 0, " ++ toIR !(mkMul fullLimbs (Const I32 8)) ++ ", i1 false)"
+
+    restBits <- mkURem bitCount (Const I32 GMP_LIMB_BITS)
+    mkIf_ (icmp "ne" (Const I32 0) restBits) (do
+      srcLimbs <- getObjectPayloadAddr {t=I64} integerObj
+      higherLimbsAddr <- getObjectSlotAddrVar {t=I64} newObj !(mkZext {to=I64} fullLimbs)
+      msbLimb <- call {t=I64} "ccc" "@__gmpn_lshift" [
+        toIR higherLimbsAddr,
+        toIR srcLimbs,
+        toIR !(mkZext {to=I64} sizeAbs),
+        toIR restBits
+        ]
+      msbLimbAddr <- getObjectSlotAddrVar {t=I64} newObj !(mkZext !(mkSub maxLimbsCount (Const I32 1)))
+      store msbLimb msbLimbAddr
+      ) (do
+      srcLimbs <- getObjectPayloadAddr {t=I8} integerObj
+      higherLimbsAddr <- getObjectSlotAddrVar {t=I8} newObj !(mkZext {to=I64} fullLimbs)
+      voidCall "ccc" "@llvm.memcpy.p1i8.p1i8.i32" [
+        toIR higherLimbsAddr,
+        toIR srcLimbs,
+        toIR !(mkMul size (Const I32 GMP_LIMB_SIZE)),
+        "i1 false"
+        ]
+      )
+
+    isNegative <- icmp "slt" size (Const I32 0)
+    normaliseIntegerSize newObj maxLimbsCount isNegative
+    store newObj (reg2val r)
+    )
 getInstIR i (OP r (ShiftR IntegerType) [r1, r2]) = do
   mkRuntimeCrash i "Integer -> GMP transition not finished (shr)"
   -- FIXME: we treat Integers as bounded Ints -> should use GMP
