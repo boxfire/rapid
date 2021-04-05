@@ -143,6 +143,21 @@ declare void @llvm.memmove.p1i8.p1i8.i64(%i8p1 nocapture, %i8p1 nocapture, i64, 
 declare void @llvm.memset.p1i8.i64(%i8p1 nocapture writeonly, i8, i64, i1) nounwind "gc-leaf-function"
 declare void @llvm.dbg.addr(metadata, metadata, metadata)
 
+; LLVM double intrinsics
+declare double @llvm.ceil.f64(double) nounwind "gc-leaf-function"
+declare double @llvm.cos.f64(double) nounwind "gc-leaf-function"
+declare double @llvm.exp.f64(double) nounwind "gc-leaf-function"
+declare double @llvm.floor.f64(double) nounwind "gc-leaf-function"
+declare double @llvm.log.f64(double) nounwind "gc-leaf-function"
+declare double @llvm.sin.f64(double) nounwind "gc-leaf-function"
+declare double @llvm.sqrt.f64(double) nounwind "gc-leaf-function"
+
+; from <math.h>
+declare double @tan(double) nounwind "gc-leaf-function"
+declare double @asin(double) nounwind "gc-leaf-function"
+declare double @acos(double) nounwind "gc-leaf-function"
+declare double @atan(double) nounwind "gc-leaf-function"
+
 declare i8* @llvm.frameaddress(i32)
 declare i8* @llvm.addressofreturnaddress()
 

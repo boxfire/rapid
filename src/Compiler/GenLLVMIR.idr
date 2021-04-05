@@ -1092,6 +1092,12 @@ doubleBinOp op dest a b = do
   result <- SSA F64 <$> (assignSSA $ op ++ " double " ++ showWithoutType f1 ++ ", " ++ showWithoutType f2)
   store !(cgMkDouble result) (reg2val dest)
 
+doubleUnaryFn : String -> Reg -> Reg -> Codegen ()
+doubleUnaryFn funcName dest a = do
+  val <- unboxDouble !(load $ reg2val a)
+  result <- call {t=F64} "ccc" ("@" ++ funcName) [toIR val]
+  store !(cgMkDouble result) (reg2val dest)
+
 normaliseIntegerSize : IRValue IRObjPtr -> IRValue I32 -> IRValue I1 -> Codegen ()
 normaliseIntegerSize integerObj maxSizeSigned invert = do
   maxSizeAbs <- mkAbs maxSizeSigned
@@ -2230,6 +2236,18 @@ getInstIR i (OP r (Neg DoubleType) [r1]) = do
   neg <- (SSA F64) <$> assignSSA ("fneg " ++ toIR fv)
   obj <- cgMkDouble neg
   store obj (reg2val r)
+
+getInstIR i (OP r DoubleExp [r1]) = doubleUnaryFn "llvm.exp.f64" r r1
+getInstIR i (OP r DoubleLog [r1]) = doubleUnaryFn "llvm.log.f64" r r1
+getInstIR i (OP r DoubleSin [r1]) = doubleUnaryFn "llvm.sin.f64" r r1
+getInstIR i (OP r DoubleCos [r1]) = doubleUnaryFn "llvm.cos.f64" r r1
+getInstIR i (OP r DoubleTan [r1]) = doubleUnaryFn "tan" r r1
+getInstIR i (OP r DoubleASin [r1]) = doubleUnaryFn "asin" r r1
+getInstIR i (OP r DoubleACos [r1]) = doubleUnaryFn "acos" r r1
+getInstIR i (OP r DoubleATan [r1]) = doubleUnaryFn "atan" r r1
+getInstIR i (OP r DoubleSqrt [r1]) = doubleUnaryFn "llvm.sqrt.f64" r r1
+getInstIR i (OP r DoubleFloor [r1]) = doubleUnaryFn "llvm.floor.f64" r r1
+getInstIR i (OP r DoubleCeiling [r1]) = doubleUnaryFn "llvm.ceil.f64" r r1
 
 getInstIR i (MKCON r (Left tag) args) = do
   obj <- mkCon tag args
