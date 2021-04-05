@@ -1837,7 +1837,7 @@ getInstIR i (OP r (Cast IntType Bits32Type) [r1]) = do
   store newObj (reg2val r)
 getInstIR i (OP r (Cast IntegerType Bits64Type) [r1]) = do
   ival <- unboxIntegerUnsigned !(load (reg2val r1))
-  newObj <- cgMkInt ival
+  newObj <- cgMkBits64 ival
   store newObj (reg2val r)
 getInstIR i (OP r (Cast IntType Bits64Type) [r1]) = do
   newObj <- intToBits64 (reg2val r1)
