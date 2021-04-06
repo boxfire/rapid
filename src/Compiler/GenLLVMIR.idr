@@ -555,20 +555,21 @@ cgMkConstInteger : Int -> Integer -> Codegen (IRValue IRObjPtr)
 cgMkConstInteger i val =
     do
       let absVal = abs val
-      let (limbCount ** limbs) = getLimbs absVal
-      newHeader <- mkOr (Const I64 $ (header OBJECT_TYPE_ID_BIGINT)) (Const I64 $ cast limbCount)
-      newObj <- dynamicAllocate (Const I64 $ GMP_LIMB_SIZE * (cast limbCount))
-      for_ (enumerateVect limbs) (\(i, limb) => do
-           putObjectSlot newObj (Const I64 $ cast i) (Const I64 limb)
-           )
-      putObjectHeader newObj newHeader
-      pure newObj
+      let (len ** limbs) = getLimbs absVal
+      let newHeader = (header OBJECT_TYPE_ID_BIGINT) + (cast len)
+      let typeSignature = "{i64, [" ++ show len ++ " x %LimbT]}"
+      cName <- addConstant i $ "private unnamed_addr addrspace(1) constant " ++ typeSignature ++ " {i64 " ++ show newHeader ++ ", [" ++ show len ++ " x %LimbT] [" ++ (getLimbsIR limbs) ++ "]}, align 8"
+      pure $ SSA IRObjPtr $ "bitcast (" ++ typeSignature ++ " addrspace(1)* " ++ cName ++ " to %ObjPtr)"
   where
       getLimbs : Integer -> (n:Nat ** Vect n Integer)
       getLimbs 0 = (0 ** [])
       getLimbs x = let (n ** v) = (getLimbs (x `div` GMP_LIMB_BOUND))
                        limb = (x `mod` GMP_LIMB_BOUND) in
                        ((S n) ** (limb::v))
+      getLimbsIR : Vect n Integer -> String
+      getLimbsIR [] = ""
+      getLimbsIR (limb::[]) = "%LimbT " ++ show limb
+      getLimbsIR (limb::rest) = "%LimbT " ++ show limb ++ ", " ++ (getLimbsIR rest)
 
 cgMkIntegerSigned : IRValue I64 -> Codegen (IRValue IRObjPtr)
 cgMkIntegerSigned val = do
