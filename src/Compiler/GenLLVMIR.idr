@@ -595,6 +595,13 @@ cgMkDouble val = do
   putObjectSlot newObj (ConstI64 0) val
   pure newObj
 
+cgMkConstDouble : Int -> Double -> Codegen (IRValue IRObjPtr)
+cgMkConstDouble i d = do
+  let newHeader = header OBJECT_TYPE_ID_DOUBLE
+  let typeSignature = "{i64, double}"
+  cName <- addConstant i $ "private unnamed_addr addrspace(1) constant " ++ typeSignature ++ " {i64 " ++ show newHeader ++ ", double 0x" ++ (assert_total $ doubleToHex d) ++ "}, align 8"
+  pure $ SSA IRObjPtr $ "bitcast (" ++ typeSignature ++ " addrspace(1)* " ++ cName ++ " to %ObjPtr)"
+
 cgMkDoubleFromBits : IRValue I64 -> Codegen (IRValue IRObjPtr)
 cgMkDoubleFromBits val = do
   newObj <- dynamicAllocate (ConstI64 8)
@@ -1714,7 +1721,7 @@ getInstIR i (OP r (Cast IntegerType DoubleType) [r1]) = do
   isZero <- icmp "eq" (Const I32 0) size
 
   mkIf_ (pure isZero) (do
-      newObj <- cgMkDouble (ConstF64 0.0)
+      newObj <- cgMkConstDouble i 0.0
       store newObj (reg2val r)
     ) (do
     sizeAbs <- mkAbs size
@@ -2414,7 +2421,7 @@ getInstIR i (MKCONSTANT r (BI c)) = do
   obj <- cgMkConstInteger i c
   store obj (reg2val r)
 getInstIR i (MKCONSTANT r (Db d)) = do
-  obj <- cgMkDouble (ConstF64 d)
+  obj <- cgMkConstDouble i d
   store obj (reg2val r)
 getInstIR i (MKCONSTANT r WorldVal) = do
   obj <- mkCon 1337 []
