@@ -730,23 +730,14 @@ mkSubstring strObj startIndexRaw length = do
   voidCall "ccc" "@llvm.memcpy.p1i8.p1i8.i64" [toIR newStrPayload, toIR strCopyRangeStart, toIR resultLength, toIR (Const I1 0)]
   pure newStr
 
-constStr : Int -> String -> Codegen (Integer, IRValue (Pointer 0 I8))
-constStr i s = do
-  let utf8bytes = utf8EncodeString s
-  let len = cast {to=Integer} $ length utf8bytes
-  cn <- addConstant i $ "private unnamed_addr constant [" ++ show len ++ " x i8] c\"" ++ (getStringIR utf8bytes) ++ "\""
-  cnPtr <- assignSSA $ "bitcast [" ++ show len ++ " x i8]* "++cn++" to i8*"
-  pure (len, SSA (Pointer 0 I8) cnPtr)
-
 mkStr : Int -> String -> Codegen (IRValue IRObjPtr)
 mkStr i s = do
-  (len, cn) <- constStr i s
-  let newHeader = ConstI64 $ (header OBJECT_TYPE_ID_STR) + len
-  newObj <- dynamicAllocate (ConstI64 len)
-  putObjectHeader newObj newHeader
-  strPayload <- getObjectPayloadAddr {t=I8} newObj
-  appendCode $ "  call void @llvm.memcpy.p1i8.p0i8.i32(" ++ toIR strPayload ++ ", " ++ toIR cn ++ ", i32 " ++show len ++", i1 false)"
-  pure newObj
+  let utf8bytes = utf8EncodeString s
+  let len = cast {to=Integer} $ length utf8bytes
+  let newHeader = (header OBJECT_TYPE_ID_STR) + len
+  let typeSignature = "{i64, [" ++ show len ++ " x i8]}"
+  cName <- addConstant i $ "private unnamed_addr addrspace(1) constant " ++ typeSignature ++ " {i64 " ++ show newHeader ++ ", [" ++ show len ++ " x i8] c\"" ++ (getStringIR utf8bytes) ++ "\"}, align 8"
+  pure $ SSA IRObjPtr $ "bitcast (" ++ typeSignature ++ " addrspace(1)* " ++ cName ++ " to %ObjPtr)"
 
 mkRuntimeCrash : Int -> String -> Codegen ()
 mkRuntimeCrash i s = do
