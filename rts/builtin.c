@@ -1,4 +1,3 @@
-#include <alloca.h>
 #include <assert.h>
 #include <ctype.h>
 #include <dirent.h>
