@@ -49,6 +49,12 @@ for test in ${tests[*]}; do
   ((count_total++))
   testdir="$PWD/tests/chez/$test"
   idr=$(echo ${testdir}/*.idr)
+  if [[ ! -d "$testdir" ]]; then
+    echo "dir does not exist: $testdir"
+    ((count_error++))
+    continue
+  fi
+
   pushd "$testdir" >/dev/null
   rm -rf ./build output
   if $rapidc --cg llvm $debug_directive -p contrib -p network -o "$test" "$idr" >& "${testdir}/compile.log"; then
