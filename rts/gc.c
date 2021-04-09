@@ -7,11 +7,12 @@
 #undef RAPID_GC_DEBUG_ENABLED
 /*#define RAPID_GC_DEBUG_ENABLED*/
 
-#ifdef __linux__
+#if !defined(__APPLE__)
   #define STACKMAP __LLVM_StackMaps
-#endif
-
-#ifdef __APPLE__
+#else
+  // On Darwin, all symbols are implicitly prefixed with an underscore, which
+  // means we need to subtract one underscore in the C source to match the
+  // assembly's symbol name.
   #define STACKMAP _LLVM_StackMaps
 #endif
 extern uint8_t STACKMAP[];
