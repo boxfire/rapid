@@ -4,8 +4,6 @@ RTS_BITCODE = $(RTS_SOURCES:.c=.bc)
 
 UNAME_S := $(shell uname -s)
 
-CFLAGS = -D_POSIX_C_SOURCE=200809L
-
 ifeq ($(UNAME_S),Linux)
 	CFLAGS += -D_GNU_SOURCE
 endif

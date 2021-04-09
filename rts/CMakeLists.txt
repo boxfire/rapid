@@ -18,7 +18,6 @@ list(APPEND CFLAGS "-I" ".")
 list(APPEND CFLAGS "-I" "/usr/local/include")
 list(APPEND CFLAGS "-I" "../external/llvm-statepoint-utils/dist")
 
-list(APPEND CFLAGS "-D_POSIX_C_SOURCE=200809L")
 if (APPLE)
   list(APPEND CFLAGS "-D_DARWIN_C_SOURCE")
 else()
