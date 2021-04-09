@@ -8,18 +8,18 @@ cg:
 	idris2 --build rapid-cg.ipkg
 
 rts:
-	make -j `nproc` -C rts
+	$(MAKE) -C rts
 	cp -v rts/build/runtime.bc support/rapid/runtime.bc
 	cp -v rts/build/platform.a support/rapid/platform.a
 
 llvm-passes:
 	(cd llvm && test -f Makefile || cmake .)
-	make -j `nproc` -C llvm
+	$(MAKE) -C llvm
 	cp -v llvm/librapid.so support/rapid/librapid.so
 
 clean: clean-tests
-	make -C rts clean
-	make -C llvm clean
+	$(MAKE) -C rts clean
+	$(MAKE) -C llvm clean
 	rm -rf build samples/build
 
 clean-tests:
@@ -33,6 +33,6 @@ test: rts test-llvm
 	./runtests.sh --good
 
 test-llvm:
-	make -C llvm test
+	$(MAKE) -C llvm test
 
 .PHONY: all check clean clean-tests rapid rts test
