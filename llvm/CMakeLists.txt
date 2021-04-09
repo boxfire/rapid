@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.12)
 project(RapidLLVMPasses)
 
 find_package(LLVM REQUIRED CONFIG)
+find_program(LLVMLIT NAMES lit llvm-lit llvm-lit10 llvm-lit11 llvm-lit12 REQUIRED)
 
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
@@ -32,7 +33,7 @@ if (${RAPID_SUPPORT_BINARIES} MATCHES .)
 endif()
 
 add_custom_target(rapid_test_llvm_passes
-                  COMMAND lit test -v
+                  COMMAND ${LLVMLIT} test -v
                   DEPENDS rapid)
 
 if (NOT TARGET test)
