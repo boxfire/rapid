@@ -1,0 +1,53 @@
+image: freebsd/latest
+
+sources:
+  - https://git.sr.ht/~cypheon/rapid
+
+packages:
+  - cmake
+  - coreutils
+  - gmake
+  - gmp
+  - llvm11
+  - py37-pip
+  - racket
+
+environment:
+  PATH: /home/build/.idris2/bin:/usr/home/build/.local/bin/:/usr/local/llvm11/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games
+  IDRIS2_CG: racket
+
+tasks:
+  - install-lit: |
+      pip install lit
+      lit --version
+
+  - install-idris2: |
+      curl -LsSf -o /tmp/idris2_prebuilt.tar.gz "https://sinyax.net/idris2_prebuilt/freebsd.tar.gz"
+      cd $HOME
+      tar xzvf /tmp/idris2_prebuilt.tar.gz
+      idris2 --version
+
+  - add-swap: |
+      sudo dd if=/dev/zero of=/usr/swap0 bs=1m count=2048
+      sudo chmod 0600 /usr/swap0
+      echo 'md99	none	swap	sw,file=/usr/swap0,late	0	0' | sudo tee -a /etc/fstab
+      sudo /sbin/swapon -aL
+
+  - build: |
+      cd $(grealpath rapid)
+      git submodule update --init --recursive
+
+      export IDRIS2_DATA="$PWD/support"
+
+      gmake -C external/llvm-statepoint-utils dist/llvm-statepoint-tablegen.h unified
+      gmake
+
+  - test: |
+      cd $(grealpath rapid)
+      export IDRIS2_DATA="$PWD/support"
+      gmake test
+
+triggers:
+  - action: email
+    condition: failure
+    to: Johann Rudloff <johann+builds.sr.ht@sinyax.net>
