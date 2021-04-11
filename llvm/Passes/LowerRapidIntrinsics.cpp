@@ -100,6 +100,7 @@ struct LowerRapidIntrinsics : public FunctionPass {
         }
 
         auto callee = CI->getCalledFunction();
+        assert(callee);
 
         if (callee == rapid_boxint) {
           //errs().write_escaped("found rapid.boxint") << '\n';
