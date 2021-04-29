@@ -3155,7 +3155,8 @@ foreignRedirectMap = [
   , ("C:exit, libc 6", "rapid_system_exit")
   , ("C:system, libc 6", "rapid_system_system")
   , ("C:getenv, libc 6", "rapid_system_get_env")
-  , ("scheme:blodwen-args", "rapid_system_getargs")
+  , ("scheme:blodwen-arg-count", "rapid_system_get_arg_count")
+  , ("scheme:blodwen-arg", "rapid_system_get_arg")
 
   , ("C:idrnet_af_inet,libidris2_support", "idrnet_af_inet")
   , ("C:idrnet_af_inet6,libidris2_support", "idrnet_af_inet6")
@@ -3167,6 +3168,7 @@ foreignRedirectMap = [
   , ("C:idrnet_free,libidris2_support", "idrnet_free")
   , ("C:idrnet_sockaddr_family,libidris2_support", "idrnet_sockaddr_family")
   , ("C:idrnet_sockaddr_ipv4,libidris2_support", "idrnet_sockaddr_ipv4")
+  , ("C:idrnet_sockaddr_unix,libidris2_support", "idrnet_sockaddr_unix")
   , ("C:idrnet_socket,libidris2_support", "idrnet_socket")
   , ("C:listen,libc 6", "idrnet_listen")
 

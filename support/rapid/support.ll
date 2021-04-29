@@ -88,7 +88,8 @@ declare ccc void @rapid_system_dir_close(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_system_dir_next_entry(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc i64 @rapid_system_file_read_char(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_system_stdin_getline(%TSOPtr, %ObjPtr)
-declare ccc %ObjPtr @rapid_system_getargs(%TSOPtr, %ObjPtr)
+declare ccc i64 @rapid_system_get_arg_count(%TSOPtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_system_get_arg(%TSOPtr, i64, %ObjPtr)
 declare ccc i64 @rapid_string_bytelength(%TSOPtr, %ObjPtr nocapture readonly) "gc-leaf-function"
 declare ccc %ObjPtr @rapid_fast_pack(%TSOPtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_fast_append(%TSOPtr, %ObjPtr)
@@ -110,6 +111,7 @@ declare ccc i64 @idrnet_accept(%TSOPtr, i64, %ObjPtr, %ObjPtr) "gc-leaf-function
 
 declare ccc i64 @idrnet_sockaddr_family(%TSOPtr, %ObjPtr, %ObjPtr) "gc-leaf-function"
 declare ccc %ObjPtr @idrnet_sockaddr_ipv4(%TSOPtr, %ObjPtr, %ObjPtr)
+declare ccc %ObjPtr @idrnet_sockaddr_unix(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc i64 @idrnet_sockaddr_ipv4_port(%TSOPtr, %ObjPtr, %ObjPtr) "gc-leaf-function"
 
 ; Terminal utility functions

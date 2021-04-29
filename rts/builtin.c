@@ -651,20 +651,6 @@ ObjPtr rapid_system_dir_next_entry(Idris_TSO *base, ObjPtr dirPtrObj, ObjPtr _wo
 const int TAG_LIST_NIL = 0;
 const int TAG_LIST_CONS = 1;
 
-static inline ObjPtr MK_LIST_NIL(Idris_TSO *base) {
-  ObjPtr p = rapid_C_allocate(base, HEADER_SIZE);
-  p->hdr = MAKE_HEADER(OBJ_TYPE_CON_NO_ARGS, TAG_LIST_NIL);
-  return p;
-}
-
-static inline ObjPtr MK_LIST_CONS(Idris_TSO *base, ObjPtr head, ObjPtr tail) {
-  ObjPtr p = rapid_C_allocate(base, HEADER_SIZE + 2 * POINTER_SIZE);
-  p->hdr = MAKE_HEADER(OBJ_TYPE_CON_NO_ARGS | (2 << 8), TAG_LIST_CONS);
-  OBJ_PUT_SLOT(p, 0, head);
-  OBJ_PUT_SLOT(p, 1, tail);
-  return p;
-}
-
 ObjPtr rapid_fast_pack(Idris_TSO *base, ObjPtr charListObj) {
   assert(OBJ_TYPE(charListObj) == OBJ_TYPE_CON_NO_ARGS);
 
@@ -752,20 +738,17 @@ int64_t idris2_getTermLines(Idris_TSO *base, ObjPtr _world) {
     return (int64_t) ts.ws_row;
 }
 
-ObjPtr rapid_system_getargs(Idris_TSO *base, ObjPtr _world) {
-  ObjPtr result = MK_LIST_NIL(base);
+int64_t rapid_system_get_arg_count(Idris_TSO *base, ObjPtr _world) {
+  return rapid_global_argc;
+}
 
-  for (int i = rapid_global_argc - 1; i >= 0; --i) {
-    char *thisArg = rapid_global_argv[i];
-    size_t thisLength = strlen(thisArg);
-    ObjPtr argStrObj = rapid_C_allocate(base, HEADER_SIZE + thisLength);
-    argStrObj->hdr = MAKE_HEADER(OBJ_TYPE_STRING, thisLength);
-    memcpy(OBJ_PAYLOAD(argStrObj), thisArg, thisLength);
-
-    result = MK_LIST_CONS(base, argStrObj, result);
-  }
-
-  return result;
+ObjPtr rapid_system_get_arg(Idris_TSO *base, int64_t index, ObjPtr _world) {
+  char *thisArg = rapid_global_argv[index];
+  size_t thisLength = strlen(thisArg);
+  ObjPtr argStrObj = rapid_C_allocate(base, HEADER_SIZE + thisLength);
+  argStrObj->hdr = MAKE_HEADER(OBJ_TYPE_STRING, thisLength);
+  memcpy(OBJ_PAYLOAD(argStrObj), thisArg, thisLength);
+  return argStrObj;
 }
 
 /**

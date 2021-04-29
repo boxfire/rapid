@@ -61,6 +61,10 @@ ObjPtr idrnet_sockaddr_ipv4(Idris_TSO *base, ObjPtr sockAddrPtr, ObjPtr _world) 
   rapid_C_crash("sockaddr_ipv4 not implemented");
 }
 
+ObjPtr idrnet_sockaddr_unix(Idris_TSO *base, ObjPtr sockAddrPtr, ObjPtr _world) {
+  rapid_C_crash("sockaddr_unix not implemented");
+}
+
 void idrnet_free(Idris_TSO *base, ObjPtr ptr, ObjPtr _world) {
   // NOOP, wait for GC
 }
