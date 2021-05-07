@@ -2564,6 +2564,11 @@ compileExtPrim i (NS ns n) r args with (unsafeUnfoldNamespace ns)
     addr <- getObjectSlotAddrVar array index
     store val addr
 
+  compileExtPrim i (NS ns (UN "prim__makeFuture")) r [_, workReg] | ["Future", "System"] = do
+    work <- prepareArg workReg
+    newObj <- foreignCall {t=IRObjPtr} "@rapid_system_make_future" [work]
+    store newObj (reg2val r)
+
   compileExtPrim i (NS ns (UN "prim__codegen")) r [] | ["Info", "System"] = do
     store !(mkStr i "rapid") (reg2val r)
   compileExtPrim i (NS ns (UN "prim__os")) r [] | ["Info", "System"] = do
@@ -3192,7 +3197,9 @@ foreignRedirectMap = [
   , ("scheme:blodwen-buffer-getstring", "prim/blodwen-buffer-getstring")
   , ("scheme:blodwen-buffer-copydata", "prim/blodwen-buffer-copydata")
 
-  , ("scheme:blodwen-thread", "rapid_system_fork")
+  , ("scheme:blodwen-thread", "rapid_system_thread")
+  , ("scheme:blodwen-thread-wait", "rapid_system_thread_wait")
+  , ("scheme:blodwen-await-future", "rapid_system_await_future")
 
   , ("scheme:blodwen-clock-time-utc", "prim/blodwen-clock-time-utc")
   , ("scheme:blodwen-clock-time-monotonic", "prim/blodwen-clock-time-monotonic")

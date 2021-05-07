@@ -57,7 +57,10 @@ declare ccc void @rapid_system_exit(%TSOPtr, i64, %ObjPtr)
 declare ccc i64 @rapid_system_errno(%TSOPtr, %ObjPtr)
 declare ccc i64 @rapid_system_file_errno(%TSOPtr, %ObjPtr)
 declare ccc i64 @rapid_system_system(%TSOPtr, %ObjPtr, %ObjPtr)
-declare ccc %ObjPtr @rapid_system_fork(%TSOPtr, %ObjPtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_system_thread(%TSOPtr, %ObjPtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_system_thread_wait(%TSOPtr, %ObjPtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_system_make_future(%TSOPtr, %ObjPtr)
+declare ccc %ObjPtr @rapid_system_await_future(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc %ObjPtr @rapid_system_get_env(%TSOPtr, %ObjPtr, %ObjPtr)
 declare ccc i64 @idris_rts_write_buffer_data(%TSOPtr, %ObjPtr, %ObjPtr, i64, i64, %ObjPtr)
 declare ccc i64 @idris_rts_read_buffer_data(%TSOPtr, %ObjPtr, %ObjPtr, i64, i64, %ObjPtr)
@@ -386,4 +389,17 @@ define external ccc i64 @idris_enter(%Idris_TSO.struct* %BaseTSO) {
 
   call fastcc i64 @idris_enter_stackbridge(%TSOPtr %BaseTSO, %RuntimePtr %heapStart, %RuntimePtr %heapEnd)
   ret i64 0
+}
+
+define external ccc %ObjPtr @rapid_apply_closure(%Idris_TSO.struct* %BaseTSO, %ObjPtr %closure, %ObjPtr %argV) {
+  %heapStartPtr = getelementptr inbounds %Idris_TSO.struct, %Idris_TSO.struct* %BaseTSO, i32 0, i32 1
+  %heapStart = load %RuntimePtr, %RuntimePtr* %heapStartPtr
+
+  %heapEndPtr = getelementptr inbounds %Idris_TSO.struct, %Idris_TSO.struct* %BaseTSO, i32 0, i32 2
+  %heapEnd = load %RuntimePtr, %RuntimePtr* %heapEndPtr
+
+  %closure.ret = call fastcc %Return1 @idris_apply_closure(%RuntimePtr %heapStart, %TSOPtr %BaseTSO, %RuntimePtr %heapEnd, %ObjPtr %closure, %ObjPtr %argV)
+
+  %result = extractvalue %Return1 %closure.ret, 2
+  ret %ObjPtr %result
 }

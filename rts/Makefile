@@ -1,4 +1,4 @@
-RTS_SOURCES = builtin.c gc.c getline.c net.c object.c rts.c time.c ../external/llvm-statepoint-utils/build/statepoint.c
+RTS_SOURCES = builtin.c gc.c getline.c net.c object.c rts.c thread.c time.c ../external/llvm-statepoint-utils/build/statepoint.c
 RTS_HEADERS = gc.h object.h
 RTS_BITCODE = $(RTS_SOURCES:.c=.bc)
 
@@ -14,6 +14,7 @@ endif
 CFLAGS += -I .
 CFLAGS += -I /usr/local/include
 CFLAGS += -I ../external/llvm-statepoint-utils/dist
+CFLAGS += -pthread
 
 all: build/runtime.bc build/platform.a
 
